@@ -87,6 +87,10 @@ direct_variance <- function(direct_estimator,
     else if (indicator_name == "Head_Count") {
       smp_data$indicator <- as.integer(smp_data$y < threshold)
     }
+    else if (indicator_name == "Poverty_Gap") {
+      smp_data$indicator <- ((threshold-smp_data$y)/threshold)*(smp_data$y < threshold)
+    }
+    
     else {
       smp_data$indicator <- NA
     }
