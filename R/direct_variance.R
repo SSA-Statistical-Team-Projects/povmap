@@ -91,6 +91,12 @@ direct_variance <- function(direct_estimator,
       smp_data$indicator <- ((threshold-smp_data$y)/threshold)*(smp_data$y < threshold)
     }
     
+    else if (indicator_name == "Gini") {
+      sumweight <- sum(smp_data$weight)
+      sumwy <- sum(smp_data$weight*smp_data$y)
+      smp_data$indicator <-  ((2*smp_data$y*sumweight-smp_data$y*smp_data$weight)/sumwy)-1  
+        }
+    
     else {
       smp_data$indicator <- NA
     }
