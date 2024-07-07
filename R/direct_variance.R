@@ -83,7 +83,12 @@ direct_variance <- function(direct_estimator,
       tosum <- df[,2] * (df[,2]-1) * df[,1]^2
       return(sum(df[,2])^-2 * sum(tosum))
     }
-
+    approx_var_est_wrapper <- function(y,pik,method,data) {
+      var <- approx_var_est(y=y,pik=pik,method=method)
+      return(var)
+    }
+    
+    
     if (indicator_name == "Mean") {
       smp_data$indicator <- smp_data$y
     }
@@ -110,15 +115,17 @@ direct_variance <- function(direct_estimator,
                         FUN = domain_var))
     }
     else if (min(is.na(smp_data$indicator)==0)) {
+
+      
       pik <- 1/weights_vec
       var <- as.vector(by(data = smp_data[c("indicator")],
                           INDICES = smp_data$Domain,
-                          FUN = suppressWarnings(approx_var_est),
+                          FUN = approx_var_est_wrapper,
                           y=smp_data$indicator, 
                           pik=pik,
                           method=HTmethod
       ))
-      sumwbydomain <- by(data=smp_data[,"weight"],INDICES=smp_data$Domain,FUN=sum)
+    sumwbydomain <- by(data=smp_data[,"weight"],INDICES=smp_data$Domain,FUN=sum)
       var <- var/(sumwbydomain^2)
     }
     else {
