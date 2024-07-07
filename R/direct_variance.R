@@ -84,7 +84,7 @@ direct_variance <- function(direct_estimator,
       return(sum(df[,2])^-2 * sum(tosum))
     }
     approx_var_est_wrapper <- function(y,pik,method,data) {
-      var <- approx_var_est(y=y,pik=pik,method=method)
+      var <- suppressMessages(approx_var_est(y=y,pik=pik,method=method))
       return(var)
     }
     
