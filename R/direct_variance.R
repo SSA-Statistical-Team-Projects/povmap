@@ -7,6 +7,7 @@ direct_variance <- function(direct_estimator,
                             design,
                             indicator,
                             HT,
+                            HTmethod, 
                             bootType,
                             B = B,
                             seed,
@@ -77,6 +78,8 @@ direct_variance <- function(direct_estimator,
   if (HT == TRUE) {
 
     domain_var <- function(df) {
+      # aply formula var = sum(w)^-2*sum(w*(w-1)*Y^2)
+      # first column of df is y, second column of df is weights 
       tosum <- df[,2] * (df[,2]-1) * df[,1]^2
       return(sum(df[,2])^-2 * sum(tosum))
     }
@@ -101,14 +104,26 @@ direct_variance <- function(direct_estimator,
       smp_data$indicator <- NA
     }
 
+    if (HTmethod=="Simple") {
     var <- as.vector(by(data = smp_data[c("indicator","weight")],
                         INDICES = smp_data$Domain,
                         FUN = domain_var))
-
+    }
+    else {
+      smp_data$pik <- 1/smp_data["weight"]
+      var <- as.vector(by(data = smp_data[c("indicator","pik")],
+                          INDICES = smp_data$Domain,
+                          FUN = approx_var_est,
+                          y=smp_data$indicator, 
+                          pik=smp_data$pik,
+                          method=HTmethod
+      ))
+      sumwbydomain <- by(data=smp_data$weights,INDICES=smp_data$Domain,FUN=sum)
+      var <- var/(sumwbydomain^2)
+      }
     varByDomain <- data.frame(Domain = rs, var = var)
-    indicator$varMethod <- "HT"
+    indicator$varMethod <- paste0("HT_",HTmethod)
   }
-
   else {
 
     # set seed for bootstrap

@@ -2,8 +2,8 @@
 #'
 #' Function \code{direct} estimates indicators only based on sample information.
 #' The variance is estimated via a naive or calibrated bootstrap. The estimation
-#' is adapted from the estimation of direct indicators in package
-#' \pkg{laeken}.
+#' is adapted from the estimation of direct indicators in package 
+#' \pkg{laeken},\pkg{SAE}, and \pkg{UPSvarApprox}.
 #'
 #' @param y a character string indicating the variable that is used for
 #' estimating the indicators. The variable must be contained in the sample data.
@@ -50,6 +50,12 @@
 #' \code{threshold} (numeric value) (see Example 3) even though some arguments
 #' might not be used in the additional function. Defaults to \code{NULL}.
 #' @param HT if TRUE use Horvitz Thompson estimator.
+#' @param HTmethod a string indicating the method to be used to estimate the variance 
+#' when HT=TRUE. Options are "Simple","Hajek","Deville2","Deville3","Brewer1","Rosen", 
+#' and "FixedPoint". Defaults to "Simple", which is taken from the R \pkg{SAE} package
+#' and assumes that units are sampled independently and that the population size equals the sum
+#' of the sampling weights. Other options are taken from the "class 2" options in the 
+#' \pkg{UPSvarApprox} package and documented there. 
 #' @param na.rm if \code{TRUE}, observations with \code{NA} values are deleted
 #' from the sample data. Defaults to \code{FALSE}.
 #' @return An object of class "direct", "emdi" that provides direct estimators
@@ -96,6 +102,7 @@
 #' @importFrom boot boot
 #' @importFrom MASS ginv
 #' @importFrom stats aggregate runif weighted.mean
+#' @importFrom UPSvarApprox approx_var_est 
 
 
 direct <- function(y,
@@ -112,7 +119,8 @@ direct <- function(y,
                    totals = NULL,
                    custom_indicator = NULL,
                    na.rm = FALSE,
-                   HT = FALSE){
+                   HT = FALSE,
+                   HTmethod = "Simple"){
 
   smp_data <- as.data.frame(smp_data)
 
@@ -164,6 +172,7 @@ direct <- function(y,
                     smp_domains = framework$smp_domains_vec,
                     design = design,
                     HT = HT,
+                    HTmethod = HTmethod, 
                     bootType = boot_type,
                     B = B,
                     seed = seed,
