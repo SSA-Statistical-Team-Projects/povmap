@@ -122,7 +122,7 @@ direct_variance <- function(direct_estimator,
       var <- var/(sumwbydomain^2)
     }
     else {
-      var <- rep(NA,unique(smp_data$Domain))
+      var <- rep(NA,length(unique(smp_data$Domain)))
     }
     varByDomain <- data.frame(Domain = rs, var = var)
     indicator$varMethod <- paste0("HT_",HTmethod)
