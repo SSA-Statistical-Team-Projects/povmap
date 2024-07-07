@@ -104,12 +104,12 @@ direct_variance <- function(direct_estimator,
       smp_data$indicator <- NA
     }
 
-    if (HTmethod=="Simple") {
+    if (HTmethod=="Simple" & min(is.na(smp_data$indicator)==0)) {
     var <- as.vector(by(data = smp_data[c("indicator","weight")],
                         INDICES = smp_data$Domain,
                         FUN = domain_var))
     }
-    else {
+    else if (min(is.na(smp_data$indicator)==0)) {
       pik <- 1/weights
       var <- as.vector(by(data = smp_data[c("indicator")],
                           INDICES = smp_data$Domain,
@@ -120,7 +120,10 @@ direct_variance <- function(direct_estimator,
       ))
       sumwbydomain <- by(data=smp_data[,"weight"],INDICES=smp_data$Domain,FUN=sum)
       var <- var/(sumwbydomain^2)
-      }
+    }
+    else {
+      var <- rep(NA,unique(smp_data$Domain))
+    }
     varByDomain <- data.frame(Domain = rs, var = var)
     indicator$varMethod <- paste0("HT_",HTmethod)
   }
