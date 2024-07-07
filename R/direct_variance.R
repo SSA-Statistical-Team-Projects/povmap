@@ -111,13 +111,13 @@ direct_variance <- function(direct_estimator,
     }
     else if (min(is.na(smp_data$indicator)==0)) {
       pik <- 1/weights
-      var <- as.vector(by(data = smp_data[c("indicator")],
+      var <- suppressWarnings(as.vector(by(data = smp_data[c("indicator")],
                           INDICES = smp_data$Domain,
                           FUN = approx_var_est,
                           y=smp_data$indicator, 
                           pik=pik,
                           method=HTmethod
-      ))
+      )))
       sumwbydomain <- by(data=smp_data[,"weight"],INDICES=smp_data$Domain,FUN=sum)
       var <- var/(sumwbydomain^2)
     }
