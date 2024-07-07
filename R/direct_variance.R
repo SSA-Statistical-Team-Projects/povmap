@@ -29,9 +29,9 @@ direct_variance <- function(direct_estimator,
   # thus n
   haveWeights <- !is.null(weights)
   if (!is.null(weights))
-    weights <- smp_data[, weights]
+    weights_vec <- smp_data[, weights]
   if (is.null(weights)) {
-    weights <- rep.int(1, n)
+    weights_vec <- rep.int(1, n)
   }
 
   # not sure how to use design but I also didnt know if we want to delete it
@@ -60,7 +60,7 @@ direct_variance <- function(direct_estimator,
     if (!is.numeric(X_calib))
       stop("'X_calib' must be a numeric matrix")
     if (is.null(totals)) {
-      totals <- apply(X_calib, 2, function(i) sum(i * weights))
+      totals <- apply(X_calib, 2, function(i) sum(i * weights_vec))
     }
     if (!is.numeric(totals))
       stop("'totals' must be of type numeric")
@@ -71,7 +71,7 @@ direct_variance <- function(direct_estimator,
 
   # Define part of data set that is used in the functions for calibration
   smp_data <- data.frame(y = y)
-  smp_data$weight <- weights
+  smp_data$weight <- weights_vec
   smp_data$Domain <- smp_domains
 
   # separate code for HT estimation
@@ -110,7 +110,7 @@ direct_variance <- function(direct_estimator,
                         FUN = domain_var))
     }
     else if (min(is.na(smp_data$indicator)==0)) {
-      pik <- 1/weights
+      pik <- 1/weights_vec
       var <- as.vector(by(data = smp_data[c("indicator")],
                           INDICES = smp_data$Domain,
                           FUN = suppressWarnings(approx_var_est),
