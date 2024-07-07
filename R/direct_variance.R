@@ -110,15 +110,15 @@ direct_variance <- function(direct_estimator,
                         FUN = domain_var))
     }
     else {
-      smp_data$pik <- 1/smp_data["weight"]
-      var <- as.vector(by(data = smp_data[c("indicator","pik")],
+      pik <- 1/weights
+      var <- as.vector(by(data = smp_data[c("indicator")],
                           INDICES = smp_data$Domain,
                           FUN = approx_var_est,
                           y=smp_data$indicator, 
-                          pik=smp_data$pik,
+                          pik=pik,
                           method=HTmethod
       ))
-      sumwbydomain <- by(data=smp_data$weights,INDICES=smp_data$Domain,FUN=sum)
+      sumwbydomain <- by(data=smp_data[,"weight"],INDICES=smp_data$Domain,FUN=sum)
       var <- var/(sumwbydomain^2)
       }
     varByDomain <- data.frame(Domain = rs, var = var)
