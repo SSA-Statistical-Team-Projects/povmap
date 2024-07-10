@@ -757,7 +757,7 @@ fh <- function(fixed, vardir, combined_data, domains = NULL, method = "reml",
   }
 
 
-  class(out) <- c("fh", "emdi")
+  class(out) <- c("fh", "povmap")
 
   return(out)
 }

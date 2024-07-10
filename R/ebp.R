@@ -26,18 +26,12 @@
 #' indicates domains in the population data. The variable can be numeric or
 #' a factor but needs to be of the same class as the variable named in
 #' \code{smp_domains}.
-#' @param pop_subdomains a character string containing the name of a variable that 
-#' indicates sub-domains in the population data. When this option is specified, a 
-#' two-fold nested error model is used. Defaults to \code{NULL}
 #' @param smp_data a data frame that needs to comprise all variables named in
 #' \code{fixed} and \code{smp_domains}.
 #' @param smp_domains a character string containing the name of a variable
 #' that indicates domains in the sample data. The variable can be numeric or a
 #' factor but needs to be of the same class as the variable named in
 #' \code{pop_domains}.
-#' #' @param smp_subdomains a character string containing the name of a variable that 
-#' indicates sub-domains in the sample data. When this option is specified, a 
-#' two-fold nested error model is used. Defaults to \code{NULL}
 #' @param threshold a number defining a threshold. Alternatively, a threshold
 #' may be defined as a \code{function} of \code{y} returning a numeric value.
 #' Such a function will be evaluated once for the point estimation and in each
@@ -104,30 +98,19 @@
 #' indicates population weights in the populatation data. If a character string
 #' is provided weighted indicators are estimated using population weights.
 #' The variable has to be numeric. Defaults to \code{NULL}.
-#' @param MSE_pop_weights a character string containing the name of a variable 
-#' that indicates population weights to be used for MSE estimation. When constructing 
-#' the super-population in the parametric bootstrap. This option is useful when 
-#' substituting one observation for many identical observations in the population
-#' data. It can only be used for Mean and Head_count. Defaults to \code{NULL}. 
 #' @param aggregate_to a character string containing the name of a variable from
 #' population data that indicates the target domain level for which the
 #' results are to be displayed. The variable can be numeric or a factor.
 #' Defaults to \code{NULL}.
-#' @param weights_type a character string. Four different methods for survey
-#' weights are available (i) EBP that adjusts the fixed effect coefficient 
-#' and random effects estimates, but not the variance component estimates, for 
-#' sample weights from \cite{Guadarrama et al. (2018)} ("Guadarrama"); 
-#' (ii) EBP that incorporates heteroscedasticity weights in the 
-#' likelihood function, but does not fully account for sample weights when conditioning on the sample, 
-#' using the weighting options of \code{\link{nlme}} from
+#' @param weights_type a character string. Two different methods for survey
+#' weights are available (i) EBP under informative sampling from
+#' \cite{Guadarrama et al. (2018)} ("Guadarrama"); (ii) considering survey
+#' weights by using the weighting options of \code{\link{nlme}} from
 #' \cite{Pinheiro and Bates (2023)} ("nlme"); (iii) considering survey
 #' weights by using the weighting options of \code{\link{nlme}} and use these
 #' weights also to determine the optimal transformation parameter lambda
-#' ("nlme_lambda"); (iv) Hybrid weights that adjust all model parameters to 
-#' account for weights("hybrid"); (iv) hybrid weights that uses 
-#' starting values from a weighted rather than an unweighted mixed effects regression 
-#' ("hybrid2"). Defaults to \code{"Guadarrama"}.
-#' @param benchmark The input depends on the type of benchmarking to be 
+#' ("nlme_lambda"). Defaults to \code{"Guadarrama"}.
+#' @param benchmark The input depends on the type of benchmarking to be
 #' performed.
 #' (i) Benchmarking with a fixed value:
 #' (a) with one value for each indicator: a named vector containing the numeric
@@ -183,18 +166,10 @@
 #' @param Ydump a string specifying the name of a .csv file to save all simulated
 #' values of the dependent value, model predictions, and error terms used for
 #' point estimation.
-#' @param model_parameters a string specifying "fixed" or "variable". If variable is specified,
-#' estimates of model parameters beta and sigma will be drawn from their estimated 
-#' distribution. Otherwise they are assumed fixed. Defaults to "fixed".  
-#' @param vectorize a logical indicating if the monte-carlo simulations should be conducted using
-#' vectorization instead of a loop. Vectorization is faster if there is sufficient memory. 
-#' Defaults to FALSE 
-#' @param indicators a list of strings containing outcome indicators that should be calculated. 
-#' Defaults to NULL, which selects all indicators. 
-#' @return An object of class "ebp", "emdi" that provides estimators for
+#' @return An object of class "ebp", "povmap" that provides estimators for
 #' regional disaggregated indicators and optionally corresponding MSE estimates.
 #' Several generic functions have methods for the returned object. For a full
-#' list and descriptions of the components of objects of class "emdi",
+#' list and descriptions of the components of objects of class "povmap",
 #' see \code{\link{emdiObject}}.
 #' @details For Monte-Carlo approximations and in the parametric bootstrap
 #' approach random number generation is used. Thus, a seed is set by the
@@ -311,25 +286,19 @@
 #' )
 #' }
 #' @export
-#' @importFrom nlme fixed.effects VarCorr lme random.effects varComb varIdent 
+#' @importFrom nlme fixed.effects VarCorr lme random.effects varComb varIdent
 #' varFixed
 #' @importFrom parallelMap parallelStop parallelLapply parallelLibrary
 #' @importFrom parallel detectCores clusterSetRNGStream
 #' @importFrom stats as.formula dnorm lm median model.matrix na.omit optimize
 #' qnorm quantile residuals rnorm sd fitted ave
 #' @importFrom utils flush.console write.table write.csv
-#' @importFrom FNN knnx.index
-#' @importFrom plm plm 
-#' @import data.table
-
 
 ebp <- function(fixed,
                 pop_data,
                 pop_domains,
-                pop_subdomains = NULL, 
                 smp_data,
                 smp_domains,
-                smp_subdomains = NULL, 
                 L = 50,
                 threshold = NULL,
                 transformation = "box.cox",
@@ -346,10 +315,8 @@ ebp <- function(fixed,
                 na.rm = FALSE,
                 weights = NULL,
                 pop_weights = NULL,
-                MSE_pop_weights = NULL, 
                 aggregate_to = NULL,
-                weights_type = NULL,
-                nlme_update_re = FALSE, 
+                weights_type = "Guadarrama",
                 benchmark = NULL,
                 benchmark_type = "ratio",
                 benchmark_level = NULL,
@@ -363,13 +330,9 @@ ebp <- function(fixed,
                 nlme_msmaxiter = 1000, 
                 nlme_returnobject = FALSE, 
                 rescale_weights = FALSE,
-                Ydump = NULL,
-                model_parameters = "fixed",
-                data.table=FALSE,
-                indicators = NULL
+                Ydump = NULL
                 ) {
- 
-   start.time <- Sys.time()
+
   ebp_check1(
     fixed = fixed, pop_data = pop_data, pop_domains = pop_domains,
     smp_data = smp_data, smp_domains = smp_domains, L = L
@@ -377,13 +340,12 @@ ebp <- function(fixed,
 
   ebp_check2(
     threshold = threshold, transformation = transformation,
-    interval = interval, MSE = MSE, boot_type = boot_type, B = B, L= L, 
+    interval = interval, MSE = MSE, boot_type = boot_type, B = B,
     custom_indicator = custom_indicator, cpus = cpus, seed = seed,
     na.rm = na.rm, weights = weights, pop_weights = pop_weights,
     weights_type = weights_type, benchmark = benchmark,
     benchmark_type = benchmark_type, benchmark_level = benchmark_level,
-    benchmark_weights = benchmark_weights,MSE_pop_weights=MSE_pop_weights,
-    smp_subdomains=smp_subdomains, pop_subdomains=pop_subdomains 
+    benchmark_weights = benchmark_weights
   )
 
   # Save function call ---------------------------------------------------------
@@ -402,29 +364,17 @@ ebp <- function(fixed,
     }
   }
 
-  if (is.null(weights_type) & !is.null(weights)) {
-    weights_type <- "Guadarrama"
-  }
-  
   if (is.null(benchmark_weights) & !is.null(weights)) {
-    benchmark_weights <- weights
+    benchmark_weights <- "benchmark_weights"
+    smp_data$benchmark_weights <- smp_data[[weights]]
   }
-  
-  if (L==0 && is.null(indicators)) {
-    #set default indicators to mean and headcount if calculating expected values 
-    #because these are only indicators currently supported
-    indicators <- c("Mean","Head_Count")
-  }
-  
 
   # The function framework_ebp can be found in script framework_ebp.R
   framework <- framework_ebp(
     pop_data = pop_data,
     pop_domains = pop_domains,
-    pop_subdomains = pop_subdomains, 
     smp_data = smp_data,
     smp_domains = smp_domains,
-    smp_subdomains = smp_subdomains, 
     aggregate_to = aggregate_to,
     custom_indicator = custom_indicator,
     fixed = fixed,
@@ -432,7 +382,6 @@ ebp <- function(fixed,
     na.rm = na.rm,
     weights = weights,
     pop_weights = pop_weights,
-    MSE_pop_weights = MSE_pop_weights, 
     weights_type = weights_type,
     benchmark_level = benchmark_level,
     benchmark_weights = benchmark_weights,
@@ -444,10 +393,7 @@ ebp <- function(fixed,
     nlme_mstol=nlme_mstol, 
     nlme_msmaxiter = nlme_msmaxiter, 
     nlme_returnobject = nlme_returnobject, 
-    rescale_weights = rescale_weights,
-    model_parameters = model_parameters,
-    data.table=data.table,
-    indicators=indicators 
+    rescale_weights = rescale_weights
   )
 
 
@@ -543,20 +489,12 @@ ebp <- function(fixed,
       framework = framework[c(
         "N_dom_unobs",
         "N_dom_smp",
-        "N_subdom_unobs",
-        "N_subdom_smp",
         "N_smp",
         "N_pop",
         "smp_domains",
         "smp_data",
-        "smp_subdomains",
         "smp_domains_vec",
-        "smp_subdomains_vec",
-        "pop_domains_vec",
-        "pop_subdomains_vec",
-        "weights",
-        "weights_type",
-        "pop_weights"
+        "pop_domains_vec"
       )],
       transformation = transformation,
       method = "reml",
@@ -576,23 +514,14 @@ ebp <- function(fixed,
       model_par = point_estim$model_par,
       framework = framework[c(
         "N_dom_unobs",
-        "N_subdom_unobs",
         "N_dom_smp",
-        "N_subdom_smp",
         "N_smp",
         "N_pop",
         "smp_domains",
         "smp_data",
-        "smp_subdomains",
         "smp_domains_vec",
-        "smp_subdomains_vec",
         "pop_domains_vec",
-        "pop_subdomains_vec",
-        "weights",
-        "weights_type",
-        "pop_weights",
-        "response",
-        "indicator_names"
+        "response"
       )],
       transformation = transformation,
       method = "reml",
@@ -602,15 +531,9 @@ ebp <- function(fixed,
     )
   }
 
-  
-  end.time <- Sys.time()
-  print(round(end.time - start.time,2))
-  
   if (cpus > 1 && parallel_mode != "socket") {
     RNGkind(RNG_kind[1]) # restoring RNG type
   }
-  class(ebp_out) <- c("ebp", "emdi")
+  class(ebp_out) <- c("ebp", "povmap")
   return(ebp_out)
-
-  
 }

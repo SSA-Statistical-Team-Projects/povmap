@@ -243,7 +243,7 @@ direct <- function(y,
     successful_bootstraps = sucInd
   )
 
-  class(direct_out) <- c( "direct", "emdi")
+  class(direct_out) <- c( "direct", "povmap")
   return(direct_out)
 }
 
