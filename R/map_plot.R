@@ -5,7 +5,7 @@
 #' Function \code{map_plot} creates spatial visualizations of the estimates
 #' obtained by small area estimation methods or direct estimation.
 #'
-#' @param object an object of type emdi, containing the estimates to be
+#' @param object an object of type povmap, containing the estimates to be
 #' visualized.
 #' @param indicator optional character vector that selects which indicators
 #' shall be returned: (i) all calculated indicators ("all");
@@ -17,7 +17,7 @@
 #' defined as argument for model-based approaches (see also \code{\link{ebp}})
 #' and do not appear in groups of indicators even though these might belong to
 #' one of the groups. If the \code{model} argument is of type "fh",
-#' indicator can be set to "all", "Direct", FH", or "FH_Bench" (if emdi
+#' indicator can be set to "all", "Direct", FH", or "FH_Bench" (if povmap
 #' object is overwritten by function benchmark). Defaults to "all".
 #' @param MSE optional logical. If \code{TRUE}, the MSE is also visualized.
 #' Defaults to \code{FALSE}.
@@ -53,8 +53,8 @@
 #' data("eusilcA_pop")
 #' data("eusilcA_smp")
 #'
-#' # Generate emdi object with additional indicators; here via function ebp()
-#' emdi_model <- ebp(
+#' # Generate povmap object with additional indicators; here via function ebp()
+#' povmap_model <- ebp(
 #'   fixed = eqIncome ~ gender + eqsize + cash +
 #'     self_empl + unempl_ben + age_ben + surv_ben + sick_ben +
 #'     dis_ben + rent + fam_allow + house_allow + cap_inv +
@@ -90,12 +90,13 @@
 #' # using the numerical domain identifiers of the shape file
 #'
 #' map_plot(
-#'   object = emdi_model, MSE = FALSE, CV = TRUE,
+#'   object = povmap_model, MSE = FALSE, CV = TRUE,
 #'   map_obj = shape_austria_dis, indicator = c("Mean"),
 #'   map_dom_id = "BKZ", map_tab = map_tab
 #' )
 #' }
 #' @export
+#' @importFrom reshape2 melt
 #' @importFrom ggplot2 aes geom_polygon facet_wrap fortify coord_equal labs
 #' @importFrom ggplot2 theme element_blank guides scale_fill_gradient
 #' @importFrom ggplot2 scale_colour_gradient geom_sf
@@ -299,7 +300,7 @@ get_polygone <- function(values) {
   )
 
   combo <- merge(poly, values, by = "id", all = TRUE, sort = FALSE)
-  reshape2::melt(combo[order(combo$ordering), ], id.vars = c("id", "x", "y", "ordering"))
+  melt(combo[order(combo$ordering), ], id.vars = c("id", "x", "y", "ordering"))
 }
 
 get_scale_points <- function(y, ind, scale_points) {
