@@ -1,7 +1,7 @@
-#' Summarizes an emdiObject
+#' Summarizes a povmap Object
 #'
 #' Additional information about the data and model in small area estimation
-#' methods and components of an emdi object are extracted. The generic function
+#' methods and components of an povmap object are extracted. The generic function
 #' summary has methods for classes "direct", "ebp" and "fh" and the returned
 #' object is suitable for printing  with the \code{print}.
 #' @param object an object of type "direct", "ebp" or "fh", representing point
@@ -20,7 +20,7 @@
 #' Nakagawa S, Schielzeth H (2013). A general and simple method for obtaining
 #' R2 from generalized linear mixed-effects models. Methods in Ecology and
 #' Evolution, 4(2), 133-142.
-#' @seealso \code{\link{emdiObject}}, \code{\link{direct}}, \code{\link{ebp}},
+#' @seealso \code{\link{povmapObject}}, \code{\link{direct}}, \code{\link{ebp}},
 #' \code{\link{fh}}, \code{\link[MuMIn]{r.squaredGLMM}},
 #' \code{\link[moments]{skewness}},
 #' \code{\link[moments]{kurtosis}}, \code{\link[stats]{shapiro.test}}
@@ -33,7 +33,7 @@
 #' data("eusilcA_smp")
 #'
 #' # Example with two additional indicators
-#' emdi_model <- ebp(
+#' povmap_model <- ebp(
 #'   fixed = eqIncome ~ gender + eqsize + cash +
 #'     self_empl + unempl_ben + age_ben + surv_ben + sick_ben + dis_ben + rent +
 #'     fam_allow + house_allow + cap_inv + tax_adj, pop_data = eusilcA_pop,
@@ -52,7 +52,7 @@
 #' )
 #'
 #' # Example 1: Receive first overview
-#' summary(emdi_model)
+#' summary(povmap_model)
 #'
 #'
 #' # Example for models of type fh
@@ -69,7 +69,7 @@
 #'   smp_domains = "Domain"
 #' )
 #'
-#' # Generation of the emdi object
+#' # Generation of the povmap object
 #' fh_std <- fh(
 #'   fixed = Mean ~ cash + self_empl, vardir = "Var_Mean",
 #'   combined_data = combined_data, domains = "Domain",
@@ -79,6 +79,6 @@
 #' # Example 2: Receive first overview
 #' summary(fh_std)
 #' }
-#' @name emdi_summaries
+#' @name povmap_summaries
 #' @order 1
 NULL

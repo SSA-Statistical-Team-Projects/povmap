@@ -23,14 +23,14 @@
 estimators <- function(object, indicator, MSE, CV, ...) UseMethod("estimators")
 
 
-#' Presents Point, MSE and/or CV Estimates of an emdiObject
+#' Presents Point, MSE and/or CV Estimates of an povmapObject
 #'
-#' Method \code{estimators.emdi} presents point and MSE estimates for regional
+#' Method \code{estimators.povmap} presents point and MSE estimates for regional
 #' disaggregated indicators. Coefficients of variation are calculated
 #' using these estimators. This method enables to select for which indicators
 #' the estimates shall be returned. The returned object is suitable for
-#' printing with the \code{print.estimators.emdi} method.
-#' @param object an object of type "emdi", representing point and,
+#' printing with the \code{print.estimators.povmap} method.
+#' @param object an object of type "povmap", representing point and,
 #' if chosen, MSE estimates.
 #' @param indicator optional character vector that selects which indicators
 #' shall be returned: (i) all calculated indicators ("all");
@@ -43,7 +43,7 @@ estimators <- function(object, indicator, MSE, CV, ...) UseMethod("estimators")
 #' defined as argument for model-based approaches (see also \code{\link{ebp}})
 #' and do not appear in groups of indicators even though these might belong to
 #' one of the groups. If the \code{model} argument is of type "fh",
-#' indicator can be set to "all", "Direct", FH", or "FH_Bench" (if emdi
+#' indicator can be set to "all", "Direct", FH", or "FH_Bench" (if povmap
 #' object is overwritten by function benchmark). Defaults to "all".
 #' @param MSE optional logical. If \code{TRUE}, MSE estimates for selected
 #' indicators per domain are added to the data frame of point estimates.
@@ -53,18 +53,18 @@ estimators <- function(object, indicator, MSE, CV, ...) UseMethod("estimators")
 #' estimates. Defaults to \code{FALSE}.
 #' @param ... other parameters that can be passed to function \code{estimators}.
 #' @return
-#' The return of \code{estimators.emdi} is an object of type "estimators.emdi"
+#' The return of \code{estimators.povmap} is an object of type "estimators.povmap"
 #' with point and/or MSE estimates and/or calculated CV's per domain obtained
-#' from \code{emdiObject$ind} and, if chosen, \code{emdiObject$MSE}. These
+#' from \code{povmapObject$ind} and, if chosen, \code{povmapObject$MSE}. These
 #' objects contain two elements, one data frame \code{ind} and a character
 #' naming the indicator or indicator group \code{ind_name}.
-#' @details Objects of class "estimators.emdi" have methods for following
+#' @details Objects of class "estimators.povmap" have methods for following
 #' generic functions: \code{head} and \code{tail} (for default documentation,
 #' see \code{\link[utils]{head}}),  \code{as.matrix} (for default documentation,
 #' see \code{\link[base]{matrix}}), \code{as.data.frame} (for default
 #' documentation, see \code{\link[base]{as.data.frame}}), \code{subset} (for
 #' default documentation, see \code{\link[base]{subset}}).
-#' @seealso \code{\link{emdiObject}}, \code{\link{direct}}, \code{\link{ebp}},
+#' @seealso \code{\link{povmapObject}}, \code{\link{direct}}, \code{\link{ebp}},
 #' \code{\link{fh}}
 #' @examples
 #' \donttest{
@@ -72,8 +72,8 @@ estimators <- function(object, indicator, MSE, CV, ...) UseMethod("estimators")
 #' data("eusilcA_pop")
 #' data("eusilcA_smp")
 #'
-#' # Generate emdi object with additional indicators; here via function ebp()
-#' emdi_model <- ebp(
+#' # Generate povmap object with additional indicators; here via function ebp()
+#' povmap_model <- ebp(
 #'   fixed = eqIncome ~ gender + eqsize + cash +
 #'     self_empl + unempl_ben + age_ben + surv_ben + sick_ben + dis_ben + rent +
 #'     fam_allow + house_allow + cap_inv + tax_adj, pop_data = eusilcA_pop,
@@ -91,7 +91,7 @@ estimators <- function(object, indicator, MSE, CV, ...) UseMethod("estimators")
 #' )
 #'
 #' # Example 1: Choose Gini coefficient, MSE and CV
-#' gini <- estimators(emdi_model, indicator = "Gini", MSE = TRUE, CV = TRUE)
+#' gini <- estimators(povmap_model, indicator = "Gini", MSE = TRUE, CV = TRUE)
 #' head(gini)
 #' tail(gini)
 #' as.data.frame(gini)
@@ -99,12 +99,12 @@ estimators <- function(object, indicator, MSE, CV, ...) UseMethod("estimators")
 #' subset(gini, Domain = "Wien")
 #'
 #' # Example 2: Choose custom indicators without MSE and CV
-#' estimators(emdi_model, indicator = "Custom")
+#' estimators(povmap_model, indicator = "Custom")
 #' }
 #' @rdname estimators
 #' @export
 
-estimators.emdi <- function(object, indicator = "all", MSE = FALSE,
+estimators.povmap <- function(object, indicator = "all", MSE = FALSE,
                             CV = FALSE, ...) {
   estimators_check(
     object = object, indicator = indicator,
@@ -112,11 +112,11 @@ estimators.emdi <- function(object, indicator = "all", MSE = FALSE,
   )
 
   # Only point estimates
-  all_ind <- point_emdi(object = object, indicator = indicator)
+  all_ind <- point_povmap(object = object, indicator = indicator)
   selected <- colnames(all_ind$ind)[-1]
 
   if (MSE == TRUE || CV == TRUE) {
-    all_precisions <- mse_emdi(
+    all_precisions <- mse_povmap(
       object = object, indicator = indicator,
       CV = TRUE
     )
@@ -139,17 +139,17 @@ estimators.emdi <- function(object, indicator = "all", MSE = FALSE,
     combined <- all_ind$ind
   }
 
-  estimators_emdi <- list(ind = combined, ind_name = all_ind$ind_name)
+  estimators_povmap <- list(ind = combined, ind_name = all_ind$ind_name)
 
-  class(estimators_emdi) <- "estimators.emdi"
+  class(estimators_povmap) <- "estimators.povmap"
 
-  return(estimators_emdi)
+  return(estimators_povmap)
 }
 
-# Prints estimators.emdi objects
+# Prints estimators.povmap objects
 #' @export
 
-print.estimators.emdi <- function(x, ...) {
+print.estimators.povmap <- function(x, ...) {
   cat(paste0("Indicator/s: ", x$ind_name, "\n"))
   print(x$ind)
 }
@@ -162,37 +162,37 @@ print.estimators.emdi <- function(x, ...) {
 #' @export
 # CV estimators
 
-head.estimators.emdi <- function(x, n = 6L, addrownums = NULL, ...) {
+head.estimators.povmap <- function(x, n = 6L, addrownums = NULL, ...) {
   head(x$ind, n = n, addrownums = addrownums, ...)
 }
 
 #' @importFrom utils tail
 #' @export
 
-tail.estimators.emdi <- function(x, n = 6L, keepnums = TRUE,
+tail.estimators.povmap <- function(x, n = 6L, keepnums = TRUE,
                                  addrownums = NULL, ...) {
   tail(x$ind, n = n, keepnums = keepnums, ...)
 }
 
 
-# Transforms estimators.emdi objects into a matrix object
+# Transforms estimators.povmap objects into a matrix object
 #' @export
 
-as.matrix.estimators.emdi <- function(x, ...) {
+as.matrix.estimators.povmap <- function(x, ...) {
   as.matrix(x$ind[, -1])
 }
 
-# Transforms estimators.emdi objects into a dataframe object
+# Transforms estimators.povmap objects into a dataframe object
 #' @export
 
-as.data.frame.estimators.emdi <- function(x, ...) {
+as.data.frame.estimators.povmap <- function(x, ...) {
   as.data.frame(x$ind, ...)
 }
 
-# Subsets an estimators.emdi object
+# Subsets an estimators.povmap object
 #' @export
 
-subset.estimators.emdi <- function(x, ...) {
+subset.estimators.povmap <- function(x, ...) {
   x <- as.data.frame(x)
   subset(x = x, ...)
 }
