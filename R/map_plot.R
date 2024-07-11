@@ -69,7 +69,7 @@
 #'
 #' # Create map plot for mean indicator - point and MSE estimates but no CV
 #' map_plot(
-#'   object = emdi_model, MSE = TRUE, CV = FALSE,
+#'   object = povmap_model, MSE = TRUE, CV = FALSE,
 #'   map_obj = shape_austria_dis, indicator = c("Mean"),
 #'   map_dom_id = "PB"
 #' )
@@ -78,11 +78,11 @@
 #' # file
 #'
 #' # First find the right order
-#' dom_ord <- match(shape_austria_dis$PB, emdi_model$ind$Domain)
+#' dom_ord <- match(shape_austria_dis$PB, povmap_model$ind$Domain)
 #'
 #' # Create the mapping table based on the order obtained above
 #' map_tab <- data.frame(
-#'   pop_data_id = emdi_model$ind$Domain[dom_ord],
+#'   pop_data_id = povmap_model$ind$Domain[dom_ord],
 #'   shape_id = shape_austria_dis$BKZ
 #' )
 #'
@@ -237,18 +237,18 @@ plot_real <- function(object,
     if (any(is.na(matcher))) {
       if (all(is.na(matcher))) {
         stop(strwrap(prefix = " ", initial = "",
-                     "Domain of EMDI and Map object do not match. Try using
+                     "Domain of povmap and Map object do not match. Try using
                      map_tab"))
       } else {
         warning(strwrap(prefix = " ", initial = "",
-                        "Not all Domains of EMDI and Map object could be
+                        "Not all Domains of povmap and Map object could be
                         matched. Try using map_tab"))
       }
     }
     map_data <- map_data[matcher, ]
   }
 
-  map_obj <- merge(x = map_obj, y = map_data)
+  map_obj <- merge(x = map_obj, y = map_data,by.x=map_dom_id,by.y="Domain",all.x=T)
 
   indicator <- colnames(map_data)
   indicator <- indicator[!(indicator %in% c("Domain", map_dom_id))]
