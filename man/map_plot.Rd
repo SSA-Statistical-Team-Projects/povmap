@@ -19,7 +19,7 @@ map_plot(
 )
 }
 \arguments{
-\item{object}{an object of type emdi, containing the estimates to be
+\item{object}{an object of type povmap, containing the estimates to be
 visualized.}
 
 \item{indicator}{optional character vector that selects which indicators
@@ -32,7 +32,7 @@ shall be returned: (i) all calculated indicators ("all");
 defined as argument for model-based approaches (see also \code{\link{ebp}})
 and do not appear in groups of indicators even though these might belong to
 one of the groups. If the \code{model} argument is of type "fh",
-indicator can be set to "all", "Direct", FH", or "FH_Bench" (if emdi
+indicator can be set to "all", "Direct", FH", or "FH_Bench" (if povmap
 object is overwritten by function benchmark). Defaults to "all".}
 
 \item{MSE}{optional logical. If \code{TRUE}, the MSE is also visualized.
@@ -82,8 +82,8 @@ obtained by small area estimation methods or direct estimation.
 data("eusilcA_pop")
 data("eusilcA_smp")
 
-# Generate emdi object with additional indicators; here via function ebp()
-emdi_model <- ebp(
+# Generate povmap object with additional indicators; here via function ebp()
+povmap_model <- ebp(
   fixed = eqIncome ~ gender + eqsize + cash +
     self_empl + unempl_ben + age_ben + surv_ben + sick_ben +
     dis_ben + rent + fam_allow + house_allow + cap_inv +
@@ -98,7 +98,7 @@ load_shapeaustria()
 
 # Create map plot for mean indicator - point and MSE estimates but no CV
 map_plot(
-  object = emdi_model, MSE = TRUE, CV = FALSE,
+  object = povmap_model, MSE = TRUE, CV = FALSE,
   map_obj = shape_austria_dis, indicator = c("Mean"),
   map_dom_id = "PB"
 )
@@ -107,11 +107,11 @@ map_plot(
 # file
 
 # First find the right order
-dom_ord <- match(shape_austria_dis$PB, emdi_model$ind$Domain)
+dom_ord <- match(shape_austria_dis$PB, povmap_model$ind$Domain)
 
 # Create the mapping table based on the order obtained above
 map_tab <- data.frame(
-  pop_data_id = emdi_model$ind$Domain[dom_ord],
+  pop_data_id = povmap_model$ind$Domain[dom_ord],
   shape_id = shape_austria_dis$BKZ
 )
 
@@ -119,7 +119,7 @@ map_tab <- data.frame(
 # using the numerical domain identifiers of the shape file
 
 map_plot(
-  object = emdi_model, MSE = FALSE, CV = TRUE,
+  object = povmap_model, MSE = FALSE, CV = TRUE,
   map_obj = shape_austria_dis, indicator = c("Mean"),
   map_dom_id = "BKZ", map_tab = map_tab
 )

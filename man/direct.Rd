@@ -19,7 +19,8 @@ direct(
   totals = NULL,
   custom_indicator = NULL,
   na.rm = FALSE,
-  HT = FALSE
+  HT = FALSE,
+  HTmethod = "Simple"
 )
 }
 \arguments{
@@ -84,6 +85,13 @@ might not be used in the additional function. Defaults to \code{NULL}.}
 from the sample data. Defaults to \code{FALSE}.}
 
 \item{HT}{if TRUE use Horvitz Thompson estimator.}
+
+\item{HTmethod}{a string indicating the method to be used to estimate the variance 
+when HT=TRUE. Options are "Simple","Hajek","Deville2","Deville3","Brewer1","Rosen", 
+and "FixedPoint". Defaults to "Simple", which is taken from the R \pkg{SAE} package
+and assumes that units are sampled independently and that the population size equals the sum
+of the sampling weights. Other options are taken from the "class 2" options in the 
+\pkg{UPSvarApprox} package and documented there.}
 }
 \value{
 An object of class "direct", "emdi" that provides direct estimators
@@ -95,8 +103,8 @@ of class "emdi", see \code{\link{emdiObject}}.
 \description{
 Function \code{direct} estimates indicators only based on sample information.
 The variance is estimated via a naive or calibrated bootstrap. The estimation
-is adapted from the estimation of direct indicators in package
-\pkg{laeken}.
+is adapted from the estimation of direct indicators in package 
+\pkg{laeken},\pkg{SAE}, and \pkg{UPSvarApprox}.
 }
 \details{
 The set of predefined indicators includes the mean, median, four
