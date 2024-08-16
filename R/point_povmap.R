@@ -1,4 +1,4 @@
-point_emdi <- function(object, indicator = "all") {
+point_povmap <- function(object, indicator = "all") {
   if (is.null(object$ind)) {
     stop(strwrap(prefix = " ", initial = "",
                  "No estimates in object: method point not applicable"))
