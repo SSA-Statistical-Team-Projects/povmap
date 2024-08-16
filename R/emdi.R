@@ -18,7 +18,7 @@
 #' @details
 #' The three estimation functions are called \code{\link{direct}},
 #' \code{\link{ebp}} and \code{\link{fh}}. For all functions, several methods
-#' are available as \code{\link{estimators.emdi}} and
+#' are available as \code{\link{estimators.povmap}} and
 #' \code{\link{emdi_summaries}}. For a full list, please see
 #' \code{\link{emdiObject}}. Furthermore, functions \code{\link{map_plot}} and
 #' \code{\link{write.excel}} help to visualize and export results. An overview
