@@ -47,7 +47,7 @@
 #' @return Creates the plots demanded, and, if selected, a fortified data.frame
 #' containing the mapdata and chosen indicators.
 #' @seealso \code{\link{direct}}, \code{\link{ebp}}, \code{\link{fh}},
-#' \code{\link{emdiObject}}
+#' \code{\link{povmapObject}}
 #' @examples
 #' \donttest{
 #' data("eusilcA_pop")
@@ -111,7 +111,9 @@ map_plot <- function(object,
                      color = c("white", "red4"),
                      scale_points = NULL,
                      guide = "colourbar",
-                     return_data = FALSE) {
+                     return_data = FALSE,
+                     save_file = NULL,
+                     save_format = "pdf") {
   if (is.null(map_obj)) {
     message(strwrap(prefix = " ", initial = "", "No Map Object has been
                     provided. An artificial polygon is used for
@@ -141,7 +143,9 @@ map_plot <- function(object,
       col = color,
       scale_points = scale_points,
       return_data = return_data,
-      guide = guide
+      guide = guide,
+      save_format = save_format, 
+      save_file = save_file
     )
   }
 }
@@ -189,7 +193,9 @@ plot_real <- function(object,
                       col = col,
                       scale_points = NULL,
                       return_data = FALSE,
-                      guide = NULL) {
+                      guide = NULL,
+                      save_file = NULL,
+                      save_format = "pdf") {
   if (!is.null(map_obj) && is.null(map_dom_id)) {
     stop("No Domain ID for the map object is given")
   }
@@ -242,7 +248,7 @@ plot_real <- function(object,
       } else {
         warning(strwrap(prefix = " ", initial = "",
                         "Not all Domains of povmap and Map object could be
-                        matched. Try using map_tab"))
+                        matched."))
       }
     }
     map_data <- map_data[matcher, ]
@@ -272,6 +278,10 @@ plot_real <- function(object,
             axis.ticks = element_blank(), axis.text = element_blank(),
             legend.title = element_blank()
           ))
+    if (!is.null(save_file)) {
+    ggsave(file=paste(save_file,indicator,".",save_format),device=save_format)
+    }
+           
     if (!ind == tail(indicator, 1)) {
       cat("Press [enter] to continue")
       line <- readline()
