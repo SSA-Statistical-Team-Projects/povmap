@@ -46,6 +46,10 @@
 #' Defaults to \code{FALSE}.
 #' @return Creates the plots demanded, and, if selected, a fortified data.frame
 #' containing the mapdata and chosen indicators.
+#' @save_file a character string that specified the prefix of the file name to save the plot. 
+#' The suffix is the indicator. 
+#' @save_format a character string that is passed to ggsave's device argument to determine the 
+#' format that the plot is saved in. Defaults to "pdf"
 #' @seealso \code{\link{direct}}, \code{\link{ebp}}, \code{\link{fh}},
 #' \code{\link{povmapObject}}
 #' @examples
