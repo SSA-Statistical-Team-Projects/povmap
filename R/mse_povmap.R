@@ -1,4 +1,4 @@
-mse_emdi <- function(object, indicator = "all", CV = FALSE) {
+mse_povmap <- function(object, indicator = "all", CV = FALSE) {
   if (is.null(object$MSE) && CV == TRUE) {
     stop(strwrap(prefix = " ", initial = "",
                  "No MSE estimates in emdi object: arguments MSE and CV have to
