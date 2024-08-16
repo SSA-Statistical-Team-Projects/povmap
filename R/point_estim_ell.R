@@ -200,7 +200,7 @@ alphamodel <- function(residuals, alpha,framework) {
     A <- 1.05*max(eps_squared)
     framework$smp_data$transformed_eps_squared <- log(eps_squared/(A-eps_squared))
     framework$smp_data$transformed_eps_squared[eps_squared==0] <- 0
-    model <- as.formula(paste0("transformed_eps_squared ",alpha))
+    model <- reformulate(as.character(alpha[-1]),"transformed_eps_squared")
     
     alpha_model<-lm(model,data=framework$smp_data,weights=weights)
     
