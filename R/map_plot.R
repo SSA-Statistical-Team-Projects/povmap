@@ -275,7 +275,7 @@ plot_real <- function(object,
 
     scale_point <- get_scale_points(map_obj2[ind][, 1], ind, scale_points)
 
-    if is.null(viridis_option) {
+    if (is.null(viridis_option)) {
     print(ggplot(map_obj,
                  aes(fill = get(ind))) +
           geom_sf(color = "azure3") +
