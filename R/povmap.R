@@ -1,6 +1,6 @@
 #' A package for estimating and mapping disaggregated indicators
 #'
-#' The package \pkg{emdi} supports estimating and mapping regional
+#' The package \pkg{povmap} supports estimating and mapping regional
 #' disaggregated indicators. For estimating these indicators, direct estimation,
 #' the unit-level Empirical Best Prediction approach by
 #' \cite{Molina and Rao (2010)}, the extension for data under informative
@@ -19,11 +19,11 @@
 #' The three estimation functions are called \code{\link{direct}},
 #' \code{\link{ebp}} and \code{\link{fh}}. For all functions, several methods
 #' are available as \code{\link{estimators.povmap}} and
-#' \code{\link{emdi_summaries}}. For a full list, please see
-#' \code{\link{emdiObject}}. Furthermore, functions \code{\link{map_plot}} and
+#' \code{\link{povmap_summaries}}. For a full list, please see
+#' \code{\link{povmapObject}}. Furthermore, functions \code{\link{map_plot}} and
 #' \code{\link{write.excel}} help to visualize and export results. An overview
 #' of all currently provided functions can be requested by
-#' \code{library(help=emdi)}.
+#' \code{library(help=povmap)}.
 #'
 #' @references
 #' Battese, G.E., Harter, R.M. and Fuller, W.A. (1988). An Error-Components
@@ -34,7 +34,7 @@
 #' An application of James-Stein procedures to census data, Journal of the
 #' American Statistical Association 74(366), 269-277. \cr \cr
 #' Kreutzmann, A., Pannier, S., Rojas-Perilla, N., Schmid, T., Templ, M.
-#' and Tzavidis, N. (2019). The R Package emdi for Estimating and
+#' and Tzavidis, N. (2019). The R Package povmap for Estimating and
 #' Mapping Regionally Disaggregated Indicators, Journal of Statistical Software,
 #' Vol. 91, No. 7, 1--33, <doi:10.18637/jss.v091.i07> \cr \cr
 #' Molina, I. and Rao, J.N.K. (2010). Small area estimation of poverty
@@ -43,5 +43,5 @@
 #' general parameters under complex sampling designs. Computational Statistics &
 #' Data Analysis, Vol. 121, 20-40.
 #' _PACKAGE
-#' @name emdi
+#' @name povmap
 NULL
