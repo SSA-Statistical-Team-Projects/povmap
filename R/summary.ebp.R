@@ -1,16 +1,16 @@
-# Summarizes an emdi ebp Object
+# Summarizes an povmap ebp Object
 
 #' @export
 #' @importFrom moments skewness kurtosis
 #' @importFrom MuMIn r.squaredGLMM
-#' @rdname emdi_summaries
+#' @rdname povmap_summaries
 
 # importFrom nlme predict.lme -- old code 
 
 summary.ebp <- function(object, ...) {
   throw_class_error(object, "ebp")
 
-  call_emdi <- object$call
+  call_povmap <- object$call
 
   N_dom_unobs <- object$framework$N_dom_unobs
   N_dom_smp <- object$framework$N_dom_smp
@@ -70,7 +70,7 @@ summary.ebp <- function(object, ...) {
   } else if (object$transformation == "no") {
     transform_method <- NULL
   }
-  # traditionally EMDI uses this definition of residuals 
+  # traditionally povmap uses this definition of residuals 
   # but it doesn't account for weights properly when using Guadarrama weights or hybrid weights 
   #residuals <- residuals(object$model level = 0,  type = "pearson")
   #raneff <- 
@@ -249,7 +249,7 @@ summary.ebp <- function(object, ...) {
   
   
 
-  sum_emdi <- list(
+  sum_povmap <- list(
     out_of_smp = N_dom_unobs,
     in_smp = N_dom_smp,
     out_of_smp_sub = N_subdom_unobs, 
@@ -264,11 +264,11 @@ summary.ebp <- function(object, ...) {
     shrinkage = shrinkage,  
     icc = icc_mixed,
     coeff_determ = coeff_det,
-    call = call_emdi
+    call = call_povmap
   )
 
-  class(sum_emdi) <- c("summary.ebp", "emdi")
-  sum_emdi
+  class(sum_povmap) <- c("summary.ebp", "povmap")
+  sum_povmap
 }
 
 

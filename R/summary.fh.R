@@ -1,9 +1,9 @@
-# Summarizes an emdi fh Object
+# Summarizes a povmap fh Object
 
 #' @export
 #' @importFrom moments skewness kurtosis
 #' @importFrom MuMIn r.squaredGLMM
-#' @rdname emdi_summaries
+#' @rdname povmap_summaries
 
 summary.fh <- function(object, ...) {
   throw_class_error(object, "fh")
@@ -68,7 +68,7 @@ summary.fh <- function(object, ...) {
     )
   }
 
-  sum_emdi <- list(
+  sum_povmap <- list(
     out_of_smp = object$framework$N_dom_unobs,
     in_smp = object$framework$N_dom_smp,
     size_smp = NULL,
@@ -84,8 +84,8 @@ summary.fh <- function(object, ...) {
     call = object$call
   )
 
-  class(sum_emdi) <- c("summary.fh", "emdi")
-  sum_emdi
+  class(sum_povmap) <- c("summary.fh", "povmap")
+  sum_povmap
 }
 
 

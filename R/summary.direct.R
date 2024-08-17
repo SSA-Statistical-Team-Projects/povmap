@@ -1,14 +1,14 @@
-# Summarizes an emdi Direct Object
+# Summarizes an povmap Direct Object
 
 #' @export
 #' @importFrom moments skewness kurtosis
 #' @importFrom MuMIn r.squaredGLMM
-#' @rdname emdi_summaries
+#' @rdname povmap_summaries
 
 summary.direct <- function(object, ...) {
   throw_class_error(object, "direct")
 
-  call_emdi <- object$call
+  call_povmap <- object$call
 
   N_dom_smp <- object$framework$N_dom_smp
 
@@ -19,7 +19,7 @@ summary.direct <- function(object, ...) {
   smp_size_dom <-
     rbind(Sample_domains = summary(as.numeric(smp_size_tab)))
 
-  sum_emdi <- list(
+  sum_povmap <- list(
     out_of_smp = NULL,
     in_smp = N_dom_smp,
     size_smp = smp_size,
@@ -31,11 +31,11 @@ summary.direct <- function(object, ...) {
     icc = NULL,
     coeff_determ = NULL,
     model = NULL,
-    call = call_emdi
+    call = call_povmap
   )
 
-  class(sum_emdi) <- c("summary.direct", "emdi")
-  sum_emdi
+  class(sum_povmap) <- c("summary.direct", "povmap")
+  sum_povmap
 }
 
 

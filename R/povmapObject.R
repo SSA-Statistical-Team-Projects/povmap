@@ -8,7 +8,7 @@
 #' methods for various generic functions. See Details for more information.
 #'
 #' @return
-#' The following components are always included in an emdi object but not
+#' The following components are always included in a povmap object but not
 #' always filled and with different components depending on the estimation
 #' approach:
 #' \item{\code{call}}{the function call that produced the object.}
@@ -42,29 +42,29 @@
 #' bootstraps for each combination. For non-robust spatial Fay-Herriot, string
 #' with number of successful bootstraps. Not filled for other models.}
 #' @details
-#' Objects of class "emdi" have following methods:
-#' \code{\link[emdi]{compare_pred}}, \code{\link[emdi]{estimators}},
-#' \code{\link[emdi]{plot.emdi}}, \code{\link[emdi]{predict.emdi}},
-#' \code{\link[emdi]{qqnorm.emdi}}\cr \cr
+#' Objects of class "povmap" have following methods:
+#' \code{\link[povmap]{compare_pred}}, \code{\link[povmap]{estimators}},
+#' \code{\link[povmap]{plot.povmap}}, \code{\link[povmap]{predict.povmap}},
+#' \code{\link[povmap]{qqnorm.povmap}}\cr \cr
 #' Objects of class "direct", "ebp" and "fh" have methods for following generic
-#' functions: \code{\link[emdi]{compare_plot}}, \code{\link[emdi]{getData}},
-#' \code{\link[emdi]{getGroups}}, \code{\link[emdi]{getGroupsFormula}},
-#' \code{\link[emdi]{getResponse}},
-#' \code{plot} (for documentation, see \code{\link[emdi]{plot.emdi}}),
+#' functions: \code{\link[povmap]{compare_plot}}, \code{\link[povmap]{getData}},
+#' \code{\link[povmap]{getGroups}}, \code{\link[povmap]{getGroupsFormula}},
+#' \code{\link[povmap]{getResponse}},
+#' \code{plot} (for documentation, see \code{\link[povmap]{plot.povmap}}),
 #' \code{print}, \code{qqnorm} (for documentation, see
-#' \code{\link[emdi]{qqnorm.emdi}}) and \code{summary} (for documentation,
-#' see \code{\link[emdi]{emdi_summaries}}).\cr \cr
+#' \code{\link[povmap]{qqnorm.povmap}}) and \code{summary} (for documentation,
+#' see \code{\link[povmap]{povmap_summaries}}).\cr \cr
 #' Objects of class "ebp" and "fh" additionally have methods for following
 #' generic functions: \code{coef} (for default documentation,
 #' see \code{\link[stats]{coef}}), \code{confint} (for default documentation,
 #' see \code{\link[stats]{confint}}), \code{family} (for default
 #' documentation, see \code{\link[stats]{family}}), \code{fitted} (for default
 #' documentation, see \code{\link[stats]{fitted.values}}),
-#' \code{\link[emdi]{fixef}}, \code{formula} (for default documentation, see
-#' \code{\link[stats]{formula}}), \code{\link[emdi]{getVarCov}},
-#' \code{\link[emdi]{intervals}}, \code{logLik} (for default documentation,
+#' \code{\link[povmap]{fixef}}, \code{formula} (for default documentation, see
+#' \code{\link[stats]{formula}}), \code{\link[povmap]{getVarCov}},
+#' \code{\link[povmap]{intervals}}, \code{logLik} (for default documentation,
 #' see \code{\link[stats]{logLik}}), \code{nobs} (for default documentation,
-#' see \code{\link[stats]{nobs}}), \code{\link[emdi]{ranef}}, \code{residuals}
+#' see \code{\link[stats]{nobs}}), \code{\link[povmap]{ranef}}, \code{residuals}
 #' (for default documentation, see \code{\link[stats]{residuals}}), \code{terms}
 #' (for default documentation, see \code{\link[stats]{terms}}), \code{vcov} (for
 #' default documentation, see \code{\link[stats]{vcov}}) \cr \cr
@@ -72,9 +72,9 @@
 #' functions: \code{sigma} (for default documentation, see
 #' \code{\link[stats]{sigma}})\cr \cr
 #' Objects of class "fh" have additionally methods for following generic
-#' functions: \code{\link[emdi]{compare}}, \code{extractAIC} (for default
+#' functions: \code{\link[povmap]{compare}}, \code{extractAIC} (for default
 #' documentation, see \code{\link[stats]{extractAIC}}) and
-#' \code{\link[emdi]{step}}.
+#' \code{\link[povmap]{step}}.
 #' @references
 #' Alfons, A. and Templ, M. (2013). Estimation of Social Exclusion Indicators
 #' from Complex Surveys: The \R Package \pkg{laeken}. Journal of
@@ -87,5 +87,5 @@
 #' @seealso \code{\link{direct}}, \code{\link{ebp}}, \code{\link{fh}},
 #' \code{ \link[nlme]{lme}}, \code{ \link[nlme]{lmeObject}}
 #'
-#' @name emdiObject
+#' @name povmapObject
 NULL
