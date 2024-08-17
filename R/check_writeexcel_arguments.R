@@ -1,6 +1,6 @@
 writeexcel_check <- function(object, file, split) {
-  if (!inherits(object, "emdi")) {
-    stop("First object needs to be of class emdi.")
+  if (!inherits(object, "povmap")) {
+    stop("First object needs to be of class povmap.")
   }
   if (!(inherits(split, "logical") && length(split) == 1)) {
     stop(strwrap(prefix = " ", initial = "",
@@ -14,8 +14,8 @@ writeexcel_check <- function(object, file, split) {
 }
 
 writeods_check <- function(object, file, split) {
-  if (!inherits(object, "emdi")) {
-    stop("First object needs to be of class emdi.")
+  if (!inherits(object, "povmap")) {
+    stop("First object needs to be of class povmap.")
   }
   if (!(inherits(split, "logical") && length(split) == 1)) {
     stop(strwrap(prefix = " ", initial = "",
