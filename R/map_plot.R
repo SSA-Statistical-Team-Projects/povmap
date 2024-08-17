@@ -232,6 +232,7 @@ plot_real <- function(object,
         warning(strwrap(prefix = " ", initial = "",
                          "Not all Domains of map_tab and Map objects could be
                          matched. Check map_tab"))
+        #missing_domains <- TRUE
       }
     }
     map_data <- map_data[matcher, ]
@@ -252,6 +253,7 @@ plot_real <- function(object,
       } else {
         warning(strwrap(prefix = " ", initial = "",
                         "Not all Domains of povmap and Map objects could be matched."))
+        #missing_domains <- TRUE 
       }
     }
     map_data <- map_data[matcher, ]
@@ -282,7 +284,7 @@ plot_real <- function(object,
             legend.title = element_blank()
           ))
     if (!is.null(save_file)) {
-    ggplot2:::ggsave(file=paste0(save_file,"_",indicator,".",save_format),device=save_format)
+    ggplot2:::ggsave(file=paste0(save_file,"_",ind,".",save_format),device=save_format)
     }
            
     if (!ind == tail(indicator, 1)) {
