@@ -106,6 +106,7 @@
 #' @importFrom ggplot2 aes geom_polygon facet_wrap fortify coord_equal labs
 #' @importFrom ggplot2 theme element_blank guides scale_fill_gradient
 #' @importFrom ggplot2 scale_colour_gradient geom_sf
+#' @importFrom viridis scale_fill_viridis
 
 map_plot <- function(object,
                      indicator = "all",
