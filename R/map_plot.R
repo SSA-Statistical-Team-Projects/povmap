@@ -199,6 +199,7 @@ plot_real <- function(object,
                       map_dom_id = NULL,
                       map_tab = NULL,
                       col = col,
+                      viridis_option = NULL, 
                       scale_points = NULL,
                       return_data = FALSE,
                       guide = NULL,
@@ -274,7 +275,7 @@ plot_real <- function(object,
 
     scale_point <- get_scale_points(map_obj2[ind][, 1], ind, scale_points)
 
-    if (viridis_option==NULL) {
+    if is.null(viridis_option) {
     print(ggplot(map_obj,
                  aes(fill = get(ind))) +
           geom_sf(color = "azure3") +
