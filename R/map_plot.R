@@ -34,6 +34,8 @@
 #' in both objects (`map_obj` and `object`) differ.
 #' @param color a \code{vector} of length 2 defining the lowest and highest
 #' color in the plots.
+#' @param viridis_option a one-character string between "A" and "H" requesting a 
+#' viridis palette with the specified option. Defaults to NULL 
 #' @param scale_points a structure defining the lowest and the highest
 #' value of the colorscale. If a numeric vector of length two is given, this
 #' scale will be used for every plot.
@@ -113,6 +115,7 @@ map_plot <- function(object,
                      map_dom_id = NULL,
                      map_tab = NULL,
                      color = c("white", "red4"),
+                     viridis_option = NULL, 
                      scale_points = NULL,
                      guide = "colourbar",
                      return_data = FALSE,
@@ -145,6 +148,7 @@ map_plot <- function(object,
       map_dom_id = map_dom_id,
       map_tab = map_tab,
       col = color,
+      viridis_option = viridis_option, 
       scale_points = scale_points,
       return_data = return_data,
       guide = guide,
@@ -270,6 +274,7 @@ plot_real <- function(object,
 
     scale_point <- get_scale_points(map_obj2[ind][, 1], ind, scale_points)
 
+    if (viridis_option==NULL) {
     print(ggplot(map_obj,
                  aes(fill = get(ind))) +
           geom_sf(color = "azure3") +
@@ -283,6 +288,21 @@ plot_real <- function(object,
             axis.ticks = element_blank(), axis.text = element_blank(),
             legend.title = element_blank()
           ))
+    }
+    else {
+      print(ggplot(map_obj,
+                   aes(fill = get(ind))) +
+              geom_sf(color = "azure3") +
+              labs(x = "", y = "", fill = ind) +
+              ggtitle(gsub(pattern = "_", replacement = " ", x = ind)) +
+              scale_fill_viridis(option=viridis_option) +
+              theme(
+                axis.ticks = element_blank(), axis.text = element_blank(),
+                legend.title = element_blank()
+              ))
+    }
+    
+    
     if (!is.null(save_file)) {
     ggplot2:::ggsave(file=paste0(save_file,"_",ind,".",save_format),device=save_format)
     }
