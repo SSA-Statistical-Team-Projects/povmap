@@ -1,15 +1,15 @@
 mse_povmap <- function(object, indicator = "all", CV = FALSE) {
   if (is.null(object$MSE) && CV == TRUE) {
     stop(strwrap(prefix = " ", initial = "",
-                 "No MSE estimates in emdi object: arguments MSE and CV have to
-                 be FALSE or a new emdi object with variance/MSE needs to be
+                 "No MSE estimates in povmap object: arguments MSE and CV have to
+                 be FALSE or a new povmap object with variance/MSE needs to be
                  generated."))
   }
   if ((ncol(object$ind) == 11) && any(indicator == "Custom" |
     indicator == "custom")) {
     stop(strwrap(prefix = " ", initial = "",
                  "No individual indicators are defined. Either select other
-                 indicators or define custom indicators and generate a new emdi
+                 indicators or define custom indicators and generate a new povmap
                  object. See also help(ebp)."))
   }
 
@@ -70,12 +70,12 @@ mse_povmap <- function(object, indicator = "all", CV = FALSE) {
   }
 
   if (CV == FALSE) {
-    mse_emdi <- list(ind = ind, ind_name = ind_name)
+    mse_povmap <- list(ind = ind, ind_name = ind_name)
   } else {
-    mse_emdi <- list(ind = ind, ind_cv = ind_cv, ind_name = ind_name)
+    mse_povmap <- list(ind = ind, ind_cv = ind_cv, ind_name = ind_name)
   }
 
-  class(mse_emdi) <- "mse.emdi"
+  class(mse_povmap) <- "mse.povmap"
 
-  return(mse_emdi)
+  return(mse_povmap)
 }
