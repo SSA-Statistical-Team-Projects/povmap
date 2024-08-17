@@ -8,8 +8,10 @@ ebp(
   fixed,
   pop_data,
   pop_domains,
+  pop_subdomains = NULL,
   smp_data,
   smp_domains,
+  smp_subdomains = NULL,
   L = 50,
   threshold = NULL,
   transformation = "box.cox",
@@ -24,8 +26,10 @@ ebp(
   na.rm = FALSE,
   weights = NULL,
   pop_weights = NULL,
+  MSE_pop_weights = NULL,
   aggregate_to = NULL,
-  weights_type = "Guadarrama",
+  weights_type = NULL,
+  nlme_update_re = FALSE,
   benchmark = NULL,
   benchmark_type = "ratio",
   benchmark_level = NULL,
@@ -39,7 +43,10 @@ ebp(
   nlme_msmaxiter = 1000,
   nlme_returnobject = FALSE,
   rescale_weights = FALSE,
-  Ydump = NULL
+  Ydump = NULL,
+  model_parameters = "fixed",
+  data.table = FALSE,
+  indicators = NULL
 )
 }
 \arguments{
@@ -58,13 +65,20 @@ indicates domains in the population data. The variable can be numeric or
 a factor but needs to be of the same class as the variable named in
 \code{smp_domains}.}
 
+\item{pop_subdomains}{a character string containing the name of a variable that 
+indicates sub-domains in the population data. When this option is specified, a 
+two-fold nested error model is used. Defaults to \code{NULL}}
+
 \item{smp_data}{a data frame that needs to comprise all variables named in
 \code{fixed} and \code{smp_domains}.}
 
 \item{smp_domains}{a character string containing the name of a variable
 that indicates domains in the sample data. The variable can be numeric or a
 factor but needs to be of the same class as the variable named in
-\code{pop_domains}.}
+\code{pop_domains}.
+#' @param smp_subdomains a character string containing the name of a variable that 
+indicates sub-domains in the sample data. When this option is specified, a 
+two-fold nested error model is used. Defaults to \code{NULL}}
 
 \item{L}{a number determining the number of Monte-Carlo simulations that
 must be at least 1. Defaults to 50. For practical applications, values
@@ -146,21 +160,33 @@ indicates population weights in the populatation data. If a character string
 is provided weighted indicators are estimated using population weights.
 The variable has to be numeric. Defaults to \code{NULL}.}
 
+\item{MSE_pop_weights}{a character string containing the name of a variable 
+that indicates population weights to be used for MSE estimation. When constructing 
+the super-population in the parametric bootstrap. This option is useful when 
+substituting one observation for many identical observations in the population
+data. It can only be used for Mean and Head_count. Defaults to \code{NULL}.}
+
 \item{aggregate_to}{a character string containing the name of a variable from
 population data that indicates the target domain level for which the
 results are to be displayed. The variable can be numeric or a factor.
 Defaults to \code{NULL}.}
 
-\item{weights_type}{a character string. Two different methods for survey
-weights are available (i) EBP under informative sampling from
-\cite{Guadarrama et al. (2018)} ("Guadarrama"); (ii) considering survey
-weights by using the weighting options of \code{\link{nlme}} from
+\item{weights_type}{a character string. Four different methods for survey
+weights are available (i) EBP that adjusts the fixed effect coefficient 
+and random effects estimates, but not the variance component estimates, for 
+sample weights from \cite{Guadarrama et al. (2018)} ("Guadarrama"); 
+(ii) EBP that incorporates heteroscedasticity weights in the 
+likelihood function, but does not fully account for sample weights when conditioning on the sample, 
+using the weighting options of \code{\link{nlme}} from
 \cite{Pinheiro and Bates (2023)} ("nlme"); (iii) considering survey
 weights by using the weighting options of \code{\link{nlme}} and use these
 weights also to determine the optimal transformation parameter lambda
-("nlme_lambda"). Defaults to \code{"Guadarrama"}.}
+("nlme_lambda"); (iv) Hybrid weights that adjust all model parameters to 
+account for weights("hybrid"); (iv) hybrid weights that uses 
+starting values from a weighted rather than an unweighted mixed effects regression 
+("hybrid2"). Defaults to \code{"Guadarrama"}.}
 
-\item{benchmark}{The input depends on the type of benchmarking to be
+\item{benchmark}{The input depends on the type of benchmarking to be 
 performed.
 (i) Benchmarking with a fixed value:
 (a) with one value for each indicator: a named vector containing the numeric
@@ -229,13 +255,24 @@ within each domain.}
 \item{Ydump}{a string specifying the name of a .csv file to save all simulated
 values of the dependent value, model predictions, and error terms used for
 point estimation.}
+
+\item{model_parameters}{a string specifying "fixed" or "variable". If variable is specified,
+estimates of model parameters beta and sigma will be drawn from their estimated 
+distribution. Otherwise they are assumed fixed. Defaults to "fixed".}
+
+\item{indicators}{a list of strings containing outcome indicators that should be calculated. 
+Defaults to NULL, which selects all indicators.}
+
+\item{vectorize}{a logical indicating if the monte-carlo simulations should be conducted using
+vectorization instead of a loop. Vectorization is faster if there is sufficient memory. 
+Defaults to FALSE}
 }
 \value{
 An object of class "ebp", "povmap" that provides estimators for
 regional disaggregated indicators and optionally corresponding MSE estimates.
 Several generic functions have methods for the returned object. For a full
 list and descriptions of the components of objects of class "povmap",
-see \code{\link{emdiObject}}.
+see \code{\link{povmapObject}}.
 }
 \description{
 Function \code{ebp} estimates indicators using the Empirical Best Prediction
@@ -274,7 +311,7 @@ data("eusilcA_pop")
 data("eusilcA_smp")
 
 # Example 1: With default setting but na.rm=TRUE
-emdi_model <- ebp(
+povmap_model <- ebp(
   fixed = eqIncome ~ gender + eqsize + cash + self_empl +
     unempl_ben + age_ben + surv_ben + sick_ben + dis_ben + rent + fam_allow +
     house_allow + cap_inv + tax_adj, pop_data = eusilcA_pop,
@@ -286,7 +323,7 @@ emdi_model <- ebp(
 # Example 2: With MSE, two additional indicators and function as threshold -
 # Please note that the example runs for several minutes. For a short check
 # change L and B to lower values.
-emdi_model <- ebp(
+povmap_model <- ebp(
   fixed = eqIncome ~ gender + eqsize + cash +
     self_empl + unempl_ben + age_ben + surv_ben + sick_ben + dis_ben + rent +
     fam_allow + house_allow + cap_inv + tax_adj, pop_data = eusilcA_pop,
@@ -306,7 +343,7 @@ emdi_model <- ebp(
 )
 
 # Example 3: With default setting but na.rm=TRUE under informative sampling.
-emdi_model <- ebp(
+povmap_model <- ebp(
   fixed = eqIncome ~ gender + eqsize + cash + self_empl +
     unempl_ben + age_ben + surv_ben + sick_ben + dis_ben + rent + fam_allow +
     house_allow + cap_inv + tax_adj, pop_data = eusilcA_pop,
@@ -316,7 +353,7 @@ emdi_model <- ebp(
 
 # Example 4: With default setting and random effect on the district level
 # while the output is at state level
-emdi_model <- ebp(
+povmap_model <- ebp(
   fixed = eqIncome ~ gender + eqsize + cash + self_empl +
     unempl_ben + age_ben + surv_ben + sick_ben + dis_ben + rent + fam_allow +
     house_allow + cap_inv + tax_adj, pop_data = eusilcA_pop,
@@ -327,7 +364,7 @@ emdi_model <- ebp(
 # Example 5: With default setting using pop_weights to get weighted
 # indicators according to equivalized household size and an using an
 # custom_indicator using pop_weights
-emdi_model <- ebp(
+povmap_model <- ebp(
   fixed = eqIncome ~ gender + eqsize + cash + self_empl +
     unempl_ben + age_ben + surv_ben + sick_ben + dis_ben + rent + fam_allow +
     house_allow + cap_inv + tax_adj, pop_data = eusilcA_pop,
@@ -368,7 +405,7 @@ prediction approach to small area estimation using survey weights. The
 Canadian Journal of Statistics. Vol. 30, No. 3, 431–439.
 }
 \seealso{
-\code{\link{emdiObject}}, \code{\link[nlme]{lme}},
-\code{\link{estimators.emdi}},  \code{\link{plot.emdi}},
-\code{\link{emdi_summaries}}
+\code{\link{povmapObject}}, \code{\link[nlme]{lme}},
+\code{\link{estimators.povmap}},  \code{\link{plot.povmap}},
+\code{\link{povmap_summaries}}
 }
