@@ -279,18 +279,29 @@ plot_real <- function(object,
 
     if (is.null(viridis_option)) {
     print(ggplot(map_obj,
-                 aes(fill = get(ind))) +
+                 aes(fill = get(ind), colour="")) +
           geom_sf(color = "azure3") +
           labs(x = "", y = "", fill = ind) +
           ggtitle(gsub(pattern = "_", replacement = " ", x = ind)) +
           scale_fill_gradient(
             low = col[1], high = col[2],
-            limits = scale_point, guide = guide
+            limits = scale_point, guide = guide,
+            na.value = "transparent"
           ) +
           theme(
             axis.ticks = element_blank(), axis.text = element_blank(),
             legend.title = element_blank()
           ))
+        
+      p2 = ggplot() +
+        geom_polygon(data=map, aes(long, lat, group=group, fill=value, colour="")) +
+        scale_fill_gradient2(low="brown3", mid="cornsilk1", high="turquoise4",
+                             limits=c(-50, 50), na.value="black") +
+        scale_colour_manual(values=NA) +              
+        guides(colour=guide_legend("No data", override.aes=list(colour="black")))
+      
+      
+  
     }
     else {
       print(ggplot(map_obj,
@@ -298,7 +309,7 @@ plot_real <- function(object,
               geom_sf(color = "azure3") +
               labs(x = "", y = "", fill = ind) +
               ggtitle(gsub(pattern = "_", replacement = " ", x = ind)) +
-              scale_fill_viridis(option=viridis_option) +
+              scale_fill_viridis(option=viridis_option,na.value="transparent") +
               theme(
                 axis.ticks = element_blank(), axis.text = element_blank(),
                 legend.title = element_blank()

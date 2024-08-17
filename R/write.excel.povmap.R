@@ -1,4 +1,4 @@
-#' Exports an emdiObject to an Excel File or OpenDocument Spreadsheet
+#' Exports an povmapObject to an Excel File or OpenDocument Spreadsheet
 #'
 #' Function \code{write.excel} enables the user to export point and MSE
 #' estimates as well as diagnostics from the \code{summary} to an Excel file.
@@ -7,7 +7,7 @@
 #' Respectively the function \code{write.ods} enables the export to OpenDocument
 #' Spreadsheets. Note that while \code{write.exel} will create a single document
 #' \code{write.ods} will create a group of files.
-#' @param object an object of type "emdi", representing point and
+#' @param object an object of type "povmap", representing point and
 #' MSE estimates.
 #' @param file path and filename of the spreadsheet to create. It should end on
 #' .xlsx or .ods respectively.
@@ -21,11 +21,11 @@
 #' defined as argument for model-based approaches (see also \code{\link{ebp}})
 #' and do not appear in groups of indicators even though these might belong to
 #' one of the groups. If the \code{model} argument is of type "fh",
-#' indicator can be set to "all", "Direct", FH", or "FH_Bench" (if emdi
+#' indicator can be set to "all", "Direct", FH", or "FH_Bench" (if povmap
 #' object is overwritten by function benchmark). Defaults to "all".
-#' @param MSE logical. If \code{TRUE}, the MSE of the emdiObject is exported.
+#' @param MSE logical. If \code{TRUE}, the MSE of the povmapObject is exported.
 #' Defaults to \code{FALSE}.
-#' @param CV logical. If \code{TRUE}, the CV of the emdiObject is exported.
+#' @param CV logical. If \code{TRUE}, the CV of the povmapObject is exported.
 #' Defaults to \code{FALSE}.
 #' @param split logical. If \code{TRUE}, point estimates, MSE and CV are written
 #' to different sheets in the Excel file. In \code{write.ods} \code{TRUE} will
@@ -50,7 +50,7 @@
 #' }
 #' To check if a zip application is available they recommend the command
 #' \code{shell("zip")}.
-#' @seealso \code{\link{direct}}, \code{\link{emdiObject}}, \code{\link{ebp}},
+#' @seealso \code{\link{direct}}, \code{\link{povmapObject}}, \code{\link{ebp}},
 #' \code{\link{fh}}
 #' @examples
 #'
@@ -59,9 +59,9 @@
 #' data("eusilcA_pop")
 #' data("eusilcA_smp")
 #'
-#' # Generate emdi object with two additional indicators; here via function
+#' # Generate povmap object with two additional indicators; here via function
 #' # ebp()
-#' emdi_model <- ebp(
+#' povmap_model <- ebp(
 #'   fixed = eqIncome ~ gender + eqsize + cash +
 #'     self_empl + unempl_ben + age_ben + surv_ben + sick_ben + dis_ben + rent +
 #'     fam_allow + house_allow + cap_inv + tax_adj, pop_data = eusilcA_pop,
@@ -81,14 +81,14 @@
 #'
 #' # Example 1: Export estimates for all indicators and uncertainty measures
 #' # and diagnostics to Excel
-#' write.excel(emdi_model, indicator = "all",  MSE = TRUE, CV = TRUE)
+#' write.excel(povmap_model, indicator = "all",  MSE = TRUE, CV = TRUE)
 #'
 #' # Example 2: Single Excel sheets for point, MSE and CV estimates
-#' write.excel(emdi_model, indicator = "all", MSE = TRUE, CV = TRUE,
+#' write.excel(povmap_model, indicator = "all", MSE = TRUE, CV = TRUE,
 #'             split = TRUE)
 #'
 #' # Example 3: Same as example 1 but for an ODS output, skipped due to lack of zip app 
-#' # write.ods(emdi_model, indicator = "all", MSE = TRUE, CV = TRUE)
+#' # write.ods(povmap_model, indicator = "all", MSE = TRUE, CV = TRUE)
 #' }
 #'
 #' @export
@@ -617,10 +617,10 @@ add_pointests <- function(object, indicator, wb, headlines_cs) {
                  paste0("The argument indicator is set to ", indicator, ". The
                         argument only allows to be set to all, a name of
                         estimated indicators or indicator groups as described
-                        in help(estimators.emdi).")))
+                        in help(estimators.povmap).")))
   }
 
-  data <- point_emdi(object = object, indicator = indicator)$ind
+  data <- point_povmap(object = object, indicator = indicator)$ind
 
   writeDataTable(
     x = data,
@@ -651,7 +651,7 @@ add_pointests <- function(object, indicator, wb, headlines_cs) {
 }
 
 add_precisions <- function(object, indicator, MSE, wb, headlines_cs, CV) {
-  precisions <- mse_emdi(object = object, indicator = indicator, CV = TRUE)
+  precisions <- mse_povmap(object = object, indicator = indicator, CV = TRUE)
 
   if (MSE) {
     addWorksheet(wb, sheetName = "MSE Estimators", gridLines = FALSE)
