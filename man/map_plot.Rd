@@ -13,9 +13,12 @@ map_plot(
   map_dom_id = NULL,
   map_tab = NULL,
   color = c("white", "red4"),
+  viridis_option = NULL,
   scale_points = NULL,
   guide = "colourbar",
-  return_data = FALSE
+  return_data = FALSE,
+  save_file = NULL,
+  save_format = "pdf"
 )
 }
 \arguments{
@@ -56,6 +59,9 @@ in both objects (`map_obj` and `object`) differ.}
 \item{color}{a \code{vector} of length 2 defining the lowest and highest
 color in the plots.}
 
+\item{viridis_option}{a one-character string between "A" and "H" requesting a 
+viridis palette with the specified option. Defaults to NULL}
+
 \item{scale_points}{a structure defining the lowest and the highest
 value of the colorscale. If a numeric vector of length two is given, this
 scale will be used for every plot.}
@@ -68,6 +74,12 @@ Possible values are "none", "colourbar", and "legend".}
 the map data as well as the chosen indicators is returned. Customized maps
 can easily be obtained from this data frame via the package \pkg{ggplot2}.
 Defaults to \code{FALSE}.}
+
+\item{save_file}{a character string that specified the prefix of the file name to save the plot. 
+The suffix is the name of the indicator. Defaults to NULL, in which case plots are not saved.}
+
+\item{save_format}{a character string that is passed to ggsave's device argument to determine the 
+format that the plot is saved in. Defaults to "pdf"}
 }
 \value{
 Creates the plots demanded, and, if selected, a fortified data.frame
@@ -127,5 +139,5 @@ map_plot(
 }
 \seealso{
 \code{\link{direct}}, \code{\link{ebp}}, \code{\link{fh}},
-\code{\link{emdiObject}}
+\code{\link{povmapObject}}
 }

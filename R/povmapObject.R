@@ -1,6 +1,6 @@
-#' Fitted emdiObject
+#' Fitted povmapObject
 #'
-#' An object of class emdi that represents point predictions of regional
+#' An object of class povmap that represents point predictions of regional
 #' disaggregated indicators. Optionally, it also contains corresponding MSE
 #' estimates. Three different estimation approaches are implemented:
 #' direct estimation (class 'direct), the Fay-Herriot model (class "fh"), and
