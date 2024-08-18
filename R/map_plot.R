@@ -107,7 +107,7 @@
 #' @importFrom reshape2 melt
 #' @importFrom ggplot2 aes geom_polygon facet_wrap fortify coord_equal labs
 #' @importFrom ggplot2 theme element_blank guides scale_fill_gradient
-#' @importFrom ggplot2 scale_colour_gradient geom_sf
+#' @importFrom ggplot2 scale_colour_gradient geom_sf scale_colour_manual
 #' @importFrom viridis scale_fill_viridis
 #' 
 
