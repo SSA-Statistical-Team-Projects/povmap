@@ -286,7 +286,7 @@ plot_real <- function(object,
       print(ggplot(data=map_obj,
                    aes(fill = get(ind),color="black")) +
               labs(x = "", y = "", fill=gsub(pattern = "_", replacement = " ", x = ind)) +
-              ggtitle(gsub(pattern = "_", replacement = " ", x = ind)) +
+              #ggtitle(gsub(pattern = "_", replacement = " ", x = ind)) +
               geom_sf(color = "black") +
               scale_fill_gradient(
                 low = col[1], high = col[2],
@@ -307,7 +307,7 @@ plot_real <- function(object,
                    aes(fill = get(ind),color="black")) +
               labs(x = "", y = "",fill=gsub(pattern = "_", replacement = " ", x = ind)) +
             
-              ggtitle(gsub(pattern = "_", replacement = " ", x = ind)) +
+              #ggtitle(gsub(pattern = "_", replacement = " ", x = ind)) +
               geom_sf(color = "black") +
               scale_fill_viridis(option=viridis_option,na.value=na.color) +
               scale_colour_manual(values=NA) +
