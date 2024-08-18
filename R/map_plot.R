@@ -304,7 +304,7 @@ plot_real <- function(object,
                                  limits=scale_point, na.value=na.color) +
             scale_colour_manual(values=NA) +       
             guides(colour = guide_legend(order = 2), fill = guide_legend(order = 1)) +
-            guides(colour=guide_legend("No estimates", override.aes=list(colour=na.color)))
+            guides(colour=guide_legend("No estimates", override.aes=list(fill=na.color)))
           +    theme(
             axis.ticks = element_blank(), axis.text = element_blank(),
           ))
@@ -328,7 +328,7 @@ plot_real <- function(object,
               scale_fill_viridis(option=viridis_option,na.value=na.color) +
               scale_colour_manual(values=NA) +              
               guides(colour = guide_legend(order = 2), fill = guide_legend(order = 1)) +
-              guides(colour=guide_legend("No estimates", override.aes=list(colour=na.color))) +
+              guides(colour=guide_legend("No estimates", override.aes=list(fill=na.color))) +
              theme(
               axis.ticks = element_blank(), axis.text = element_blank(),
             ))
