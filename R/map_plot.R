@@ -42,6 +42,8 @@
 #' @param guide character passed to
 #' \code{scale_colour_gradient} from \pkg{ggplot2}.
 #' Possible values are "none", "colourbar", and "legend".
+#' @param na.color a character string indicating the color used to plot regions with no data, 
+#' passed to the na.value argument in scale_fill_gradient in ggplot2. Defaults to "transparent".  
 #' @param return_data if set to \code{TRUE}, a fortified data frame including
 #' the map data as well as the chosen indicators is returned. Customized maps
 #' can easily be obtained from this data frame via the package \pkg{ggplot2}.
@@ -119,6 +121,7 @@ map_plot <- function(object,
                      color = c("white", "red4"),
                      viridis_option = NULL, 
                      scale_points = NULL,
+                     na.color = "transparent",
                      guide = "colourbar",
                      return_data = FALSE,
                      save_file = NULL,
@@ -203,6 +206,7 @@ plot_real <- function(object,
                       col = col,
                       viridis_option = NULL, 
                       scale_points = NULL,
+                      na.color = "transparent",
                       return_data = FALSE,
                       guide = NULL,
                       save_file = NULL,
@@ -278,42 +282,56 @@ plot_real <- function(object,
     scale_point <- get_scale_points(map_obj2[ind][, 1], ind, scale_points)
 
     if (is.null(viridis_option)) {
-    print(ggplot(map_obj,
-                 aes(fill = get(ind), colour="")) +
+    ggplot(map_obj,
+                 aes(fill = get(ind))) +
           geom_sf(color = "azure3") +
           labs(x = "", y = "", fill = ind) +
           ggtitle(gsub(pattern = "_", replacement = " ", x = ind)) +
           scale_fill_gradient(
             low = col[1], high = col[2],
             limits = scale_point, guide = guide,
-            na.value = "transparent"
+            na.value = NA
           ) +
-          theme(
+      theme(
+        axis.ticks = element_blank(), axis.text = element_blank(),
+      )
+       
+      print(ggplot()+
+          geom_sf(data=map_obj, aes(fill=get(ind), colour="")) +
+            labs(x = "", y = "",fill=gsub(pattern = "_", replacement = " ", x = ind)) + 
+            scale_fill_gradient(low = col[1], high = col[2],
+                                 limits=scale_point, na.value=na.color) +
+            scale_colour_manual(values=NA) +       
+            guides(colour = guide_legend(order = 2), fill = guide_legend(order = 1)) +
+            guides(colour=guide_legend("No estimates", override.aes=list(colour=na.color)))
+          +    theme(
             axis.ticks = element_blank(), axis.text = element_blank(),
-            legend.title = element_blank()
           ))
-        
-      p2 = ggplot() +
-        geom_polygon(data=map, aes(long, lat, group=group, fill=value, colour="")) +
-        scale_fill_gradient2(low="brown3", mid="cornsilk1", high="turquoise4",
-                             limits=c(-50, 50), na.value="black") +
-        scale_colour_manual(values=NA) +              
-        guides(colour=guide_legend("No data", override.aes=list(colour="black")))
-      
       
   
     }
     else {
-      print(ggplot(map_obj,
+      
+      ggplot(map_obj,
                    aes(fill = get(ind))) +
               geom_sf(color = "azure3") +
-              labs(x = "", y = "", fill = ind) +
+              labs(x = "", y = "",fill=ind) +
               ggtitle(gsub(pattern = "_", replacement = " ", x = ind)) +
-              scale_fill_viridis(option=viridis_option,na.value="transparent") +
+              scale_fill_viridis(option=viridis_option,na.value=na.color) +
               theme(
-                axis.ticks = element_blank(), axis.text = element_blank(),
-                legend.title = element_blank()
-              ))
+                axis.ticks = element_blank(), axis.text = element_blank()
+              )
+      print(ggplot()+
+              geom_sf(data=map_obj, aes(fill=get(ind), colour="")) +
+              labs(x = "", y = "",fill=gsub(pattern = "_", replacement = " ", x = ind)) + 
+              scale_fill_viridis(option=viridis_option,na.value=na.color) +
+              scale_colour_manual(values=NA) +              
+              guides(colour = guide_legend(order = 2), fill = guide_legend(order = 1)) +
+              guides(colour=guide_legend("No estimates", override.aes=list(colour=na.color))) +
+             theme(
+              axis.ticks = element_blank(), axis.text = element_blank(),
+            ))
+      
     }
     
     
