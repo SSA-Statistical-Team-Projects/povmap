@@ -12,9 +12,9 @@ makeXY <- function(formula, data) {
 }
 
 throw_class_error <- function(object, subclass) {
-  if (!inherits(object, "emdi")) {
-    error_string <- paste0(subclass, " object has to be created by the emdi
-                           package for emdi methods to work.")
+  if (!inherits(object, "povmap")) {
+    error_string <- paste0(subclass, " object has to be created by the povmap
+                           package for povmap methods to work.")
     stop(error_string)
   }
 }
