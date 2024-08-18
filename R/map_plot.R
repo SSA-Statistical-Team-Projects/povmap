@@ -109,7 +109,7 @@
 #' @importFrom ggplot2 theme element_blank guides scale_fill_gradient
 #' @importFrom ggplot2 scale_colour_gradient geom_sf scale_colour_manual guide_legend guide_colourbar
 #' @importFrom viridis scale_fill_viridis
-#' @import ggpattern 
+#' 
 
 map_plot <- function(object,
                      indicator = "all",
@@ -283,40 +283,40 @@ plot_real <- function(object,
     scale_point <- get_scale_points(map_obj2[ind][, 1], ind, scale_points)
 
     if (is.null(viridis_option)) {
-    
-
-
       print(ggplot(data=map_obj,
-                 aes(fill = get(ind))) +
-          labs(x = "", y = "", fill=gsub(pattern = "_", replacement = " ", x = ind)) +
-          ggtitle(gsub(pattern = "_", replacement = " ", x = ind)) +
-          scale_fill_gradient(
-            low = col[1], high = col[2],
-            limits = scale_point, guide = guide, na.value=na.color
-          ) +
-      theme(
-        axis.ticks = element_blank(), axis.text = element_blank(),
-      ) + geom_sf_pattern(data=map_obj[(is.na(map_obj$Head_Count)),], aes(fill=get(ind), colour=""),pattern_alpha=0.5,pattern_spacing=0.015,pattern_size=0.2) +
-        geom_sf(color="black") +
-        guides(colour=guide_legend(order=2,"No estimates", override.aes=list(fill=na.color,color="black"))) +
-        guides(fill = guide_colourbar(order=1))
-    )
+                   aes(fill = get(ind),color="black")) +
+              labs(x = "", y = "", fill=gsub(pattern = "_", replacement = " ", x = ind)) +
+              ggtitle(gsub(pattern = "_", replacement = " ", x = ind)) +
+              geom_sf(color = "black") +
+              scale_fill_gradient(
+                low = col[1], high = col[2],
+                limits = scale_point, guide = guide, na.value=na.color
+              ) +
+              theme(
+                axis.ticks = element_blank(), axis.text = element_blank(),
+              ) + geom_sf_pattern(data=map_obj[(is.na(map_obj$Head_Count)),], aes(fill=get(ind), colour=""),pattern_alpha=0.5,pattern_spacing=0.015,pattern_size=0.2) +
+              geom_sf(data=map_obj[(is.na(map_obj[,ind])),],color="black",fill="transparent")+
+              guides(colour=guide_legend(order=2,"No estimates", override.aes=list(fill=na.color,color="black"))) +
+              guides(fill = guide_colourbar(order=1))
+      )
     
     }
     else {
       
       print(ggplot(map_obj,
-                   aes(fill = get(ind))) +
+                   aes(fill = get(ind),color="black")) +
               labs(x = "", y = "",fill=gsub(pattern = "_", replacement = " ", x = ind)) +
+            
               ggtitle(gsub(pattern = "_", replacement = " ", x = ind)) +
+              geom_sf(color = "black") +
               scale_fill_viridis(option=viridis_option,na.value=na.color) +
               scale_colour_manual(values=NA) +
               theme(
                 axis.ticks = element_blank(), axis.text = element_blank()
               ) +
-             geom_sf_pattern(data=map_obj[(is.na(map_obj$Head_Count)),], aes(fill=get(ind), colour=""),pattern_alpha=0.5,pattern_spacing=0.015,pattern_size=0.2) +
-              geom_sf(color = "black") +
+              geom_sf_pattern(data=map_obj[(is.na(map_obj[,ind])),], aes(fill=get(ind), colour=""), pattern_alpha=0.5,pattern_spacing=0.015,pattern_size=0.3,pattern_color="black") +
               guides(colour=guide_legend(order=2,"No estimates", override.aes=list(fill=na.color,color="black"))) +
+              geom_sf(data=map_obj[(is.na(map_obj[,ind])),],color="black",fill="transparent")+
               guides(fill = guide_colourbar(order=1)) 
       )
       
