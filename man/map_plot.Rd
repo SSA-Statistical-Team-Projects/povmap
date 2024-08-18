@@ -15,6 +15,7 @@ map_plot(
   color = c("white", "red4"),
   viridis_option = NULL,
   scale_points = NULL,
+  na.color = "transparent",
   guide = "colourbar",
   return_data = FALSE,
   save_file = NULL,
@@ -65,6 +66,9 @@ viridis palette with the specified option. Defaults to NULL}
 \item{scale_points}{a structure defining the lowest and the highest
 value of the colorscale. If a numeric vector of length two is given, this
 scale will be used for every plot.}
+
+\item{na.color}{a character string indicating the color used to plot regions with no data, 
+passed to the na.value argument in scale_fill_gradient in ggplot2. Defaults to "transparent".}
 
 \item{guide}{character passed to
 \code{scale_colour_gradient} from \pkg{ggplot2}.
