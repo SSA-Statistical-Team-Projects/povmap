@@ -156,6 +156,7 @@ map_plot <- function(object,
       viridis_option = viridis_option, 
       scale_points = scale_points,
       return_data = return_data,
+      na.color = na.color, 
       guide = guide,
       save_format = save_format, 
       save_file = save_file
