@@ -321,6 +321,7 @@
 #' @importFrom FNN knnx.index
 #' @importFrom plm plm 
 #' @import data.table
+#' @importFrom truncnorm etruncnorm 
 
 
 ebp <- function(fixed,
