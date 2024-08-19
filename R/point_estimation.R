@@ -664,16 +664,29 @@ indicators <- matrix(ncol=length(framework$indicator_names),nrow=framework$N_pop
 colnames(indicators) <- framework$indicator_names
 
 if ("Mean" %in% framework$indicator_names) {
-indicators[,"Mean"] <- expected_transformed_mean(gen_model$mu,var=var, transformation=transformation,lambda=lambda) 
+indicators[,"Mean"] <- expected_untransformed_mean(gen_model$mu,var=var, transformation=transformation,lambda=lambda) 
 }
 if ("Head_Count" %in% framework$indicator_names) {
 indicators[,"Head_Count"] <- expected_head_count(mu=gen_model$mu,var=var, transformation=transformation,lambda=lambda,shift=shift,threshold=framework$threshold)
 }
-#indicators[,"Median"] <- transformed_percentile(mu=gen_model$mu,var=var, transformation=transformation,lambda=lambda,shift=shift,p=0.5)
-#indicators[,"Quantile_10"] <- transformed_percentile(mu=gen_model$mu,var=var, transformation=transformation,lambda=lambda,shift=shift,p=0.1) 
-#indicators[,"Quantile_25"] <- transformed_percentile(mu=gen_model$mu,var=var, transformation=transformation,lambda=lambda,shift=shift,p=0.25) 
-#indicators[,"Quantile_75"] <- transformed_percentile(mu=gen_model$mu,var=var, transformation=transformation,lambda=lambda,shift=shift,p=0.75) 
-#indicators[,"Quantile_90"] <- transformed_percentile(mu=gen_model$mu,var=var, transformation=transformation,lambda=lambda,shift=shift,p=0.9) 
+if ("Poverty_Gap" %in% framework$indicator_names) {
+if !("Head_Count" %in% framework$indicator_names) {
+  Head_Count_temp <- matrix(ncol=1,nrow=framework$N_pop)
+  Head_Count_temp <- expected_head_count(mu=gen_model$mu,var=var, transformation=transformation,lambda=lambda,shift=shift,threshold=framework$threshold)
+}
+else {
+  Head_Count_temp <- indicators[,"Head_Count"]
+}  
+  conditional_mean <- conditional_untransformed_mean(mu=gen_model$mu,var=var, transformation=transformation,lambda=lambda,shift=shift,threshold=framework$threshold) 
+  indicators[,"Poverty_gap"]<- Head_Count_temp*(1-conditional_mean*Head_Count_temp)/framework$threshold
+  }
+  
+
+#indicators[,"Median"] <- _percentile(mu=gen_model$mu,var=var, transformation=transformation,lambda=lambda,shift=shift,p=0.5)
+#indicators[,"Quantile_10"] <- _percentile(mu=gen_model$mu,var=var, transformation=transformation,lambda=lambda,shift=shift,p=0.1) 
+#indicators[,"Quantile_25"] <- _percentile(mu=gen_model$mu,var=var, transformation=transformation,lambda=lambda,shift=shift,p=0.25) 
+#indicators[,"Quantile_75"] <- _percentile(mu=gen_model$mu,var=var, transformation=transformation,lambda=lambda,shift=shift,p=0.75) 
+#indicators[,"Quantile_90"] <- _percentile(mu=gen_model$mu,var=var, transformation=transformation,lambda=lambda,shift=shift,p=0.9) 
 
 
 #Output Ydump if selected 
@@ -695,7 +708,7 @@ colnames(point_estimates) <- c("Domain",framework$indicator_names)
 return(point_estimates)
 } # end analytic 
 
-expected_transformed_mean <- function(mu=mu,var=var,transformation=transformation,lambda=lambda) {
+expected_untransformed_mean <- function(mu=mu,var=var,transformation=transformation,lambda=lambda) {
   if (transformation=="no") {
     expected_mean <- mu   
   }
@@ -715,6 +728,13 @@ expected_transformed_mean <- function(mu=mu,var=var,transformation=transformatio
   }
   
     return(expected_mean)
+}
+
+conditional_untransformed_mean <- function{mu=mu,var=var,transformation=transformation,lambda=lambda,threshold=threshold}
+# first get conditional mean in transformed matric
+conditional_mean <- etruncnorm(a=-inf,b=threshold-mu,mean=mu,sd=sqrt(var))
+conditional_untransformed_mean <- expected_untransformed_mean(mu=conditional_mean,var=var, transformation=transformation,lambda=lambda) 
+return(conditional_untransformed_mean)
 }
 
 expected_head_count <- function(mu=mu,threshold=threshold,var=var,transformation=transformation,lambda=lambda,shift=shift) {
