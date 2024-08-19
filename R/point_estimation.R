@@ -670,12 +670,14 @@ if ("Head_Count" %in% framework$indicator_names) {
 indicators[,"Head_Count"] <- expected_head_count(mu=gen_model$mu,var=var, transformation=transformation,lambda=lambda,shift=shift,threshold=framework$threshold)
 }
 if ("Poverty_Gap" %in% framework$indicator_names) {
-if !("Head_Count" %in% framework$indicator_names) {
+if ("Head_Count" %in% framework$indicator_names) {
+  Head_Count_temp <- indicators[,"Head_Count"]
+  
   Head_Count_temp <- matrix(ncol=1,nrow=framework$N_pop)
   Head_Count_temp <- expected_head_count(mu=gen_model$mu,var=var, transformation=transformation,lambda=lambda,shift=shift,threshold=framework$threshold)
 }
 else {
-  Head_Count_temp <- indicators[,"Head_Count"]
+  
 }  
   conditional_mean <- conditional_untransformed_mean(mu=gen_model$mu,var=var, transformation=transformation,lambda=lambda,shift=shift,threshold=framework$threshold) 
   indicators[,"Poverty_gap"]<- Head_Count_temp*(1-conditional_mean*Head_Count_temp)/framework$threshold
@@ -730,7 +732,7 @@ expected_untransformed_mean <- function(mu=mu,var=var,transformation=transformat
     return(expected_mean)
 }
 
-conditional_untransformed_mean <- function{mu=mu,var=var,transformation=transformation,lambda=lambda,threshold=threshold}
+conditional_untransformed_mean <- function(mu=mu,var=var,transformation=transformation,lambda=lambda,threshold=threshold) {
 # first get conditional mean in transformed matric
 conditional_mean <- etruncnorm(a=-inf,b=threshold-mu,mean=mu,sd=sqrt(var))
 conditional_untransformed_mean <- expected_untransformed_mean(mu=conditional_mean,var=var, transformation=transformation,lambda=lambda) 
