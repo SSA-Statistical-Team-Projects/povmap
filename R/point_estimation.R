@@ -732,7 +732,8 @@ expected_untransformed_mean <- function(mu=mu,var=var,transformation=transformat
 
 conditional_untransformed_mean <- function(mu=mu,var=var,transformation=transformation,lambda=lambda,threshold=threshold) {
 # first get conditional mean in transformed matric
-conditional_transformed_mean <- etruncnorm(a=-Inf,b=threshold-mu,mean=mu,sd=sqrt(var))
+  transformed_threshold <- transformation(y=threshold,transformation=transformation,lambda=lambda,shift=shift)  
+conditional_transformed_mean <- etruncnorm(a=-Inf,b=transformed_threshold-mu,mean=mu,sd=sqrt(var))
 conditional_untransformed_mean <- expected_untransformed_mean(mu=conditional_transformed_mean,var=var, transformation=transformation,lambda=lambda) 
 return(conditional_untransformed_mean)
 }
