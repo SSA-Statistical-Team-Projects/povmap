@@ -672,13 +672,11 @@ indicators[,"Head_Count"] <- expected_head_count(mu=gen_model$mu,var=var, transf
 if ("Poverty_Gap" %in% framework$indicator_names) {
 if ("Head_Count" %in% framework$indicator_names) {
   Head_Count_temp <- indicators[,"Head_Count"]
-  
+  } 
+  else {
   Head_Count_temp <- matrix(ncol=1,nrow=framework$N_pop)
   Head_Count_temp <- expected_head_count(mu=gen_model$mu,var=var, transformation=transformation,lambda=lambda,shift=shift,threshold=framework$threshold)
 }
-else {
-  
-}  
   conditional_mean <- conditional_untransformed_mean(mu=gen_model$mu,var=var, transformation=transformation,lambda=lambda,shift=shift,threshold=framework$threshold) 
   indicators[,"Poverty_gap"]<- Head_Count_temp*(1-conditional_mean*Head_Count_temp)/framework$threshold
   }
