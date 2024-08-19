@@ -294,7 +294,7 @@ plot_real <- function(object,
               ) +
               theme(
                 axis.ticks = element_blank(), axis.text = element_blank(),
-              ) + geom_sf_pattern(data=map_obj[(is.na(map_obj$Head_Count)),], aes(fill=get(ind), colour=""),pattern_alpha=0.5,pattern_spacing=0.015,pattern_size=0.2) +
+              ) + geom_sf_pattern(data=map_obj[(is.na(map_obj$Head_Count)),], aes(fill=get(ind), colour=""),pattern_color="black") +
               geom_sf(data=map_obj[(is.na(map_obj[,ind])),],color="black",fill="transparent")+
               guides(colour=guide_legend(order=2,"No estimates", override.aes=list(fill=na.color,color="black"))) +
               guides(fill = guide_colourbar(order=1))
@@ -314,7 +314,7 @@ plot_real <- function(object,
               theme(
                 axis.ticks = element_blank(), axis.text = element_blank()
               ) +
-              geom_sf_pattern(data=map_obj[(is.na(map_obj[,ind])),], aes(fill=get(ind), colour=""), pattern_alpha=0.5,pattern_spacing=0.015,pattern_size=0.3,pattern_color="black") +
+              geom_sf_pattern(data=map_obj[(is.na(map_obj[,ind])),], aes(fill=get(ind), colour=""),pattern_color="black") +
               guides(colour=guide_legend(order=2,"No estimates", override.aes=list(fill=na.color,color="black"))) +
               geom_sf(data=map_obj[(is.na(map_obj[,ind])),],color="black",fill="transparent")+
               guides(fill = guide_colourbar(order=1)) 
