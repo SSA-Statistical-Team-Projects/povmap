@@ -677,7 +677,7 @@ if ("Head_Count" %in% framework$indicator_names) {
   Head_Count_temp <- matrix(ncol=1,nrow=framework$N_pop)
   Head_Count_temp <- expected_head_count(mu=gen_model$mu,var=var, transformation=transformation,lambda=lambda,shift=shift,threshold=framework$threshold)
 }
-  conditional_mean <- conditional_untransformed_mean(mu=gen_model$mu,var=var, transformation=transformation,lambda=lambda,shift=shift,threshold=framework$threshold) 
+  conditional_mean <- conditional_untransformed_mean(mu=gen_model$mu,var=var, transformation=transformation,lambda=lambda,threshold=framework$threshold) 
   indicators[,"Poverty_gap"]<- Head_Count_temp*(1-conditional_mean*Head_Count_temp)/framework$threshold
   }
   
@@ -730,14 +730,14 @@ expected_untransformed_mean <- function(mu=mu,var=var,transformation=transformat
     return(expected_mean)
 }
 
-conditional_untransformed_mean <- function(mu=mu,var=var,transformation=transformation,lambda=lambda,threshold=threshold,shift=shift) {
+conditional_untransformed_mean <- function(mu=mu,var=var,transformation=transformation,lambda=lambda,threshold=threshold) {
 # first get conditional mean in transformed matric
-conditional_mean <- etruncnorm(a=-Inf,b=threshold-mu,mean=mu,sd=sqrt(var))
-conditional_untransformed_mean <- expected_untransformed_mean(mu=conditional_mean,var=var, transformation=transformation,lambda=lambda,shift=shift) 
+conditional_transformed_mean <- etruncnorm(a=-Inf,b=threshold-mu,mean=mu,sd=sqrt(var))
+conditional_untransformed_mean <- expected_untransformed_mean(mu=conditional_transformed_mean,var=var, transformation=transformation,lambda=lambda,shift=shift) 
 return(conditional_untransformed_mean)
 }
 
-expected_head_count <- function(mu=mu,threshold=threshold,var=var,transformation=transformation,lambda=lambda,shift=shift) {
+expected_head_count <- function(mu=mu,threshold=threshold,var=var,transformation=transformation,lambda=lambda) {
   # do poverty by transforming threshold, then applying normal CDF. 
   transformed_threshold <- transformation(y=threshold,transformation=transformation,lambda=lambda,shift=shift)
   expected_head_count <- pnorm(transformed_threshold$y - mu,sd=var^0.5) # formula for head count 
