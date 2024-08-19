@@ -629,20 +629,12 @@ analytic <- function(transformation,
     pop_weights_vec <- rep(1, framework$N_pop)
   }
   
-  
-  
-
-
-  
-  
-
 # construct vector for variance of random effect, copied from errors_gen line 568
 sigma2vu <- vector(length = framework$N_pop)
 # variance of random effect for out-of-sample domains
 sigma2vu[!framework$obs_dom] <- model_par$sigmau2est
 # variance of random effect for in-sample domains
 sigma2vu[framework$obs_dom] <- rep(gen_model$sigmav2est,framework$n_pop[framework$dist_obs_dom])
-#sigma2vu[framework$obs_dom] <- rep(gen_model$sigmav2est,framework$n_pop[framework$dist_obs_dom])
 
 if (model_par$sigmah2est==0) {
   sigma2eta <-0 
@@ -677,7 +669,7 @@ if ("Head_Count" %in% framework$indicator_names) {
   Head_Count_temp <- matrix(ncol=1,nrow=framework$N_pop)
   Head_Count_temp <- expected_head_count(mu=gen_model$mu,var=var, transformation=transformation,lambda=lambda,threshold=framework$threshold,shift=shift)
 }
-  conditional_mean <- conditional_untransformed_mean(mu=gen_model$mu,var=var, transformation=transformation,lambda=lambda,threshold=framework$threshold) 
+  conditional_mean <- conditional_untransformed_mean(mu=gen_model$mu,var=var, transformation=transformation,lambda=lambda,threshold=framework$threshold,shift=shift) 
   indicators[,"Poverty_gap"]<- Head_Count_temp*(1-conditional_mean*Head_Count_temp)/framework$threshold
   }
   
@@ -730,10 +722,10 @@ expected_untransformed_mean <- function(mu=mu,var=var,transformation=transformat
     return(expected_mean)
 }
 
-conditional_untransformed_mean <- function(mu=mu,var=var,transformation=transformation,lambda=lambda,threshold=threshold) {
+conditional_untransformed_mean <- function(mu=mu,var=var,transformation=transformation,lambda=lambda,threshold=threshold,shift=shift) {
 # first get conditional mean in transformed matric
   transformed_threshold <- transformation(y=threshold,transformation=transformation,lambda=lambda,shift=shift)  
-conditional_transformed_mean <- etruncnorm(a=-Inf,b=transformed_threshold-mu,mean=mu,sd=sqrt(var))
+conditional_transformed_mean <- etruncnorm(a=-Inf,b=transformed_threshold$y-mu,mean=mu,sd=sqrt(var))
 conditional_untransformed_mean <- expected_untransformed_mean(mu=conditional_transformed_mean,var=var, transformation=transformation,lambda=lambda) 
 return(conditional_untransformed_mean)
 }
