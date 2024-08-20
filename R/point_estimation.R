@@ -669,7 +669,7 @@ if ("Head_Count" %in% framework$indicator_names) {
   Head_Count_temp <- matrix(ncol=1,nrow=framework$N_pop)
   Head_Count_temp <- expected_head_count(mu=gen_model$mu,var=var, transformation=transformation,lambda=lambda,threshold=framework$threshold,shift=shift)
 }
-  conditional_mean <- conditional_untransformed_mean(mu=gen_model$mu,var=var, transformation=transformation,lambda=lambda,threshold=framework$threshold,shift=shift) 
+  conditional_mean <- conditional_untransformed_mean(Head_Count=Head_Count_temp, mu=gen_model$mu,var=var, transformation=transformation,lambda=lambda,threshold=framework$threshold,shift=shift) 
   indicators[,"Poverty_gap"]<- Head_Count_temp*(1-conditional_mean*Head_Count_temp)/framework$threshold
   }
   
@@ -722,10 +722,15 @@ expected_untransformed_mean <- function(mu=mu,var=var,transformation=transformat
     return(expected_mean)
 }
 
-conditional_untransformed_mean <- function(mu=mu,var=var,transformation=transformation,lambda=lambda,threshold=threshold,shift=shift) {
+conditional_untransformed_mean <- function(Head_Count=Head_Count,mu=mu,var=var,transformation=transformation,lambda=lambda,threshold=threshold,shift=shift) {
 # first get conditional mean in transformed matric
   if (transformation=="no") {
-    conditional_untransformed_mean <- etruncnorm(a=-Inf,b=threshold-mu,mean=mu,sd=sqrt(var))   
+    #conditional_untransformed_mean <- etruncnorm(a=-Inf,b=threshold-mu,mean=mu,sd=sqrt(var))   
+    conditional_untransformed_mean <- VaRES:::esnormal(p=, mu=mu, sigma=sqrt(var))
+    }
+  else if (transformation=="log") {
+    
+
   }
 return(conditional_untransformed_mean)
 }
