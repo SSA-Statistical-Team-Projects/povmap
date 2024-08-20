@@ -725,12 +725,12 @@ expected_untransformed_mean <- function(mu=mu,var=var,transformation=transformat
 conditional_untransformed_mean <- function(Head_Count=Head_Count,mu=mu,var=var,transformation=transformation,lambda=lambda,threshold=threshold,shift=shift) {
 # first get conditional mean in transformed matric
   if (transformation=="no") {
-    #conditional_untransformed_mean <- etruncnorm(a=-Inf,b=threshold-mu,mean=mu,sd=sqrt(var))   
-    conditional_untransformed_mean <- VaRES:::esnormal(p=, mu=mu, sigma=sqrt(var))
+    # x2 <- etruncnorm(a=-Inf,b=threshold-mu,mean=mu,sd=sqrt(var))   
+    conditional_untransformed_mean <- VaRES:::esnormal(p=Head_Count)*sqrt(var)+mu[,1]
     }
   else if (transformation=="log") {
-    
-
+    #conditional_untransformed_mean <- VaRES:::eslognorm(p=Head_Count)*sqrt(var)+mu[,1]
+    conditional_untransformed_mean <- VaRES:::eslognorm(p=Head_Count)*sqrt(var)+mu[,1]
   }
 return(conditional_untransformed_mean)
 }
