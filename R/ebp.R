@@ -415,7 +415,6 @@ ebp <- function(fixed,
     #set default indicators to mean, headcount, and Poverty_Gap if calculating expected values 
     #because these are only indicators currently supported
     indicators <- c("Mean","Head_Count","Poverty_Gap")
-    }
   }
   
 
