@@ -731,7 +731,7 @@ conditional_untransformed_mean <- function(Head_Count=Head_Count,mu=mu,var=var,t
     #q_p = E[Y|Y>Z] (i.e. above the threshold), but we can use that and E[Y] to back out E[Y|Y<Z]
     conditional_untransformed_mean <- (mu-(1-Head_Count)*q_p)/Head_Count 
     }
-  else if (transformation=="log" | transformation=="log.shift" {
+  else if (transformation=="log" | transformation=="log.shift") {
     #conditional_untransformed_mean <- VaRES:::eslognorm(p=Head_Count,sigma=sqrt(var[1]))*exp(mu) # This is slower but gives same answer
     q_p <- 0.5*exp(mu+(var/2))*(1+erf(sqrt(var/2)-erfinv(2*Head_Count-1)))/(1-Head_Count)   #from Norton, Khokhlov, and Uryasev (2019)
     conditional_untransformed_mean <- (exp(mu+var/2)-(1-Head_Count)*q_p)/Head_Count 
