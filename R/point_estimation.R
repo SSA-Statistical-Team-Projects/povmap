@@ -729,7 +729,8 @@ expected_untransformed_mean <- function(mu=mu,var=var,transformation=transformat
 }
 
 conditional_untransformed_mean <- function(Head_Count=Head_Count,mu=mu,var=var,transformation=transformation,lambda=lambda,threshold=threshold,shift=shift) {
-# first get conditional mean in transformed matric
+  conditional_untransformed_mean <- NULL 
+  # first get conditional mean in transformed matric
   if (transformation=="no") {
     #x2 <- etruncnorm(a=-Inf,b=threshold,mean=mu,sd=sqrt(var))   
     #conditional_untransformed_mean <- VaRES:::esnormal(p=Head_Count)*sqrt(var)+mu[,1]
@@ -765,8 +766,11 @@ innerSum <- function(i,var,mu,popwt) {
   }
 
 expected_gini <- function(mu=mu, var=var, lambda=lambda,popwt=popwt) {
+  gini <- NULL 
+  if (transformation=="log" | transformation=="log.shift") {  
     i=1:length(mu)
     expected_gini <- (2*popwt*mu/mean(mu))*sapply(1:length(mu),innersum(mu=mu,var=var,popwt=popwt))
+  }
     return(expected_gini)
   }  
 
