@@ -765,7 +765,7 @@ innerSum <- function(i,var,mu,popwt) {
   return(sumj)
   }
 
-expected_gini <- function(mu=mu, var=var, lambda=lambda,popwt=popwt) {
+expected_gini <- function(mu=mu, var=var, lambda=lambda,transformation=transformation,popwt=popwt) {
   gini <- NULL 
   if (transformation=="log" | transformation=="log.shift") {  
     i=1:length(mu)
