@@ -670,7 +670,10 @@ if ("Poverty_Gap" %in% framework$indicator_names) {
     Head_Count_temp <- expected_head_count(mu=gen_model$mu,var=var, transformation=transformation,lambda=lambda,threshold=framework$threshold,shift=shift)
   }
   conditional_mean <- conditional_untransformed_mean(Head_Count=Head_Count_temp, mu=gen_model$mu,var=var, transformation=transformation,lambda=lambda,threshold=framework$threshold,shift=shift) 
-  indicators[,"Poverty_gap"]<- Head_Count_temp*(1-conditional_mean*Head_Count_temp)/framework$threshold
+  #Calculate expected value of poverty gap for each household 
+  # E[PGI]=p(poor)*(1-E[Y|poor]/Z)*(1-p(poor)*0)
+  indicators[,"Poverty_Gap"] <- Head_Count_temp*(1-conditional_mean/framework$threshold)
+    
   }
   
 
