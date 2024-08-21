@@ -675,8 +675,11 @@ if ("Poverty_Gap" %in% framework$indicator_names) {
   indicators[,"Poverty_Gap"] <- Head_Count_temp*(1-conditional_mean/framework$threshold)
     
   }
+if ("Gini" %in% framework$indicator_names) {
+indicators[,"Gini"] <- expected_gini(mu=gen_model$mu, var=var, transformation=transformation,lambda=lambda,popwt=pop_weights_vec)
+}  
   
-
+  
 #indicators[,"Median"] <- _percentile(mu=gen_model$mu,var=var, transformation=transformation,lambda=lambda,shift=shift,p=0.5)
 #indicators[,"Quantile_10"] <- _percentile(mu=gen_model$mu,var=var, transformation=transformation,lambda=lambda,shift=shift,p=0.1) 
 #indicators[,"Quantile_25"] <- _percentile(mu=gen_model$mu,var=var, transformation=transformation,lambda=lambda,shift=shift,p=0.25) 
@@ -743,7 +746,6 @@ conditional_untransformed_mean <- function(Head_Count=Head_Count,mu=mu,var=var,t
     }
     conditional_untransformed_mean <- conditional_untransformed_mean - lambda
   }
-  
 return(conditional_untransformed_mean)
 }
 
@@ -754,6 +756,19 @@ expected_head_count <- function(mu=mu,threshold=threshold,var=var,transformation
   return(expected_head_count)
 }
 
+
+innerSum <- function(i,var,mu,popwt) {
+  # i and var are scalars, mu and popwt are vectors 
+  #The inner sum is a function of mui,mu, and var  
+  sumj <- sum(popwt*(pnorm((mu[i]-mu+var)/sqrt(2*var))-1))
+  return(sumj)
+  }
+
+expected_gini <- function(mu=mu, var=var, lambda=lambda,popwt=popwt) {
+    i=1:length(mu)
+    expected_gini <- (2*popwt*mu/mean(mu))*sapply(1:length(mu),innersum(mu=mu,var=var,popwt=popwt))
+    return(expected_gini)
+  }  
 
 transformed_percentile <- function(mu=mu,threshold=threshold,var=var,transformation=transformation,lambda=lambda,shift=shift,p=p) {
    mu_percentile <- mu+qnorm(p,0,var)
