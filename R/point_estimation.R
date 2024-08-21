@@ -662,13 +662,13 @@ if ("Head_Count" %in% framework$indicator_names) {
 indicators[,"Head_Count"] <- expected_head_count(mu=gen_model$mu,var=var, transformation=transformation,lambda=lambda,threshold=framework$threshold,shift=shift)
 }
 if ("Poverty_Gap" %in% framework$indicator_names) {
-if ("Head_Count" %in% framework$indicator_names) {
-  Head_Count_temp <- indicators[,"Head_Count"]
-  } 
+  if ("Head_Count" %in% framework$indicator_names) {
+    Head_Count_temp <- indicators[,"Head_Count"]
+    } 
   else {
-  Head_Count_temp <- matrix(ncol=1,nrow=framework$N_pop)
-  Head_Count_temp <- expected_head_count(mu=gen_model$mu,var=var, transformation=transformation,lambda=lambda,threshold=framework$threshold,shift=shift)
-}
+    Head_Count_temp <- matrix(ncol=1,nrow=framework$N_pop)
+    Head_Count_temp <- expected_head_count(mu=gen_model$mu,var=var, transformation=transformation,lambda=lambda,threshold=framework$threshold,shift=shift)
+  }
   conditional_mean <- conditional_untransformed_mean(Head_Count=Head_Count_temp, mu=gen_model$mu,var=var, transformation=transformation,lambda=lambda,threshold=framework$threshold,shift=shift) 
   indicators[,"Poverty_gap"]<- Head_Count_temp*(1-conditional_mean*Head_Count_temp)/framework$threshold
   }
@@ -725,13 +725,17 @@ expected_untransformed_mean <- function(mu=mu,var=var,transformation=transformat
 conditional_untransformed_mean <- function(Head_Count=Head_Count,mu=mu,var=var,transformation=transformation,lambda=lambda,threshold=threshold,shift=shift) {
 # first get conditional mean in transformed matric
   if (transformation=="no") {
-    # x2 <- etruncnorm(a=-Inf,b=threshold-mu,mean=mu,sd=sqrt(var))   
-    conditional_untransformed_mean <- VaRES:::esnormal(p=Head_Count)*sqrt(var)+mu[,1]
+    #x2 <- etruncnorm(a=-Inf,b=threshold,mean=mu,sd=sqrt(var))   
+    #conditional_untransformed_mean <- VaRES:::esnormal(p=Head_Count)*sqrt(var)+mu[,1]
+    q_p <- mu+sqrt(var)*dnorm(qnorm(Head_Count,0,1))/(1-Head_Count) #from Norton, Khokhlov, and Uryasev (2019)
+    #q_p = E[Y|Y>Z] (i.e. above the threshold), but we can use that and E[Y] to back out E[Y|Y<Z]
+    conditional_untransformed_mean <- (mu-(1-Head_Count)*q_p)/Head_Count 
     }
   else if (transformation=="log") {
-    #conditional_untransformed_mean <- VaRES:::eslognorm(p=Head_Count)*sqrt(var)+mu[,1]
-    conditional_untransformed_mean <- VaRES:::eslognorm(p=Head_Count)*sqrt(var)+mu[,1]
-  }
+    #conditional_untransformed_mean <- VaRES:::eslognorm(p=Head_Count,sigma=sqrt(var[1]))*exp(mu) # This is slower but gives same answer
+    q_p <- 0.5*exp(mu+(var/2))*(1+erf(sqrt(var/2)-erfinv(2*Head_Count-1)))/(1-Head_Count)   #from Norton, Khokhlov, and Uryasev (2019)
+    conditional_untransformed_mean <- (exp(mu+var/2)-(1-Head_Count)*q_p)/Head_Count 
+      }
 return(conditional_untransformed_mean)
 }
 
