@@ -758,7 +758,7 @@ expected_head_count <- function(mu=mu,threshold=threshold,var=var,transformation
 }
 
 
-innerSum <- function(i,var,mu,popwt) {
+innersum <- function(i,var,mu,popwt) {
   # i and var are scalars, mu and popwt are vectors 
   #The inner sum is a function of mui,mu, and var  
   sumj <- sum(popwt*(pnorm((mu[i]-mu+var)/sqrt(2*var))-1))
