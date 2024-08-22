@@ -678,8 +678,16 @@ if ("Poverty_Gap" %in% framework$indicator_names) {
 if ("Gini" %in% framework$indicator_names) {
 indicators[,"Gini"] <- expected_gini(mu=gen_model$mu, var=var, transformation=transformation,lambda=lambda,popwt=pop_weights_vec,pop_domains=framework$pop_data[,framework$pop_domains])
 }  
-  
-  
+
+
+
+quantile <- 10 
+if (paste0("Quantile_",quantile) %in% framework$indicator_names) {
+  indicators[,paste0("Quantile_",quantile)]<-expected_quantile(q=quantile,mu=gen_model$mu,var=var,transformation=transformation,lambda=lambda,popwt=pop_weights_vec,pop_domains=framework$pop_data[,framework$pop_domains])
+}
+
+
+
 #indicators[,"Median"] <- _percentile(mu=gen_model$mu,var=var, transformation=transformation,lambda=lambda,shift=shift,p=0.5)
 #indicators[,"Quantile_10"] <- _percentile(mu=gen_model$mu,var=var, transformation=transformation,lambda=lambda,shift=shift,p=0.1) 
 #indicators[,"Quantile_25"] <- _percentile(mu=gen_model$mu,var=var, transformation=transformation,lambda=lambda,shift=shift,p=0.25) 
@@ -781,30 +789,36 @@ expected_gini <- function(mu=mu, var=var, lambda=lambda,transformation=transform
     if (is.null(lambda)) {
       lambda <- 0
     }
-    #popwt_norm=popwt/sum(popwt)
     Y=exp(mu+0.5*var)
-    
-    #expected_gini <- (2*popwt_norm*mu/weighted.mean(mu,w=popwt))*sapply(1:length(mu), function(i) innersum(mu=mu,var=var,popwt=popwt_norm))
-    # expected_gini <- (2*Y*popwt_norm/sum(Y*popwt_norm))*sapply(1:length(mu), function(i) innersum(mu=mu,var=var,popwt=popwt_norm))
-    # that works for sum 
-    
-    #expected_gini <- (2*Y/sum(Y*popwt_norm))*sapply(1:length(mu), function(i) innersum(mu=mu,var=var,popwt=popwt_norm))
-    #data <- as.matrix(data.frame(Y,mu,popwt,var))
     data <- c(mu,popwt,var)
-    
-    # THis works for average 
-    #expected_gini <- tapply(X=data, INDEX=pop_domains, FUN=calculate_gini,var=var)
-    #sumj <- aggregate(x=data,by=pop_domains,FUN=innersum)
+
     sumj <- ave(x=data,by=pop_domains,FUN=calculate_sumj)[1:length(mu)]
     Ybar <- ave(x=Y*popwt,group=pop_domains,FUN=sum)/ave(x=popwt,group=pop_domains,FUN=sum)
     expected_gini <- 2*(Y/Ybar)*popwt*sumj
-    # If add a constant to Gini, newgini=oldgini*(xbar+k)/xbar, so now adjust 
+    # If usig log shift, we need to adjust. newgini=oldgini*(xbar+k)/xbar, to adjust set k=-lambda. 
     if (lambda!=0)
       expected_gini <- expected_gini*Ybar/(Ybar-lambda)
       }
     return(expected_gini)
   }  
 
+calculate_quantile <- function(q=q,data=data) {
+  data <- matrix(data,ncol=3) #mu,popwt,var
+  quantile<-pmixnorm(mean=data[,1],sd=sqrt(data[,3]),pro=data[,2])
+  return(quantile)
+}
+
+expected_quantile <- function(q=q,mu=mu, var=var, lambda=lambda,transformation=transformation,popwt=popwt,pop_domains=pop_domains) {
+  if (is.null(lambda)) {
+    lambda <- 0
+  }
+  data <- data.frame(mu,popwt,var)
+  expected_quantile <- unlist(by(x=data,INDICES=pop_domains,FUN=pmixnorm,mean=data$mu,sd=sqrt(data$var),pro=data$popwt))
+  #expected_quantile=ave(q=q,x=data,by=pop_domains,FUN=calculate_quantile)
+  return(expected_quantile)
+}
+
+  
 transformed_percentile <- function(mu=mu,threshold=threshold,var=var,transformation=transformation,lambda=lambda,shift=shift,p=p) {
    mu_percentile <- mu+qnorm(p,0,var)
    transformed_percentile <- back_transformation(y=mu_percentile,transformation=transformation,lambda=lambda,shift=shift) 
