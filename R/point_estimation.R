@@ -761,20 +761,19 @@ expected_head_count <- function(mu=mu,threshold=threshold,var=var,transformation
 innersum <- function(i,var,mu,popwt) {
   # i and var are scalars, mu and popwt are vectors 
   #The inner sum is a function of mui,mu, and var  
-  sumj <- sum(popwt*(pnorm((mu[i]-mu+var)/sqrt(2*var))-0.5))
+  sumj <- sum(popwt*(pnorm((rep(mu[i],length(mu))-mu+var)/sqrt(2*var))-0.5))
   return(sumj)
   }
 
 calculate_gini <- function(data=data,var=var) {
   #expected_gini <- (2*Y/sum(Y*popwt))*sapply(1:length(mu), function(i) innersum(mu=mu,var=var,popwt=popwt_norm))
-  expected_gini <- (2*data$Y/sum(data$Y*data$popwt))*sapply(1:length(data$Y), function(i) innersum(mu=data$mu,var=var,popwt=data$popwt))
+  expected_gini <- sum(2*data$Y/sum(data$Y*data$popwt_norm))*sapply(1:length(data$Y), function(i) innersum(mu=data$mu,var=var,popwt=data$popwt_norm))
   return(expected_gini)
 }
 
 expected_gini <- function(mu=mu, var=var, lambda=lambda,transformation=transformation,popwt=popwt,pop_domains=pop_domains) {
   expected_gini <- NULL 
   if (transformation=="log" | transformation=="log.shift") {  
-    i=1:length(mu)
     popwt_norm=popwt/sum(popwt)
     Y=exp(mu+0.5*var)
     #expected_gini <- (2*popwt_norm*mu/weighted.mean(mu,w=popwt))*sapply(1:length(mu), function(i) innersum(mu=mu,var=var,popwt=popwt_norm))
@@ -782,8 +781,8 @@ expected_gini <- function(mu=mu, var=var, lambda=lambda,transformation=transform
     # that works for sum 
     # get this for average 
     #expected_gini <- (2*Y/sum(Y*popwt_norm))*sapply(1:length(mu), function(i) innersum(mu=mu,var=var,popwt=popwt_norm))
-    data <- as.data.frame(cbind(Y,mu,popwt_norm))
-    expected_gini <- tapply(X=data, INDEX=pop_domains, FUN=calculate_gini,var=var)
+    data <- data.frame(Y,mu,popwt_norm,pop_domains)
+    expected_gini <- tapply(X=data, INDEX=data$pop_domains, FUN=calculate_gini,var=var)
       }
     return(expected_gini)
   }  
