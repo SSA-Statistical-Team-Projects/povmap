@@ -757,7 +757,7 @@ expected_head_count <- function(mu=mu,threshold=threshold,var=var,transformation
   return(expected_head_count)
 }
 
-
+# I experimented with this code, based on Young WP (2012)
 innersum <- function(i,var,mu,popwt) {
   # i and var are scalars, mu and popwt are vectors 
   #The inner sum is a function of mui,mu, and var  
@@ -767,7 +767,7 @@ innersum <- function(i,var,mu,popwt) {
 
 calculate_gini <- function(data=data,var=var) {
   #expected_gini <- (2*Y/sum(Y*popwt))*sapply(1:length(mu), function(i) innersum(mu=mu,var=var,popwt=popwt_norm))
-  expected_gini <- sum(2*data$Y/sum(data$Y*data$popwt_norm))*sapply(1:length(data$Y), function(i) innersum(mu=data$mu,var=var,popwt=data$popwt_norm))
+  expected_gini <- weighted.mean(x=2*data[,1]/sum(data[,1]*data[,3]))*sapply(1:length(data[,1]), function(i) innersum(mu=data[,2],var=var,popwt=data[,3])),w=data[,3])
   return(expected_gini)
 }
 
@@ -781,7 +781,7 @@ expected_gini <- function(mu=mu, var=var, lambda=lambda,transformation=transform
     # that works for sum 
     # get this for average 
     #expected_gini <- (2*Y/sum(Y*popwt_norm))*sapply(1:length(mu), function(i) innersum(mu=mu,var=var,popwt=popwt_norm))
-    data <- data.frame(Y,mu,popwt_norm,pop_domains)
+    data <- matrix(Y,mu,popwt,pop_domains)
     expected_gini <- tapply(X=data, INDEX=data$pop_domains, FUN=calculate_gini,var=var)
       }
     return(expected_gini)
