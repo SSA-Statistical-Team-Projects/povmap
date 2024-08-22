@@ -676,7 +676,7 @@ if ("Poverty_Gap" %in% framework$indicator_names) {
     
   }
 if ("Gini" %in% framework$indicator_names) {
-indicators[,"Gini"] <- expected_gini(mu=gen_model$mu, var=var, transformation=transformation,lambda=lambda,popwt=pop_weights_vec)
+indicators[,"Gini"] <- expected_gini(mu=gen_model$mu, var=var, transformation=transformation,lambda=lambda,popwt=pop_weights_vec,pop_domains=framework$pop_data[,framework$pop_domains])
 }  
   
   
@@ -761,16 +761,30 @@ expected_head_count <- function(mu=mu,threshold=threshold,var=var,transformation
 innersum <- function(i,var,mu,popwt) {
   # i and var are scalars, mu and popwt are vectors 
   #The inner sum is a function of mui,mu, and var  
-  sumj <- sum(popwt*(pnorm((mu[i]-mu+var)/sqrt(2*var))-1))
+  sumj <- sum(popwt*(pnorm((mu[i]-mu+var)/sqrt(2*var))-0.5))
   return(sumj)
   }
 
-expected_gini <- function(mu=mu, var=var, lambda=lambda,transformation=transformation,popwt=popwt) {
-  gini <- NULL 
+calculate_gini <- function(Y,mu,var,popwt) {
+  #expected_gini <- (2*Y/sum(Y*popwt))*sapply(1:length(mu), function(i) innersum(mu=mu,var=var,popwt=popwt_norm))
+  expected_gini <- (2*data$Y/sum(data$Y*data$popwt))*sapply(1:length(data$Y), function(i) innersum(mu=data$mu,var=var,popwt=data$popwt))
+  return(expected_gini)
+}
+
+expected_gini <- function(mu=mu, var=var, lambda=lambda,transformation=transformation,popwt=popwt,popdomains=popdomains) {
+  expected_gini <- NULL 
   if (transformation=="log" | transformation=="log.shift") {  
     i=1:length(mu)
-    expected_gini <- (2*popwt*mu/mean(mu))*sapply(1:length(mu),innersum(mu=mu,var=var,popwt=popwt))
-  }
+    popwt_norm=popwt/sum(popwt)
+    Y=exp(mu+0.5*var)
+    #expected_gini <- (2*popwt_norm*mu/weighted.mean(mu,w=popwt))*sapply(1:length(mu), function(i) innersum(mu=mu,var=var,popwt=popwt_norm))
+    # expected_gini <- (2*Y*popwt_norm/sum(Y*popwt_norm))*sapply(1:length(mu), function(i) innersum(mu=mu,var=var,popwt=popwt_norm))
+    # that works for sum 
+    # get this for average 
+    #expected_gini <- (2*Y/sum(Y*popwt_norm))*sapply(1:length(mu), function(i) innersum(mu=mu,var=var,popwt=popwt_norm))
+    data <- as.data.frame(cbind(popdomains,Y,mu,popwt_norm))
+    expected_gini <- tapply(calculate_gini(Y=Y,var=var,mu=mu,popwt=popwt_norm)
+      }
     return(expected_gini)
   }  
 
