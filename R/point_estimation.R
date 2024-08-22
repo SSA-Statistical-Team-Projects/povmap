@@ -783,6 +783,8 @@ expected_gini <- function(mu=mu, var=var, lambda=lambda,transformation=transform
     }
     #popwt_norm=popwt/sum(popwt)
     Y=exp(mu+0.5*var)-lambda
+    mu=log(Y)-0.5*var
+    
     #expected_gini <- (2*popwt_norm*mu/weighted.mean(mu,w=popwt))*sapply(1:length(mu), function(i) innersum(mu=mu,var=var,popwt=popwt_norm))
     # expected_gini <- (2*Y*popwt_norm/sum(Y*popwt_norm))*sapply(1:length(mu), function(i) innersum(mu=mu,var=var,popwt=popwt_norm))
     # that works for sum 
