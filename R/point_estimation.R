@@ -778,8 +778,11 @@ calculate_sumj <- function(data=data,var=var) {
 expected_gini <- function(mu=mu, var=var, lambda=lambda,transformation=transformation,popwt=popwt,pop_domains=pop_domains) {
   expected_gini <- NULL 
   if (transformation=="log" | transformation=="log.shift") {  
+    if (is.null(lambda)) {
+      lambda <- 0
+    }
     #popwt_norm=popwt/sum(popwt)
-    Y=exp(mu+0.5*var)
+    Y=exp(mu+0.5*var)-lambda
     #expected_gini <- (2*popwt_norm*mu/weighted.mean(mu,w=popwt))*sapply(1:length(mu), function(i) innersum(mu=mu,var=var,popwt=popwt_norm))
     # expected_gini <- (2*Y*popwt_norm/sum(Y*popwt_norm))*sapply(1:length(mu), function(i) innersum(mu=mu,var=var,popwt=popwt_norm))
     # that works for sum 
