@@ -765,7 +765,7 @@ innersum <- function(i,var,mu,popwt) {
   return(sumj)
   }
 
-calculate_gini <- function(Y,mu,var,popwt) {
+calculate_gini <- function(data=data,var=var) {
   #expected_gini <- (2*Y/sum(Y*popwt))*sapply(1:length(mu), function(i) innersum(mu=mu,var=var,popwt=popwt_norm))
   expected_gini <- (2*data$Y/sum(data$Y*data$popwt))*sapply(1:length(data$Y), function(i) innersum(mu=data$mu,var=var,popwt=data$popwt))
   return(expected_gini)
@@ -782,8 +782,8 @@ expected_gini <- function(mu=mu, var=var, lambda=lambda,transformation=transform
     # that works for sum 
     # get this for average 
     #expected_gini <- (2*Y/sum(Y*popwt_norm))*sapply(1:length(mu), function(i) innersum(mu=mu,var=var,popwt=popwt_norm))
-    data <- as.data.frame(cbind(popdomains,Y,mu,popwt_norm))
-    expected_gini <- tapply(calculate_gini(Y=Y,var=var,mu=mu,popwt=popwt_norm)
+    data <- as.data.frame(cbind(Y,mu,popwt_norm))
+    expected_gini <- tapply(X=data, index=pop_domains, FUN=calculate_gini,var=var)
       }
     return(expected_gini)
   }  
