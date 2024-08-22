@@ -765,15 +765,13 @@ innersum <- function(i,var,mu,popwt) {
   return(sumj)
   }
 
-calculate_gini <- function(data=data,var=var) {
+calculate_sumj <- function(data=data,var=var) {
   #expected_gini <- (2*Y/sum(Y*popwt))*sapply(1:length(mu), function(i) innersum(mu=mu,var=var,popwt=popwt_norm))
-  data <- matrix(data,ncol=4)
-  term1 <- 2*data[,1]/data[,1]*data[,3]
-  term2 <- sapply(1:length(term1), function(i) innersum(i,mu=data[,2],var=data[,4],popwt=data[,3]))
+  data <- matrix(data,ncol=3)
+  term2 <- sapply(1:nrow(data), function(i) innersum(i,mu=data[,1],var=data[,3],popwt=data[,2]))
   #expected_gini <- weighted.mean(x=term1*sapply(1:length(term1), function(i) innersum(mu=data[,2],var=data[,4],popwt=data[,3])),w=data[,3])
   #expected_gini <- weighted.mean(x=term1*term2,w=data[,3])
-  expected_gini <- term1*term2
-   return(expected_gini)
+   return(term2)
 }
 
 
@@ -787,11 +785,15 @@ expected_gini <- function(mu=mu, var=var, lambda=lambda,transformation=transform
     # that works for sum 
     
     #expected_gini <- (2*Y/sum(Y*popwt_norm))*sapply(1:length(mu), function(i) innersum(mu=mu,var=var,popwt=popwt_norm))
-    data <- as.matrix(data.frame(Y,mu,popwt,var))
+    #data <- as.matrix(data.frame(Y,mu,popwt,var))
+    data <- c(mu,popwt,var)
+    
     # THis works for average 
     #expected_gini <- tapply(X=data, INDEX=pop_domains, FUN=calculate_gini,var=var)
     #sumj <- aggregate(x=data,by=pop_domains,FUN=innersum)
-    sumj <- ave(x=data,by=pop_domains,FUN=calculate_gini)
+    sumj <- ave(x=data,by=pop_domains,FUN=calculate_sumj)[1:length(mu)]
+    Ybar <- ave(x=Y*popwt,group=pop_domains,FUN=sum)/ave(x=popwt,group=pop_domains,FUN=sum)
+    expected_gini <- 2*(Y/Ybar)*popwt*sumj
       }
     return(expected_gini)
   }  
