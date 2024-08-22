@@ -771,7 +771,7 @@ calculate_gini <- function(data=data,var=var) {
   return(expected_gini)
 }
 
-expected_gini <- function(mu=mu, var=var, lambda=lambda,transformation=transformation,popwt=popwt,popdomains=popdomains) {
+expected_gini <- function(mu=mu, var=var, lambda=lambda,transformation=transformation,popwt=popwt,pop_domains=pop_domains) {
   expected_gini <- NULL 
   if (transformation=="log" | transformation=="log.shift") {  
     i=1:length(mu)
