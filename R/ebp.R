@@ -414,7 +414,7 @@ ebp <- function(fixed,
   if (L==0 && is.null(indicators)) {
     #set default indicators to mean, headcount, Poverty_Gap, and Quantiles if calculating expected values 
     #because these are only indicators currently supported
-    indicators <- c("Mean","Head_Count","Poverty_Gap","Gini","Quantile_10","Quantile_25","Median","Quantile_75","Quantile_90")
+    indicators <- c("Mean","Head_Count","Poverty_Gap","Gini","Quantiles")
   }
   
 
