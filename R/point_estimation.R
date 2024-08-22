@@ -765,7 +765,8 @@ expected_head_count <- function(mu=mu,threshold=threshold,var=var,transformation
   return(expected_head_count)
 }
 
-# I experimented with this code, based on Young WP (2012)
+# This code is based on Young, Alwyn. "The gini coefficient for a mixture of ln-normal populations." (2011).
+# 
 innersum <- function(i,var,mu,popwt) {
   # i and var are scalars, mu and popwt are vectors 
   #The inner sum is a function of mui,mu, and var  
@@ -802,21 +803,7 @@ expected_gini <- function(mu=mu, var=var, lambda=lambda,transformation=transform
     return(expected_gini)
   }  
 
-calculate_quantile <- function(q=q,data=data) {
-  data <- matrix(data,ncol=3) #mu,popwt,var
-  quantile<-pmixnorm(mean=data[,1],sd=sqrt(data[,3]),pro=data[,2])
-  return(quantile)
-}
 
-expected_quantile <- function(q=q,mu=mu, var=var, lambda=lambda,transformation=transformation,popwt=popwt,pop_domains=pop_domains) {
-  if (is.null(lambda)) {
-    lambda <- 0
-  }
-  data <- data.frame(mu,popwt,var)
-  expected_quantile <- unlist(by(x=data,INDICES=pop_domains,FUN=pmixnorm,mean=data$mu,sd=sqrt(data$var),pro=data$popwt))
-  #expected_quantile=ave(q=q,x=data,by=pop_domains,FUN=calculate_quantile)
-  return(expected_quantile)
-}
 
   
 transformed_percentile <- function(mu=mu,threshold=threshold,var=var,transformation=transformation,lambda=lambda,shift=shift,p=p) {
