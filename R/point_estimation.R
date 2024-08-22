@@ -767,7 +767,7 @@ innersum <- function(i,var,mu,popwt) {
 
 calculate_gini <- function(data=data,var=var) {
   #expected_gini <- (2*Y/sum(Y*popwt))*sapply(1:length(mu), function(i) innersum(mu=mu,var=var,popwt=popwt_norm))
-  data <- as.matrix(data)
+  data <- matrix(data,vol=4)
   term1 <- 2*data[,1]/data[,1]*data[,3]
   term2 <- sapply(1:length(term1), function(i) innersum(i,mu=data[,2],var=data[,4],popwt=data[,3]))
   #expected_gini <- weighted.mean(x=term1*sapply(1:length(term1), function(i) innersum(mu=data[,2],var=data[,4],popwt=data[,3])),w=data[,3])
