@@ -800,7 +800,7 @@ expected_gini <- function(mu=mu, var=var, lambda=lambda,transformation=transform
     expected_gini <- 2*(Y/Ybar)*popwt*sumj
     # If add a constant to Gini, newgini=oldgini*(xbar+k)/xbar, so now adjust 
     if (lambda!=0)
-      expected_gini <- expected_gini*(Ybar+lambda)/Ybar
+      expected_gini <- expected_gini*Ybar/(Ybar-lambda)
       }
     return(expected_gini)
   }  
