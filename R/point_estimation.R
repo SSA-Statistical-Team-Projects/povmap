@@ -771,22 +771,27 @@ calculate_gini <- function(data=data,var=var) {
   term1 <- 2*data[,1]/data[,1]*data[,3]
   term2 <- sapply(1:length(term1), function(i) innersum(i,mu=data[,2],var=data[,4],popwt=data[,3]))
   #expected_gini <- weighted.mean(x=term1*sapply(1:length(term1), function(i) innersum(mu=data[,2],var=data[,4],popwt=data[,3])),w=data[,3])
-  expected_gini <- weighted.mean(x=term1*term2,w=data[,3])
-  return(expected_gini)
+  #expected_gini <- weighted.mean(x=term1*term2,w=data[,3])
+  expected_gini <- term1*term2
+   return(expected_gini)
 }
+
 
 expected_gini <- function(mu=mu, var=var, lambda=lambda,transformation=transformation,popwt=popwt,pop_domains=pop_domains) {
   expected_gini <- NULL 
   if (transformation=="log" | transformation=="log.shift") {  
-    popwt_norm=popwt/sum(popwt)
+    #popwt_norm=popwt/sum(popwt)
     Y=exp(mu+0.5*var)
     #expected_gini <- (2*popwt_norm*mu/weighted.mean(mu,w=popwt))*sapply(1:length(mu), function(i) innersum(mu=mu,var=var,popwt=popwt_norm))
     # expected_gini <- (2*Y*popwt_norm/sum(Y*popwt_norm))*sapply(1:length(mu), function(i) innersum(mu=mu,var=var,popwt=popwt_norm))
     # that works for sum 
-    # get this for average 
+    
     #expected_gini <- (2*Y/sum(Y*popwt_norm))*sapply(1:length(mu), function(i) innersum(mu=mu,var=var,popwt=popwt_norm))
-    data <- data.frame(Y,mu,popwt,var)
-    expected_gini <- tapply(X=data, INDEX=pop_domains, FUN=calculate_gini,var=var)
+    data <- as.matrix(data.frame(Y,mu,popwt,var))
+    # THis works for average 
+    #expected_gini <- tapply(X=data, INDEX=pop_domains, FUN=calculate_gini,var=var)
+    #sumj <- aggregate(x=data,by=pop_domains,FUN=innersum)
+    sumj <- ave(x=data,by=pop_domains,FUN=calculate_gini)
       }
     return(expected_gini)
   }  
