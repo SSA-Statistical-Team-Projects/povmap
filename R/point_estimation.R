@@ -782,8 +782,7 @@ expected_gini <- function(mu=mu, var=var, lambda=lambda,transformation=transform
       lambda <- 0
     }
     #popwt_norm=popwt/sum(popwt)
-    Y=exp(mu+0.5*var)-lambda
-    mu=log(Y)-0.5*var
+    Y=exp(mu+0.5*var)
     
     #expected_gini <- (2*popwt_norm*mu/weighted.mean(mu,w=popwt))*sapply(1:length(mu), function(i) innersum(mu=mu,var=var,popwt=popwt_norm))
     # expected_gini <- (2*Y*popwt_norm/sum(Y*popwt_norm))*sapply(1:length(mu), function(i) innersum(mu=mu,var=var,popwt=popwt_norm))
@@ -799,6 +798,9 @@ expected_gini <- function(mu=mu, var=var, lambda=lambda,transformation=transform
     sumj <- ave(x=data,by=pop_domains,FUN=calculate_sumj)[1:length(mu)]
     Ybar <- ave(x=Y*popwt,group=pop_domains,FUN=sum)/ave(x=popwt,group=pop_domains,FUN=sum)
     expected_gini <- 2*(Y/Ybar)*popwt*sumj
+    # If add a constant to Gini, newgini=oldgini*(xbar+k)/xbar, so now adjust 
+    if (lambda!=0)
+      expected_gini <- expected_gini*(Y+lambda)/Y
       }
     return(expected_gini)
   }  
