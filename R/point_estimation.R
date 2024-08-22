@@ -761,13 +761,14 @@ expected_head_count <- function(mu=mu,threshold=threshold,var=var,transformation
 innersum <- function(i,var,mu,popwt) {
   # i and var are scalars, mu and popwt are vectors 
   #The inner sum is a function of mui,mu, and var  
-  sumj <- sum(popwt*(pnorm((rep(mu[i],length(mu))-mu+var)/sqrt(2*var))-0.5))
+  sumj <- weighted.mean(x=(pnorm((rep(mu[i],length(mu))-mu+var)/sqrt(2*var))-0.5),w=popwt)
   return(sumj)
   }
 
 calculate_gini <- function(data=data,var=var) {
   #expected_gini <- (2*Y/sum(Y*popwt))*sapply(1:length(mu), function(i) innersum(mu=mu,var=var,popwt=popwt_norm))
-  expected_gini <- weighted.mean(x=2*data[,1]/sum(data[,1]*data[,3]))*sapply(1:length(data[,1]), function(i) innersum(mu=data[,2],var=var,popwt=data[,3])),w=data[,3])
+  term1 <- 2*data[,1]/data[,1]*data[,3]
+  expected_gini <- weighted.mean(x=term1*sapply(1:length(data[,1]), function(i) innersum(mu=data[,2],var=data[,4],popwt=data[,3])),w=data[,3])
   return(expected_gini)
 }
 
@@ -781,7 +782,7 @@ expected_gini <- function(mu=mu, var=var, lambda=lambda,transformation=transform
     # that works for sum 
     # get this for average 
     #expected_gini <- (2*Y/sum(Y*popwt_norm))*sapply(1:length(mu), function(i) innersum(mu=mu,var=var,popwt=popwt_norm))
-    data <- matrix(Y,mu,popwt,pop_domains)
+    data <- matrix(Y,mu,popwt,var)
     expected_gini <- tapply(X=data, INDEX=data$pop_domains, FUN=calculate_gini,var=var)
       }
     return(expected_gini)
