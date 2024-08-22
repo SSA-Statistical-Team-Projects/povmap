@@ -331,9 +331,9 @@ ebp <- function(fixed,
                 smp_data,
                 smp_domains,
                 smp_subdomains = NULL, 
-                L = 50,
+                L = 0,
                 threshold = NULL,
-                transformation = "box.cox",
+                transformation = "log.shift",
                 interval = "default",
                 MSE = FALSE,
                 B = 50,
@@ -412,9 +412,9 @@ ebp <- function(fixed,
   }
   
   if (L==0 && is.null(indicators)) {
-    #set default indicators to mean, headcount, and Poverty_Gap if calculating expected values 
+    #set default indicators to mean, headcount, Poverty_Gap, and Quantiles if calculating expected values 
     #because these are only indicators currently supported
-    indicators <- c("Mean","Head_Count","Poverty_Gap","Gini","P10","P25","Median","P75","P90")
+    indicators <- c("Mean","Head_Count","Poverty_Gap","Gini","Quantile_10","Quantile_25","Median","Quantile_75","Quantile_90")
   }
   
 
