@@ -783,7 +783,7 @@ expected_gini <- function(mu=mu, var=var, lambda=lambda,transformation=transform
     # get this for average 
     #expected_gini <- (2*Y/sum(Y*popwt_norm))*sapply(1:length(mu), function(i) innersum(mu=mu,var=var,popwt=popwt_norm))
     data <- matrix(Y,mu,popwt,var)
-    expected_gini <- tapply(X=data, INDEX=data$pop_domains, FUN=calculate_gini,var=var)
+    expected_gini <- tapply(X=data, INDEX=pop_domains, FUN=calculate_gini,var=var)
       }
     return(expected_gini)
   }  
