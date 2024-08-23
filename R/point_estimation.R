@@ -681,10 +681,7 @@ indicators[,"Gini"] <- expected_gini(mu=gen_model$mu, var=var, transformation=tr
 
 
 
-quantile <- 10 
-if (paste0("Quantile_",quantile) %in% framework$indicator_names) {
-  indicators[,paste0("Quantile_",quantile)]<-expected_quantile(q=quantile,mu=gen_model$mu,var=var,transformation=transformation,lambda=lambda,popwt=pop_weights_vec,pop_domains=framework$pop_data[,framework$pop_domains])
-}
+
 
 
 
