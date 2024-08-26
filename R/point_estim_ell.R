@@ -51,11 +51,16 @@ point_estim_ell <- function(framework,
   random_arg[framework$smp_domains] <- list(as.formula(~1))
   names(random_arg) <- c(framework$smp_domains)
  
+  weights_arg <- NULL
+  if (!is.null(framework$weight)) {
+    weights_arg <- framework$smp_data[,framework$weights]
+  }
+  
   # Using do.call passes the name of the weight vector from framework to the plm function 
   # if weight is NULL, that is appropriately passed to PLM 
  args <- list(formula=fixed, 
            data = transformation_par$transformed_data, 
-           weights = framework$smp_data[,framework$weights],
+           weights = weights_arg,
            model="random",
            index = framework$smp_domains,
            random.method=framework$random_method)

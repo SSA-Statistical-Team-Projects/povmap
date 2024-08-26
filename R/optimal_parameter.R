@@ -31,7 +31,10 @@ if (transformation != "no" && transformation != "log" &&
     }
 
     # Estimation of optimal lambda parameters
-    optimal_parameter <- optimize(generic_opt,
+
+  if (!is.null(framework$nlme_method)) {
+    #EBP 
+      optimal_parameter <- optimize(generic_opt,
       fixed          = fixed,
       smp_data       = smp_data,
       smp_domains    = smp_domains,
@@ -41,6 +44,19 @@ if (transformation != "no" && transformation != "log" &&
       maximum        = FALSE
     )$minimum
   } else {
+    #ELL 
+  optimal_parameter <- optimize(generic_opt_ell,
+      fixed          = fixed,
+      smp_data       = smp_data,
+      smp_domains    = smp_domains,
+      transformation = transformation,
+      interval       = interval,
+      framework      = framework,
+      maximum        = FALSE
+  )$minimum
+        } 
+  }
+  else {
     optimal_parameter <- NULL
   }
 
@@ -66,6 +82,28 @@ generic_opt <- function(lambda,
   # Preperation to easily implement further methods here
   optimization <- if (TRUE) {
     reml(
+      fixed = fixed,
+      smp_data = smp_data,
+      smp_domains = smp_domains,
+      transformation = transformation,
+      lambda = lambda,
+      framework = framework
+    )
+  }
+  return(optimization)
+}
+
+generic_opt_ell <- function(lambda,
+                        fixed,
+                        smp_data,
+                        smp_domains,
+                        transformation,
+                        framework) {
+  
+  # Definition of optimization function for finding the optimal lambda
+  # Preperation to easily implement further methods here
+  optimization <- if (TRUE) {
+    ml_plm(
       fixed = fixed,
       smp_data = smp_data,
       smp_domains = smp_domains,
@@ -156,3 +194,56 @@ reml <- function(fixed = fixed,
 
   return(log_likelihood)
 }
+
+ml_plm <- function(fixed = fixed,
+                 smp_data = smp_data,
+                 smp_domains = smp_domains,
+                 transformation = transformation,
+                 lambda = lambda,
+                 framework = framework) {
+  
+  sd_transformed_data <- std_data_transformation(
+    fixed = fixed,
+    smp_data = smp_data,
+    transformation =
+      transformation,
+    lambda = lambda
+  )
+  
+  model_PLM <- NULL
+  weights_arg <- NULL
+  if (!is.null(framework$weight)) {
+    weights_arg <- framework$smp_data[,framework$weights]
+}
+
+  args <- list(formula=fixed, 
+               data = sd_transformed_data, 
+               weights = weights_arg ,
+               model="random",
+               index = framework$smp_domains,
+               random.method=framework$random_method)
+  
+  try(
+    model_PLM <- do.call(plm:::plm, args)
+, silent = TRUE)
+
+  if (is.null(model_PLM)) {
+    stop(strwrap(prefix = " ", initial = "",
+                 "The likelihood did not converge when estimating a random effects model to select the optimal
+                 transformation parameter. Try using a non-adapative transformation."))
+  } else {
+    model_PLM <- model_PLM
+  }
+  log_likelihood <- logLik(model_PLM)[1]
+  return(log_likelihood)
+}
+
+  # taken from https://gist.github.com/moritzpschwarz/35fc5be900b99a1a593ab5dd7018ff7b
+  logLik.plm <- function(object){
+    out <- -plm::nobs(object) * log(2 * var(object$residuals) * pi)/2 - deviance(object)/(2 * var(object$residuals))
+    
+    attr(out,"df") <- nobs(object) - object$df.residual
+    attr(out,"nobs") <- plm::nobs(object)
+    return(out)
+  }
+  
