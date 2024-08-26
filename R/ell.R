@@ -197,7 +197,7 @@ ell <- function(fixed,
     interval = interval, MSE = F, boot_type = "parametric", B = 50, L= L, 
     custom_indicator = custom_indicator, cpus = 1, seed = seed,
     na.rm = na.rm, weights = weights, pop_weights = pop_weights,
-    weights_type = "nlme", benchmark = benchmark,
+    weights_type = weights_type, benchmark = benchmark,
     benchmark_type = benchmark_type, benchmark_level = benchmark_level,
     benchmark_weights = benchmark_weights,MSE_pop_weights=NULL 
   )
