@@ -414,7 +414,7 @@ monte_carlo_ell <- function(transformation,
 # The function errors_gen returns error terms of the generating model.
 errors_gen_ell <- function(framework, model_par, alpha_model=NULL) {
   if (is.null(alpha_model)) {
-    epsilon <- rnorm(framework$N_pop, 0, sqrt(model_par$sigmae2est_pop))
+    epsilon <- rnorm(framework$N_pop, 0, sqrt(model_par$sigmae2est))
   } 
   else {
     epsilon <- rnorm(framework$N_pop, 0, sqrt(alpha_model$sigmae2est_pop))
