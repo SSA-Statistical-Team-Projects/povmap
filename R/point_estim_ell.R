@@ -193,26 +193,38 @@ rowvar <- function(x) {
 
 
 #Alpha model function
-# This function estimates the alpha model, as described in Zhao and Lanjouw's reference guide to povmap 
+# This function estimates the alpha model, as described in Zhao (2006) p.4-5 
+#Zhao, Q. (2006). User manual for povmap. World Bank. http://siteresources. worldbank. org/INTPGI/Resources/342674-1092157888460/Zhao_ ManualPovMap. pdf.
 # it returns the alpha model and the expected value of the variance 
 alphamodel <- function(residuals, alpha,framework) {
-  # 1. Decopmose the residuals into an average cluster effect and a residual 
-   weights <- framework$smp_data[,framework$weights]
+  if (is.null(framework$weights)) {
+    weight_smp <- rep(1,framework$N_smp)  
+  } 
+  else {
+    weight_smp <- framework$smp_data[[as.character(framework$weights)]]
+  }
+  
+    # 1. Decompose the residuals into an average cluster effect and a residual 
+  
    mean_resid <- aggregate_weighted_mean(df=residuals,by=list(framework$smp_data[,framework$smp_domains]),
-                                         w=weights)
+                                         w=weight_smp)
    dev_resid <- residuals - rep(mean_resid$V1,framework$n_smp)
+   
    eps_squared <- dev_resid^2 
     A <- 1.05*max(eps_squared)
     framework$smp_data$transformed_eps_squared <- log(eps_squared/(A-eps_squared))
     framework$smp_data$transformed_eps_squared[eps_squared==0] <- 0
     model <- reformulate(as.character(alpha[-1]),"transformed_eps_squared")
     
-    alpha_model<-lm(model,data=framework$smp_data,weights=weights)
-    
+    alpha_model<-lm(model,data=framework$smp_data,weights=weight_smp)
     
     # we want to draw standardized residuals, so first estimate the variance of epsilon in the sample 
+    #B is not explicitly defined in Zhang (2006) but Peter confirmed it is exp(zTch*alphahat) as defined in Zhang (2006)
+    # and that has to be true for the variance formula to be correct 
     B_smp <- exp(predict(alpha_model))
+    
     var_r <- summary(alpha_model)$sigma^2
+    # This formula comes from 
     sigmae2est_smp <- (A * B_smp / (1+B_smp)) + 0.5*var_r*(A*B_smp*(1-B_smp)/(1+B_smp)^3)
     dev_resid_std <- dev_resid/sigmae2est_smp^0.5
     dev_resid_std <- dev_resid_std-ave(dev_resid_std,by=framework$smp_data[,framework$smp_domains]) # ELL p.357 eq (3)
@@ -292,7 +304,7 @@ monte_carlo_ell <- function(transformation,
     
     
     # Errors in generating model: individual error term and random effect
-    # See below for function errors_gen.
+    # See below for function errors_gen_ell.
     
     if (framework$errors!="nonnormal") {
     errors <- errors_gen_ell(
@@ -315,7 +327,7 @@ monte_carlo_ell <- function(transformation,
     
     
     # Prediction of population vector y
-    # See below for function prediction_y.
+    # See below for function prediction_y_ell.
     population_vector <- prediction_y_ell(
       transformation = transformation,
       lambda = lambda,
@@ -402,10 +414,10 @@ monte_carlo_ell <- function(transformation,
 # The function errors_gen returns error terms of the generating model.
 errors_gen_ell <- function(framework, model_par, alpha_model=NULL) {
   if (is.null(alpha_model)) {
-    epsilon <- rnorm(framework$N_pop, 0, sqrt(model_par$sigmae2est))
+    epsilon <- rnorm(framework$N_pop, 0, sqrt(model_par$sigmae2est_pop))
   } 
   else {
-    epsilon <- rnorm(framework$N_pop, 0, sqrt(alpha_model$sigmae2est))
+    epsilon <- rnorm(framework$N_pop, 0, sqrt(alpha_model$sigmae2est_pop))
   }
   # empty vector for new random effect in generating model
   vu <- vector(length = framework$N_pop)

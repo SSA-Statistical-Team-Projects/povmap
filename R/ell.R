@@ -59,9 +59,7 @@
 #' distributions, the negative values may be excluded, also values larger than
 #' 1 are seldom observed.
 #' @param L a number determining the number of Monte-Carlo simulations that
-#' must be at least 1. Defaults to 50. For practical applications, values
-#' larger than 200 are recommended (see also
-#' \cite{Molina, I. and Rao, J.N.K. (2010)}).
+#' must be at least 1. Defaults to 100. 
 #' @param seed an integer to set the seed for the random number generator. For
 #' the usage of random number generation, see Details. If seed is set to
 #' \code{NULL}, seed is chosen randomly. Defaults to \code{123}.
@@ -163,7 +161,7 @@ ell <- function(fixed,
                 smp_data,
                 smp_domains,
                 smp_subdomains = NULL, 
-                L = 50,
+                L = 100,
                 threshold = NULL,
                 transformation = "log.shift",
                 interval = "default",
