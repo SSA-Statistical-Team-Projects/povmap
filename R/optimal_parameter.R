@@ -240,8 +240,6 @@ ml_plm <- function(fixed = fixed,
 
   # taken from Stata XT manual help for xtreg, re
   logLik.plm <- function(object){
-   #out <- plm::nobs(object) * log(2 * var(object$residuals) * pi)/2 - deviance(object)/(2 * var(object$residuals))
-    
     e=object$residuals
     e2=object$residuals^2
     tosum <- cbind(e2,rep(1,nobs(object)),e)
