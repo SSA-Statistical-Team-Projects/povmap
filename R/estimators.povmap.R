@@ -10,6 +10,9 @@
 #' @param MSE optional logical. If \code{TRUE}, MSE estimates for selected
 #' indicators per domain are added to the data frame of point estimates.
 #' Defaults to \code{FALSE}.
+#' @param var optional logical. If \code{TRUE} and object is an ELL object, 
+#' variance estimates for selected indicators per domain are added to the 
+#' data frame of point estimates. Defaults to \code{FALSE}.
 #' @param CV optional logical. If \code{TRUE}, coefficients of variation for
 #' selected indicators per domain are added to the data frame of point
 #' estimates. Defaults to \code{FALSE}.
@@ -20,7 +23,7 @@
 #' return of that method.
 #' @export
 
-estimators <- function(object, indicator, MSE, CV, ...) UseMethod("estimators")
+estimators <- function(object, indicator, MSE, var, CV, ...) UseMethod("estimators")
 
 
 #' Presents Point, MSE and/or CV Estimates of an povmapObject
@@ -48,6 +51,9 @@ estimators <- function(object, indicator, MSE, CV, ...) UseMethod("estimators")
 #' @param MSE optional logical. If \code{TRUE}, MSE estimates for selected
 #' indicators per domain are added to the data frame of point estimates.
 #' Defaults to \code{FALSE}.
+#' @param var optional logical. If \code{TRUE} and object is an ELL object, 
+#' variance estimates for selected indicators per domain are added to the 
+#' data frame of point estimates. Defaults to \code{FALSE}.
 #' @param CV optional logical. If \code{TRUE}, coefficients of variation for
 #' selected indicators per domain are added to the data frame of point
 #' estimates. Defaults to \code{FALSE}.
@@ -104,23 +110,33 @@ estimators <- function(object, indicator, MSE, CV, ...) UseMethod("estimators")
 #' @rdname estimators
 #' @export
 
-estimators.povmap <- function(object, indicator = "all", MSE = FALSE,
+estimators.povmap <- function(object, indicator = "all", MSE = FALSE, var= FALSE, 
                             CV = FALSE, ...) {
-  estimators_check(
+
+
+    estimators_check(
     object = object, indicator = indicator,
-    MSE = MSE, CV = CV
+    MSE = MSE, var=var, CV = CV
   )
 
   # Only point estimates
   all_ind <- point_povmap(object = object, indicator = indicator)
   selected <- colnames(all_ind$ind)[-1]
 
-  if (MSE == TRUE || CV == TRUE) {
+  if (MSE == TRUE || var==TRUE || CV == TRUE) {
     all_precisions <- mse_povmap(
       object = object, indicator = indicator,
       CV = TRUE
     )
-    colnames(all_precisions$ind) <- paste0(colnames(all_precisions$ind), "_MSE")
+    
+    if (inherits(object, "ell")) {
+      suffix <- "_Var"
+    }
+    else {
+       suffix <- "_MSE"
+    }
+    
+    colnames(all_precisions$ind) <- paste0(colnames(all_precisions$ind), suffix)
     colnames(all_precisions$ind_cv) <- paste0(
       colnames(all_precisions$ind_cv),
       "_CV"
@@ -129,7 +145,7 @@ estimators.povmap <- function(object, indicator = "all", MSE = FALSE,
       all_ind$ind, all_precisions$ind,
       all_precisions$ind_cv
     )
-    endings <- c("", "_MSE", "_CV")[c(TRUE, MSE, CV)]
+    endings <- c("", suffix, "_CV")[c(TRUE, (MSE | var), CV)]
 
     combined <- combined[, c("Domain", paste0(rep(selected,
       each =

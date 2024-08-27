@@ -1,5 +1,9 @@
 mse_povmap <- function(object, indicator = "all", CV = FALSE) {
-  if (is.null(object$MSE) && CV == TRUE) {
+  if (inherits(object, "ell")) {
+     object$MSE <- object$var
+   }
+  
+   if (is.null(object$MSE) && CV == TRUE) {
     stop(strwrap(prefix = " ", initial = "",
                  "No MSE estimates in povmap object: arguments MSE and CV have to
                  be FALSE or a new povmap object with variance/MSE needs to be

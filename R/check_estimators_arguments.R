@@ -1,11 +1,11 @@
 estimators_check <- function(object,
                              indicator,
-                             MSE,
+                             MSE, var,
                              CV) {
-  if (is.null(object$MSE) && (MSE == TRUE || CV == TRUE)) {
+  if (is.null(object$MSE) && is.null(object$var) & (MSE == TRUE || var==TRUE || CV == TRUE)) {
     stop(strwrap(prefix = " ", initial = "",
-                 "No MSE estimates in emdi object: arguments MSE and CV have to
-                 be FALSE or a new emdi object with variance/MSE needs to be
+                 "No MSE estimates in povmap object: arguments MSE and CV have to
+                 be FALSE or a new povmap object with variance/MSE needs to be
                  generated."))
   }
   if (!(inherits(MSE, "logical") && length(MSE) == 1)) {
