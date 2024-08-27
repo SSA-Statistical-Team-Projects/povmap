@@ -234,7 +234,7 @@ ml_plm <- function(fixed = fixed,
   } else {
     model_PLM <- model_PLM
   }
-  log_likelihood <- logLik.plm(model_PLM)[1]
+  log_likelihood <- -logLik.plm(model_PLM)[1]
   return(log_likelihood)
 }
 
