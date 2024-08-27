@@ -240,22 +240,21 @@ ml_plm <- function(fixed = fixed,
 
   # taken from Stata XT manual help for xtreg, re
   logLik.plm <- function(object){
-   out <- plm::nobs(object) * log(2 * var(object$residuals) * pi)/2 - deviance(object)/(2 * var(object$residuals))
+   #out <- plm::nobs(object) * log(2 * var(object$residuals) * pi)/2 - deviance(object)/(2 * var(object$residuals))
     
-    #e=object$residuals
-    #e2=object$residuals^2
-    #tosum <- cbind(e2,rep(1,nobs(object)),e)
-    #group <- plm:::index.panelmodel(object)
-    #sum <- aggregate(tosum,by=list(group[,1]),FUN=sum) 
-    #s2e <- object$ercomp$sigma2[2]
-    #s2u <- object$ercomp$sigma2[1]
-    #Ti <- sum[,3]
-    #term1 <- (1/s2e)*(sum[,2]-s2u/(Ti*s2u+s2e)*sum[,4]^2)
-    #term2 <- log(Ti*s2u/s2e+1)+Ti*log(2*pi*s2e)
-    #ll <- 0.5*(term1+term2)
-    #out <- -sum(ll)
-    attr(out,"df") <- nobs(object) - object$df.residual
-    attr(out,"nobs") <- plm::nobs(object)
-    return(out)
+    e=object$residuals
+    e2=object$residuals^2
+    tosum <- cbind(e2,rep(1,nobs(object)),e)
+    group <- plm:::index.panelmodel(object)
+    sum <- aggregate(tosum,by=list(group[,1]),FUN=sum) 
+    s2e <- object$ercomp$sigma2[1]
+    s2u <- object$ercomp$sigma2[2]
+    Ti <- sum[,3]
+    term1 <- (1/s2e)*(sum[,2]-s2u/(Ti*s2u+s2e)*sum[,4]^2)
+    term2 <- log(Ti*s2u/s2e+1)+Ti*log(2*pi*s2e)
+    ll <- sum(-0.5*(term1+term2))
+    attr(ll,"df") <- nobs(object) - object$df.residual
+    attr(ll,"nobs") <- plm::nobs(object)
+    return(ll)
   }
   

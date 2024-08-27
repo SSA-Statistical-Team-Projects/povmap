@@ -103,23 +103,48 @@ std_data_transformation <- function(fixed = fixed, smp_data, transformation,
 
   y_vector <- as.matrix(smp_data[paste(fixed[[2]])])
 
-  std_transformed <- if (transformation == "box.cox") {
-    as.data.frame(box_cox_std(y = y_vector, lambda = lambda))
-  } else if (transformation == "dual") {
-    as.data.frame(dual_std(y = y_vector, lambda = lambda))
-  } else if (transformation == "log.shift") {
-    as.data.frame(log_shift_opt_std(y = y_vector, lambda = lambda))
-  } else if (transformation == "log") {
-    smp_data[paste(fixed[[2]])]
-  } else if (transformation == "no") {
-    smp_data[paste(fixed[[2]])]
-  } else if (transformation == "arcsin") {
-      smp_data[paste(fixed[[2]])]
-  } else if (transformation == "ordernorm") {
-    smp_data[paste(fixed[[2]])]
-  } else if (transformation == "logit") {
-    smp_data[paste(fixed[[2]])]
-  } 
+  if (transformation == "box.cox") {
+    std_transformed <-  as.data.frame(box_cox_std(y = y_vector, lambda = lambda))
+  }
+  else if (transformation == "dual") {
+    std_transformed <- as.data.frame(dual_std(y = y_vector, lambda = lambda))
+  }
+  else if (transformation == "log.shift") {
+    std_transformed <-  as.data.frame(log_shift_opt_std(y = y_vector, lambda = lambda))
+  }
+  else if (transformation == "log") {
+    std_transformed <- log(smp_data[paste(fixed[[2]])])
+  }
+  else if (transformation == "no") {
+    std_transformed <- smp_data[paste(fixed[[2]])]
+  }
+  else if (transformation == "arcsin") {
+    std_transformed <- smp_data[paste(fixed[[2]])]
+  }
+  else if (transformation == "ordernorm") {
+    std_transformed <- smp_data[paste(fixed[[2]])]
+  }
+  else if (transformation == "logit") {
+    std_transformed <- smp_data[paste(fixed[[2]])]
+  }
+  
+#  std_transformed <- if (transformation == "box.cox") {
+#    as.data.frame(box_cox_std(y = y_vector, lambda = lambda))
+#  } else if (transformation == "dual") {
+#    as.data.frame(dual_std(y = y_vector, lambda = lambda))
+#  } else if (transformation == "log.shift") {
+#    as.data.frame(log_shift_opt_std(y = y_vector, lambda = lambda))
+#  } else if (transformation == "log") {
+#    smp_data[paste(fixed[[2]])]
+#  } else if (transformation == "no") {
+#    smp_data[paste(fixed[[2]])]
+#  } else if (transformation == "arcsin") {
+#      smp_data[paste(fixed[[2]])]
+#  } else if (transformation == "ordernorm") {
+#    smp_data[paste(fixed[[2]])]
+#  } else if (transformation == "logit") {
+#    smp_data[paste(fixed[[2]])]
+#  } 
 
   smp_data[paste(fixed[[2]])] <- std_transformed
   return(transformed_data = smp_data)
@@ -396,8 +421,10 @@ log_shift_opt_std <- function(y, lambda) {
   lambda <- with_shift(y = y, lambda = lambda)
 
   log_trafo_std <- function(y, lambda = lambda) {
-    gm <- geometric.mean(y + lambda)
-    y <- gm * log(y + lambda)
+    #08-27-24 I believe this was a bug, I don't understand why we would multiply by geometric mean, we do not when doing the log shift transformation. 
+    #gm <- geometric.mean(y + lambda)
+    #y <- gm * log(y + lambda)
+    y <- log(y + lambda)
     return(y)
   }
   y <- log_trafo_std(y = y, lambda = lambda)
