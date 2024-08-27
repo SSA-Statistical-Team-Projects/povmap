@@ -5,9 +5,16 @@
 \alias{estimators.povmap}
 \title{Presents Point, MSE and CV Estimates}
 \usage{
-estimators(object, indicator, MSE, CV, ...)
+estimators(object, indicator, MSE, var, CV, ...)
 
-\method{estimators}{povmap}(object, indicator = "all", MSE = FALSE, CV = FALSE, ...)
+\method{estimators}{povmap}(
+  object,
+  indicator = "all",
+  MSE = FALSE,
+  var = FALSE,
+  CV = FALSE,
+  ...
+)
 }
 \arguments{
 \item{object}{an object of type "povmap", representing point and,
@@ -30,6 +37,10 @@ object is overwritten by function benchmark). Defaults to "all".}
 \item{MSE}{optional logical. If \code{TRUE}, MSE estimates for selected
 indicators per domain are added to the data frame of point estimates.
 Defaults to \code{FALSE}.}
+
+\item{var}{optional logical. If \code{TRUE} and object is an ELL object, 
+variance estimates for selected indicators per domain are added to the 
+data frame of point estimates. Defaults to \code{FALSE}.}
 
 \item{CV}{optional logical. If \code{TRUE}, coefficients of variation for
 selected indicators per domain are added to the data frame of point
