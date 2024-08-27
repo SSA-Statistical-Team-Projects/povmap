@@ -142,15 +142,16 @@ summary.ell <- function(object, ...) {
   }
   y_yhat <- data.frame("Y" =  object$model$model[,1],"Yhat" = object$model$model[,1] - object$model_par$residuals, 
                          weights=temp_weights)
-  y_yhat_bar <- aggregate_weighted_mean(y_yhat,by=list(groups),w=object$model$data$temp_weights)
+  y_yhat_bar <- aggregate_weighted_mean(y_yhat,by=list(groups),w=temp_weights)
   
   r2_area <- cor(y_yhat_bar[,2],y_yhat_bar[,3])^2
   
 
   
   coeff_det <- data.frame(
-    R2    = r_squared,
-    Area_R2 = r2_area, rownames=""
+    R2    = r_squared[1],
+    Area_R2 = r2_area,
+    row.names = ""
   )
   
 
@@ -180,7 +181,7 @@ summary.ell <- function(object, ...) {
 #' @export
 print.summary.ell <- function(x, ...) {
   throw_class_error(x, "ell")
-  cat("Empirical Best Prediction\n")
+  cat("ELL estimation\n")
   cat("\n")
   cat("Call:\n ")
   print(x$call)
