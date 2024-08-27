@@ -319,7 +319,7 @@
 #' qnorm quantile residuals rnorm sd fitted ave
 #' @importFrom utils flush.console write.table write.csv
 #' @importFrom FNN knnx.index
-#' @importFrom plm plm index.paneldata
+#' @importFrom plm plm index
 #' @import data.table
 #' @importFrom pracma erf erfinv 
 

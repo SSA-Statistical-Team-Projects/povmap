@@ -165,9 +165,14 @@ model_par_ell <- function(framework,
     varFix = NULL 
   }
   residuals <- as.vector(re_model$model[,1]-predict(re_model))
-  #residuals <- as.data.frame(cbind(residuals,attr(re_model$residuals,"index")[,1]))
-  #colnames(residuals) <- c("residuals","index")
-  
+  if (is.null(framework$weights)) {
+    weights <- rep(1,framework$N_smp)
+  }
+  else {
+    weights <- framework$smp_data[,framework$weights]
+  }
+  mean_residuals <- aggregate_weighted_mean(df=residuals,by=list(framework$smp_data[,framework$smp_domains]),
+                                        w=weights)[,2]
   framework$pop_data[[paste0(fixed[2])]] <- seq_len(nrow(framework$pop_data))
   X_pop <- model.matrix(fixed, framework$pop_data)
   mu_fixed <- X_pop %*% betas
@@ -180,6 +185,7 @@ model_par_ell <- function(framework,
       varFix = varFix,
       varErr = NULL,
       residuals = residuals,
+      mean_residuals = mean_residuals, 
       mu_fixed = mu_fixed 
     ))
   } 

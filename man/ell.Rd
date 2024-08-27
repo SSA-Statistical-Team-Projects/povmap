@@ -13,14 +13,15 @@ ell(
   smp_data,
   smp_domains,
   smp_subdomains = NULL,
-  L = 50,
+  L = 100,
   threshold = NULL,
-  transformation = "box.cox",
+  transformation = "log.shift",
   interval = "default",
   seed = 123,
   custom_indicator = NULL,
   na.rm = FALSE,
   weights = NULL,
+  weights_type = NULL,
   pop_weights = NULL,
   aggregate_to = NULL,
   benchmark = NULL,
@@ -69,9 +70,7 @@ indicates sub-domains in the sample data. When this option is specified, a
 two-fold nested error model is used. Defaults to \code{NULL}}
 
 \item{L}{a number determining the number of Monte-Carlo simulations that
-must be at least 1. Defaults to 50. For practical applications, values
-larger than 200 are recommended (see also
-\cite{Molina, I. and Rao, J.N.K. (2010)}).}
+must be at least 1. Defaults to 100.}
 
 \item{threshold}{a number defining a threshold. Alternatively, a threshold
 may be defined as a \code{function} of \code{y} returning a numeric value.
@@ -118,6 +117,15 @@ observations are required. Defaults to \code{FALSE}.}
 indicates weights in the sample data. If a character string is provided
 a weighted version of the ebp will be used. The variable has to be numeric.
 Defaults to \code{NULL}.}
+
+\item{weights_type}{a character string. Two different methods for survey
+weights are available (i) EBP under informative sampling from
+\cite{Guadarrama et al. (2018)} ("Guadarrama"); (ii) considering survey
+weights by using the weighting options of \code{\link{nlme}} from
+\cite{Pinheiro and Bates (2023)} ("nlme"); (iii) considering survey
+weights by using the weighting options of \code{\link{nlme}} and use these
+weights also to determine the optimal transformation parameter lambda
+("nlme_lambda"). Defaults to \code{"Guadarrama"}.}
 
 \item{pop_weights}{a character string containing the name of a variable that
 indicates population weights in the population data. If a character string
@@ -182,15 +190,6 @@ distribution. Otherwise they are assumed fixed. Defaults to "variable".}
 
 \item{indicators}{a list of strings containing outcome indicators that should be calculated. 
 Defaults to NULL, which selects all indicators.}
-
-\item{weights_type}{a character string. Two different methods for survey
-weights are available (i) EBP under informative sampling from
-\cite{Guadarrama et al. (2018)} ("Guadarrama"); (ii) considering survey
-weights by using the weighting options of \code{\link{nlme}} from
-\cite{Pinheiro and Bates (2023)} ("nlme"); (iii) considering survey
-weights by using the weighting options of \code{\link{nlme}} and use these
-weights also to determine the optimal transformation parameter lambda
-("nlme_lambda"). Defaults to \code{"Guadarrama"}.}
 }
 \value{
 An object of class "ell", "emdi" that provides estimators for

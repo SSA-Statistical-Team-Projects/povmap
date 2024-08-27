@@ -14,7 +14,7 @@ ebp(
   smp_subdomains = NULL,
   L = 50,
   threshold = NULL,
-  transformation = "box.cox",
+  transformation = "log.shift",
   interval = "default",
   MSE = FALSE,
   B = 50,

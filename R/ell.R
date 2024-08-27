@@ -320,6 +320,8 @@ ell <- function(fixed,
         "smp_data",
         "smp_domains_vec",
         "pop_domains_vec",
+        "n_smp",
+        "n_pop",
         "response"
       )],
       transformation = transformation,
@@ -336,6 +338,6 @@ ell <- function(fixed,
   print(round(end.time - start.time,2))
   
   
-  class(ell_out) <- c("ebp", "emdi")
+  class(ell_out) <- c("ell","povmap")
   return(ell_out)
 }

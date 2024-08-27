@@ -239,6 +239,7 @@ ml_plm <- function(fixed = fixed,
 }
 
   # taken from Stata XT manual help for xtreg, re
+  #' @export
   logLik.plm <- function(object){
     e=object$residuals
     e2=object$residuals^2
