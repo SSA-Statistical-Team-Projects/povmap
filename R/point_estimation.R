@@ -1120,7 +1120,7 @@ prediction_y_dt <- function(transformation,
   epsilon <- data.table::as.data.table(errors_gen$epsilon)
   vu <- data.table::as.data.table(errors_gen$vu)
   y_pred <- vu+epsilon+mu 
-  
+
 
   # back-transformation of predicted population income matrix, by column 
   y_pred [ ,1:ncol(y_pred) := y_pred[,lapply(.SD,back_transformation,transformation = transformation,lambda = lambda,shift = shift,framework = framework,fixed = fixed)]]
@@ -1139,13 +1139,13 @@ prediction_y_dt <- function(transformation,
   
   #y_pred[!is.finite(y_pred)] <- 0
   return(y_pred)
-} # End prediction_y
+} # End prediction_y_dt
 
 # The function errors_gen returns error terms of the generating model.
 # See Molina and Rao (2010) p. 375 (20)
 
 errors_gen <- function(framework, model_par, gen_model) {
-
+  # individual error term in generating model epsilon
     epsilon <- rnorm(framework$N_pop, 0, sqrt(model_par$sigmae2est))
 
   # empty vector for new random effect in generating model
@@ -1168,9 +1168,33 @@ errors_gen <- function(framework, model_par, gen_model) {
     ),
     framework$n_pop[framework$dist_obs_dom]
   )
-  # individual error term in generating model epsilon
 
-  return(list(epsilon = epsilon, vu = vu))
+  eta <- NULL 
+  # new random effect for out of sample sub-areas 
+  if (!is.null(model_par$sigmah2est)) {
+    eta <- vector(length = framework$N_pop)
+    eta[!framework$obs_subdom] <- rep(
+      rnorm(
+        framework$N_subdom_unobs,
+        0,
+        sqrt(model_par$sigmah2est)
+      ),
+      framework$n_pop_subdom[!framework$dist_obs_subdom]
+    )
+    # new random effect for in-sample sub-areas 
+    eta[framework$obs_subdom] <- rep(
+      rnorm(
+        rep(1, framework$N_subdom_smp),
+        0,
+        sqrt(gen_model$sigmai2est)
+      ),
+      framework$n_pop_subdom[framework$dist_obs_subdom]
+    )
+    
+    
+  }
+
+  return(list(epsilon = epsilon, vu = vu,eta=eta))
 } # End errors_gen
 
 # The function prediction_y returns a predicted income vector which can be used
@@ -1188,6 +1212,11 @@ prediction_y <- function(transformation,
   
   # predicted population income vector
   y_pred <- gen_model$mu + errors_gen$epsilon + errors_gen$vu
+
+  # add sub-area effect if a two-fold model 
+  if (!is.null(errors_gen$eta)) {
+    y_pred <- y_pred+errors_gen$eta
+}
 
   # back-transformation of predicted population income vector
   y_pred <- back_transformation(
