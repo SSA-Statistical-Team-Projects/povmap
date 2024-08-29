@@ -149,8 +149,8 @@ write.excel <- function(object,
         object = object, wb = wb,
         headlines_cs = headlines_cs
       )
-  } else if(inherits(object, "ebphdp")){
-    wb <- add_summary_ebphdp(
+  } else if(inherits(object, "hdp")){
+    wb <- add_summary_hdp(
       object = object, wb = wb,
       headlines_cs = headlines_cs
     )
@@ -436,7 +436,7 @@ add_summary_ell <- function(object, wb, headlines_cs) {
 
 
 
-add_summary_ebphdp <- function(object, wb, headlines_cs) {
+add_summary_hdp <- function(object, wb, headlines_cs) {
   su <- summary(object)
 
   title_cs <- createStyle(

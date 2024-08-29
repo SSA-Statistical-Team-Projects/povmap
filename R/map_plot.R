@@ -21,6 +21,8 @@
 #' object is overwritten by function benchmark). Defaults to "all".
 #' @param MSE optional logical. If \code{TRUE}, the MSE is also visualized.
 #' Defaults to \code{FALSE}.
+#' @param var optional logical. If \code{TRUE} and the object is an ELL object,
+#' the variance is also visualized. Defaults to \code{FALSE}.
 #' @param CV optional logical. If \code{TRUE}, the CV is also visualized.
 #' Defaults to \code{FALSE}.
 #' @param map_obj an \code{sf, data.frame} object as defined by the
@@ -109,11 +111,12 @@
 #' @importFrom ggplot2 theme element_blank guides scale_fill_gradient
 #' @importFrom ggplot2 scale_colour_gradient geom_sf scale_colour_manual guide_legend guide_colourbar
 #' @importFrom viridis scale_fill_viridis
-#' 
+#' @importFrom ggpattern geom_sf_pattern 
 
 map_plot <- function(object,
                      indicator = "all",
                      MSE = FALSE,
+                     var = FALSE, 
                      CV = FALSE,
                      map_obj = NULL,
                      map_dom_id = NULL,
@@ -130,6 +133,8 @@ map_plot <- function(object,
     message(strwrap(prefix = " ", initial = "", "No Map Object has been
                     provided. An artificial polygon is used for
                     visualization"))
+    
+   
     map_pseudo(
       object = object, indicator = indicator, panelplot = FALSE,
       MSE = MSE, CV = CV
@@ -148,6 +153,7 @@ map_plot <- function(object,
     plot_real(object,
       indicator = indicator,
       MSE = MSE,
+      var=var, 
       CV = CV,
       map_obj = map_obj,
       map_dom_id = map_dom_id,
@@ -200,6 +206,7 @@ map_pseudo <- function(object, indicator, panelplot, MSE, CV) {
 plot_real <- function(object,
                       indicator = "all",
                       MSE = FALSE,
+                      var=var, 
                       CV = FALSE,
                       map_obj = NULL,
                       map_dom_id = NULL,
@@ -221,7 +228,7 @@ plot_real <- function(object,
 
   map_data <- estimators(
     object = object, indicator = indicator,
-    MSE = MSE, CV = CV
+    MSE = MSE, var=var, CV = CV
   )$ind
 
   if (!is.null(map_tab)) {
@@ -294,7 +301,7 @@ plot_real <- function(object,
               ) +
               theme(
                 axis.ticks = element_blank(), axis.text = element_blank(),
-              ) + geom_sf_pattern(data=map_obj[(is.na(map_obj$Head_Count)),], aes(fill=get(ind), colour=""),pattern_color="black") +
+              ) + ggpattern:::geom_sf_pattern(data=map_obj[(is.na(map_obj$Head_Count)),], aes(fill=get(ind), colour=""),pattern_color="black") +
               geom_sf(data=map_obj[(is.na(map_obj[,ind])),],color="black",fill="transparent")+
               guides(colour=guide_legend(order=2,"No estimates", override.aes=list(fill=na.color,color="black"))) +
               guides(fill = guide_colourbar(order=1))

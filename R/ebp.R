@@ -323,7 +323,6 @@
 #' @import data.table
 #' @importFrom pracma erf erfinv 
 
-
 ebp <- function(fixed,
                 pop_data,
                 pop_domains,
