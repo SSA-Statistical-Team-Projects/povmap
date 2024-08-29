@@ -32,7 +32,7 @@
 #' result in different files for point estimates and their precisions.
 #' Defaults to \code{FALSE}.
 #' @param model logical if \code{TRUE}, the estimation model is exported.
-#' #' Defaults to \code{FALSE}. 
+#' #' Defaults to \code{FALSE}.
 #' @return An Excel file is created in your working directory, or at the given
 #' path. Alternatively multiple ODS files are created at the given path.
 #' @details These functions create an Excel file via the package
@@ -87,7 +87,7 @@
 #' write.excel(povmap_model, indicator = "all", MSE = TRUE, CV = TRUE,
 #'             split = TRUE)
 #'
-#' # Example 3: Same as example 1 but for an ODS output, skipped due to lack of zip app 
+#' # Example 3: Same as example 1 but for an ODS output, skipped due to lack of zip app
 #' # write.ods(povmap_model, indicator = "all", MSE = TRUE, CV = TRUE)
 #' }
 #'
@@ -108,7 +108,7 @@ write.excel <- function(object,
   if (is.null(file) == TRUE) {
     file <- file.path(tempdir(), "excel_output.xlsx")
   }
-  
+
   writeexcel_check(
     object = object,
     file = file,
@@ -144,6 +144,17 @@ write.excel <- function(object,
       headlines_cs = headlines_cs
     )
   }
+    else if (inherits(object, "ell")) {
+      wb <- add_summary_ell(
+        object = object, wb = wb,
+        headlines_cs = headlines_cs
+      )
+  } else if(inherits(object, "ebphdp")){
+    wb <- add_summary_ebphdp(
+      object = object, wb = wb,
+      headlines_cs = headlines_cs
+    )
+  }
 
   if (!split && (MSE || CV)) {
     wb <- add_estims(
@@ -172,12 +183,12 @@ write.excel <- function(object,
       )
     }
   }
-  
-    if (model) {
-      wb <- add_model(object=object,
-      wb=wb
-      )
-    }
+
+  if (model) {
+    wb <- add_model(object=object,
+                    wb=wb
+    )
+  }
 
   saveWorkbook(wb, file, overwrite = TRUE)
 
@@ -281,37 +292,81 @@ add_summary_ebp <- function(object, wb, headlines_cs) {
     tableStyle = "TableStyleMedium2"
   )
   starting_row <- starting_row + 2 + nrow(su$normality)
-  
-  writeDataTable(
-    x = su$variance,
-    wb = wb,
-    withFilter = FALSE,
-    sheet = "summary",
-    startRow = starting_row,
-    startCol = 3,
-    rowNames = TRUE,
-    headerStyle = headlines_cs,
-    colNames = TRUE,
-    tableStyle = "TableStyleMedium2"
-  )
-  starting_row <- starting_row + 2 + nrow(su$variance)
-  
   writeDataTable(
     x = su$coeff_determ,
     wb = wb,
     withFilter = FALSE,
     sheet = "summary",
     startRow = starting_row,
-    startCol = 3,
+    startCol = 4,
     rowNames = FALSE,
     headerStyle = headlines_cs,
     colNames = TRUE,
     tableStyle = "TableStyleMedium2"
   )
 
-  starting_row <- starting_row + 2 + nrow(su$coeff_determ)
+  setColWidths(
+    wb = wb,
+    sheet = "summary",
+    cols = 3:9,
+    widths = "auto"
+  )
+  return(wb)
+}
+
+add_summary_ell <- function(object, wb, headlines_cs) {
+  su <- summary(object)
+  
+  title_cs <- createStyle(
+    fontSize = 14,
+    border = "Bottom",
+    halign = "left",
+    borderStyle = "thick",
+    textDecoration = "bold"
+  )
+  
+  df_nobs <- data.frame(Count = c(
+    su$out_of_smp,
+    su$in_smp, su$size_pop,
+    su$size_smp
+  ))
+  rownames(df_nobs) <- c(
+    "out of sample domains",
+    "in sample domains",
+    "out of sample observations",
+    "in sample observations"
+  )
+  df_size_dom <- as.data.frame(su$size_dom)
+  
+  addWorksheet(wb, sheetName = "summary", gridLines = FALSE)
+  
+  writeData(
+    wb = wb, sheet = "summary",
+    x = "ELL", colNames = FALSE
+  )
+  addStyle(
+    wb = wb, sheet = "summary", cols = 1, rows = 1,
+    style = title_cs, stack = TRUE
+  )
+  
+  starting_row <- 5
   writeDataTable(
-    x = su$shrinkage,
+    x = df_nobs,
+    withFilter = FALSE,
+    wb = wb,
+    sheet = "summary",
+    startRow = starting_row,
+    startCol = 3,
+    rowNames = TRUE,
+    headerStyle = headlines_cs,
+    colNames = TRUE,
+    tableStyle = "TableStyleMedium2"
+  )
+  
+  starting_row <- starting_row + 2 + nrow(df_nobs)
+  
+  writeDataTable(
+    x = df_size_dom,
     wb = wb,
     withFilter = FALSE,
     sheet = "summary",
@@ -323,9 +378,148 @@ add_summary_ebp <- function(object, wb, headlines_cs) {
     tableStyle = "TableStyleMedium2"
   )
   
+  starting_row <- starting_row + 2 + nrow(df_size_dom)
   
   
+  if (!is.null(su$transform)) {
+    writeDataTable(
+      x = su$transform,
+      wb = wb,
+      withFilter = FALSE,
+      sheet = "summary",
+      startRow = starting_row,
+      startCol = 3,
+      rowNames = FALSE,
+      headerStyle = headlines_cs,
+      colNames = TRUE,
+      tableStyle = "TableStyleMedium2"
+    )
+    
+    starting_row <- starting_row + 2 + nrow(su$transform)
+  }
   
+  
+  writeDataTable(
+    x = su$normality,
+    wb = wb,
+    withFilter = FALSE,
+    sheet = "summary",
+    startRow = starting_row,
+    startCol = 3,
+    rowNames = TRUE,
+    headerStyle = headlines_cs,
+    colNames = TRUE,
+    tableStyle = "TableStyleMedium2"
+  )
+  starting_row <- starting_row + 2 + nrow(su$normality)
+  writeDataTable(
+    x = su$coeff_determ,
+    wb = wb,
+    withFilter = FALSE,
+    sheet = "summary",
+    startRow = starting_row,
+    startCol = 4,
+    rowNames = FALSE,
+    headerStyle = headlines_cs,
+    colNames = TRUE,
+    tableStyle = "TableStyleMedium2"
+  )
+  
+  setColWidths(
+    wb = wb,
+    sheet = "summary",
+    cols = 3:9,
+    widths = "auto"
+  )
+  return(wb)
+}
+
+
+
+add_summary_ebphdp <- function(object, wb, headlines_cs) {
+  su <- summary(object)
+
+  title_cs <- createStyle(
+    fontSize = 14,
+    border = "Bottom",
+    halign = "left",
+    borderStyle = "thick",
+    textDecoration = "bold"
+  )
+
+  df_nobs <- data.frame(Count = c(
+    su$out_of_smp,
+    su$in_smp, su$size_pop,
+    su$size_smp
+  ))
+  rownames(df_nobs) <- c(
+    "out of sample domains",
+    "in sample domains",
+    "out of sample observations",
+    "in sample observations"
+  )
+  df_size_dom <- as.data.frame(su$size_dom)
+
+  addWorksheet(wb, sheetName = "summary", gridLines = FALSE)
+
+  writeData(
+    wb = wb, sheet = "summary",
+    x = "Empirical Best Prediction", colNames = FALSE
+  )
+  addStyle(
+    wb = wb, sheet = "summary", cols = 1, rows = 1,
+    style = title_cs, stack = TRUE
+  )
+
+  starting_row <- 5
+  writeDataTable(
+    x = df_nobs,
+    withFilter = FALSE,
+    wb = wb,
+    sheet = "summary",
+    startRow = starting_row,
+    startCol = 3,
+    rowNames = TRUE,
+    headerStyle = headlines_cs,
+    colNames = TRUE,
+    tableStyle = "TableStyleMedium2"
+  )
+
+  starting_row <- starting_row + 2 + nrow(df_nobs)
+
+  writeDataTable(
+    x = df_size_dom,
+    wb = wb,
+    withFilter = FALSE,
+    sheet = "summary",
+    startRow = starting_row,
+    startCol = 3,
+    rowNames = TRUE,
+    headerStyle = headlines_cs,
+    colNames = TRUE,
+    tableStyle = "TableStyleMedium2"
+  )
+
+  starting_row <- starting_row + 2 + nrow(df_size_dom)
+
+
+  if (!is.null(su$transform)) {
+    writeDataTable(
+      x = su$transform,
+      wb = wb,
+      withFilter = FALSE,
+      sheet = "summary",
+      startRow = starting_row,
+      startCol = 3,
+      rowNames = FALSE,
+      headerStyle = headlines_cs,
+      colNames = TRUE,
+      tableStyle = "TableStyleMedium2"
+    )
+
+    starting_row <- starting_row + 2 + nrow(su$transform)
+  }
+
   setColWidths(
     wb = wb,
     sheet = "summary",
@@ -384,8 +578,8 @@ add_summary_fh <- function(object, wb, headlines_cs) {
 
   if (su$model$correlation == "no") {
     estimMethods <- data.frame(su$method$method, su$model$variance,
-      su$method$MSE_method,
-      row.names = ""
+                               su$method$MSE_method,
+                               row.names = ""
     )
     names(estimMethods) <- c(
       "Variance estimation", "Estimated variance",
@@ -410,9 +604,9 @@ add_summary_fh <- function(object, wb, headlines_cs) {
     }
   } else if (su$model$correlation == "spatial") {
     estimMethods <- data.frame(su$method$method, su$model$variance["variance"],
-      su$model$variance["correlation"],
-      su$method$MSE_method,
-      row.names = ""
+                               su$model$variance["correlation"],
+                               su$method$MSE_method,
+                               row.names = ""
     )
     names(estimMethods) <- c(
       "Variance estimation", "Estimated variance",
@@ -489,8 +683,8 @@ add_summary_fh <- function(object, wb, headlines_cs) {
   starting_row <- starting_row + 2 + nrow(su$normality)
 
   if (su$model$correlation == "no" && !(su$method$method %in%
-    c("reblup", "reblupbc") |
-    su$method$method == "me")) {
+                                        c("reblup", "reblupbc") |
+                                        su$method$method == "me")) {
     writeDataTable(
       x = su$model$model_select,
       wb = wb,
@@ -604,15 +798,15 @@ add_pointests <- function(object, indicator, wb, headlines_cs) {
   addWorksheet(wb, sheetName = "Point Estimators", gridLines = FALSE)
 
   if (is.null(indicator) || !all(indicator == "all" |
-    indicator == "Quantiles" |
-    indicator == "quantiles" |
-    indicator == "Poverty" |
-    indicator == "poverty" |
-    indicator == "Inequality" |
-    indicator == "inequality" |
-    indicator == "Custom" |
-    indicator == "custom" |
-    indicator %in% names(object$ind[-1]))) {
+                                 indicator == "Quantiles" |
+                                 indicator == "quantiles" |
+                                 indicator == "Poverty" |
+                                 indicator == "poverty" |
+                                 indicator == "Inequality" |
+                                 indicator == "inequality" |
+                                 indicator == "Custom" |
+                                 indicator == "custom" |
+                                 indicator %in% names(object$ind[-1]))) {
     stop(strwrap(prefix = " ", initial = "",
                  paste0("The argument indicator is set to ", indicator, ". The
                         argument only allows to be set to all, a name of
@@ -651,7 +845,7 @@ add_pointests <- function(object, indicator, wb, headlines_cs) {
 }
 
 add_precisions <- function(object, indicator, MSE, wb, headlines_cs, CV) {
-  precisions <- mse_povmap(object = object, indicator = indicator, CV = TRUE)
+  precisions <- mse_emdi(object = object, indicator = indicator, CV = TRUE)
 
   if (MSE) {
     addWorksheet(wb, sheetName = "MSE Estimators", gridLines = FALSE)
@@ -684,14 +878,14 @@ add_precisions <- function(object, indicator, MSE, wb, headlines_cs, CV) {
     addWorksheet(wb, sheetName = "CV Estimators", gridLines = FALSE)
 
     writeDataTable(precisions$ind_cv,
-      wb          = wb,
-      sheet       = "CV Estimators",
-      startRow    = 1,
-      startCol    = 1,
-      rowNames    = FALSE,
-      headerStyle = headlines_cs,
-      tableStyle  = "TableStyleMedium2",
-      withFilter  = FALSE
+                   wb          = wb,
+                   sheet       = "CV Estimators",
+                   startRow    = 1,
+                   startCol    = 1,
+                   rowNames    = FALSE,
+                   headerStyle = headlines_cs,
+                   tableStyle  = "TableStyleMedium2",
+                   withFilter  = FALSE
     )
 
     setColWidths(
@@ -747,7 +941,7 @@ add_estims <- function(object, indicator, wb, headlines_cs, MSE, CV) {
 }
 
 add_model <- function(object,  wb) {
-  
+
   model <- ebp_reportcoef_table(object,decimals=3)
   addWorksheet(wb, sheetName = "Model", gridLines = FALSE)
   headlines_cs <- createStyle(
@@ -759,7 +953,7 @@ add_model <- function(object,  wb) {
     border = "Bottom",
     borderStyle = "medium"
   )
-  
+
   writeDataTable(
     x = model,
     sheet = "Model",
