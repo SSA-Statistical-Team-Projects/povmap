@@ -421,10 +421,8 @@ log_shift_opt_std <- function(y, lambda) {
   lambda <- with_shift(y = y, lambda = lambda)
 
   log_trafo_std <- function(y, lambda = lambda) {
-    #08-27-24 I believe this was a bug, I don't understand why we would multiply by geometric mean, we do not when doing the log shift transformation. 
-    #gm <- geometric.mean(y + lambda)
-    #y <- gm * log(y + lambda)
-    y <- log(y + lambda)
+    gm <- geometric.mean(y + lambda)
+    y <- gm * log(y + lambda)
     return(y)
   }
   y <- log_trafo_std(y = y, lambda = lambda)
