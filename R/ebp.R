@@ -65,9 +65,12 @@
 #' 1 are seldom observed.
 #' @param L a number determining the number of Monte-Carlo simulations that
 #' must be at least 0. Defaults to 0, which selects analytical calculations of
-#' point estimates. If using a positive value, values larger than 200 are 
-#' recommended for practical applications (see also 
-#' \cite{Molina, I. and Rao, J.N.K. (2010)}).
+#' point estimates for the Mean, Head Count rate, and poverty gap. Means and 
+#' poverty gaps are not avalable for all transformations. Analytic calculations 
+#' of the Gini coefficient area also available for log and log shift transformations 
+#' but are disabled by default. When selecting positive L, all indicators are available. 
+#' If using a positive value, values larger than 200 are recommended 
+#' for practical applications (see also \cite{Molina, I. and Rao, J.N.K. (2010)}).
 #' @param MSE if \code{TRUE}, MSE estimates using a parametric bootstrap
 #' approach are calculated (see also \cite{Gonzalez-Manteiga et al. (2008)}).
 #' Defaults to \code{FALSE}.
