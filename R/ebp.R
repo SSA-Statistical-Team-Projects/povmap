@@ -64,8 +64,9 @@
 #' distributions, the negative values may be excluded, also values larger than
 #' 1 are seldom observed.
 #' @param L a number determining the number of Monte-Carlo simulations that
-#' must be at least 1. Defaults to 50. For practical applications, values
-#' larger than 200 are recommended (see also
+#' must be at least 0. Defaults to 0, which selects analytical calculations of
+#' point estimates. If using a positive value, values larger than 200 are 
+#' recommended for practical applications (see also 
 #' \cite{Molina, I. and Rao, J.N.K. (2010)}).
 #' @param MSE if \code{TRUE}, MSE estimates using a parametric bootstrap
 #' approach are calculated (see also \cite{Gonzalez-Manteiga et al. (2008)}).
@@ -73,7 +74,7 @@
 #' @param B a number determining the number of bootstrap populations in the
 #' parametric bootstrap approach (see also
 #' \cite{Gonzalez-Manteiga et al. (2008)}) used in the MSE estimation. The
-#' number must be greater than 1. Defaults to 50. For practical applications,
+#' number must be greater than 1. Defaults to 100. For practical applications,
 #' values larger than 200 are recommended (see also
 #' \cite{Molina, I. and Rao, J.N.K. (2010)}).
 #' @param seed an integer to set the seed for the random number generator. For
@@ -124,9 +125,7 @@
 #' weights by using the weighting options of \code{\link{nlme}} and use these
 #' weights also to determine the optimal transformation parameter lambda
 #' ("nlme_lambda"); (iv) Hybrid weights that adjust all model parameters to 
-#' account for weights("hybrid"); (iv) hybrid weights that uses 
-#' starting values from a weighted rather than an unweighted mixed effects regression 
-#' ("hybrid2"). Defaults to \code{"Guadarrama"}.
+#' account for weights("hybrid"); Defaults to \code{"Guadarrama"}.
 #' @param benchmark The input depends on the type of benchmarking to be 
 #' performed.
 #' (i) Benchmarking with a fixed value:
@@ -265,7 +264,7 @@
 #'   threshold = function(y) {
 #'     0.6 * median(y)
 #'   }, transformation = "log",
-#'   L = 50, MSE = TRUE, boot_type = "wild", B = 50, custom_indicator =
+#'   L = 0, MSE = TRUE, boot_type = "wild", B = 100, custom_indicator =
 #'     list(
 #'       my_max = function(y) {
 #'         max(y)
@@ -330,12 +329,12 @@ ebp <- function(fixed,
                 smp_data,
                 smp_domains,
                 smp_subdomains = NULL, 
-                L = 50,
+                L = 0,
                 threshold = NULL,
                 transformation = "log.shift",
                 interval = "default",
                 MSE = FALSE,
-                B = 50,
+                B = 100,
                 seed = 123,
                 boot_type = "parametric",
                 parallel_mode = ifelse(grepl("windows", .Platform$OS.type),
