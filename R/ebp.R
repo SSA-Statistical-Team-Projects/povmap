@@ -253,9 +253,7 @@
 #' )
 #'
 #'
-#' # Example 2: With MSE, two additional indicators and function as threshold -
-#' # Please note that the example runs for several minutes. For a short check
-#' # change L and B to lower values.
+#' # Example 2: With MSE, two additional indicators and function as threshold.
 #' povmap_model <- ebp(
 #'   fixed = eqIncome ~ gender + eqsize + cash +
 #'     self_empl + unempl_ben + age_ben + surv_ben + sick_ben + dis_ben + rent +
