@@ -12,12 +12,12 @@ ebp(
   smp_data,
   smp_domains,
   smp_subdomains = NULL,
-  L = 50,
+  L = 0,
   threshold = NULL,
   transformation = "log.shift",
   interval = "default",
   MSE = FALSE,
-  B = 50,
+  B = 100,
   seed = 123,
   boot_type = "parametric",
   parallel_mode = ifelse(grepl("windows", .Platform$OS.type), "socket", "multicore"),
@@ -81,9 +81,13 @@ indicates sub-domains in the sample data. When this option is specified, a
 two-fold nested error model is used. Defaults to \code{NULL}}
 
 \item{L}{a number determining the number of Monte-Carlo simulations that
-must be at least 1. Defaults to 50. For practical applications, values
-larger than 200 are recommended (see also
-\cite{Molina, I. and Rao, J.N.K. (2010)}).}
+must be at least 0. Defaults to 0, which selects analytical calculations of
+point estimates for the Mean, Head Count rate, and poverty gap. Means and 
+poverty gaps are not avalable for all transformations. Analytic calculations 
+of the Gini coefficient area also available for log and log shift transformations 
+but are disabled by default. When selecting positive L, all indicators are available. 
+If using a positive value, values larger than 200 are recommended 
+for practical applications (see also \cite{Molina, I. and Rao, J.N.K. (2010)}).}
 
 \item{threshold}{a number defining a threshold. Alternatively, a threshold
 may be defined as a \code{function} of \code{y} returning a numeric value.
@@ -120,7 +124,7 @@ Defaults to \code{FALSE}.}
 \item{B}{a number determining the number of bootstrap populations in the
 parametric bootstrap approach (see also
 \cite{Gonzalez-Manteiga et al. (2008)}) used in the MSE estimation. The
-number must be greater than 1. Defaults to 50. For practical applications,
+number must be greater than 1. Defaults to 100. For practical applications,
 values larger than 200 are recommended (see also
 \cite{Molina, I. and Rao, J.N.K. (2010)}).}
 
@@ -182,9 +186,7 @@ using the weighting options of \code{\link{nlme}} from
 weights by using the weighting options of \code{\link{nlme}} and use these
 weights also to determine the optimal transformation parameter lambda
 ("nlme_lambda"); (iv) Hybrid weights that adjust all model parameters to 
-account for weights("hybrid"); (iv) hybrid weights that uses 
-starting values from a weighted rather than an unweighted mixed effects regression 
-("hybrid2"). Defaults to \code{"Guadarrama"}.}
+account for weights("hybrid"); Defaults to \code{"Guadarrama"}.}
 
 \item{benchmark}{The input depends on the type of benchmarking to be 
 performed.
@@ -320,9 +322,7 @@ povmap_model <- ebp(
 )
 
 
-# Example 2: With MSE, two additional indicators and function as threshold -
-# Please note that the example runs for several minutes. For a short check
-# change L and B to lower values.
+# Example 2: With MSE, two additional indicators and function as threshold.
 povmap_model <- ebp(
   fixed = eqIncome ~ gender + eqsize + cash +
     self_empl + unempl_ben + age_ben + surv_ben + sick_ben + dis_ben + rent +
@@ -331,7 +331,7 @@ povmap_model <- ebp(
   threshold = function(y) {
     0.6 * median(y)
   }, transformation = "log",
-  L = 50, MSE = TRUE, boot_type = "wild", B = 50, custom_indicator =
+  L = 0, MSE = TRUE, boot_type = "wild", B = 100, custom_indicator =
     list(
       my_max = function(y) {
         max(y)

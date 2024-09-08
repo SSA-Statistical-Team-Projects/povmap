@@ -1,4 +1,4 @@
-#' Plots for an emdi Object
+#' Plots for a povmap Object
 #'
 #' Diagnostic plots of the underlying model in the EBP (see also
 #' \code{\link{ebp}}) or Fay-Herriot (see also \code{\link{fh}}) approaches are
@@ -143,7 +143,7 @@
 #' plot(fh_std)
 #' }
 #' @export
-#' @method plot emdi
+#' @method plot povmap
 #' @importFrom ggplot2 qplot geom_abline ggtitle ylab xlab ggplot stat_qq
 #' @importFrom ggplot2 aes geom_point geom_smooth coord_fixed geom_line
 #' @importFrom ggplot2 scale_color_manual scale_fill_manual geom_segment
@@ -154,10 +154,10 @@
 #' @importFrom stats shapiro.test logLik cooks.distance
 #' @importFrom HLMdiag mdffits
 #' @importFrom stringr str_to_title
-#' @name plot.emdi
+#' @name plot.povmap
 #' @order 1
 
-plot.emdi <- function(x,
+plot.povmap <- function(x,
                       label = "orig",
                       color = c("blue", "lightblue3"),
                       gg_theme = NULL,

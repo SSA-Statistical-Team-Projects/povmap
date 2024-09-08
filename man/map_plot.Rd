@@ -8,6 +8,7 @@ map_plot(
   object,
   indicator = "all",
   MSE = FALSE,
+  var = FALSE,
   CV = FALSE,
   map_obj = NULL,
   map_dom_id = NULL,
@@ -41,6 +42,9 @@ object is overwritten by function benchmark). Defaults to "all".}
 
 \item{MSE}{optional logical. If \code{TRUE}, the MSE is also visualized.
 Defaults to \code{FALSE}.}
+
+\item{var}{optional logical. If \code{TRUE} and the object is an ELL object,
+the variance is also visualized. Defaults to \code{FALSE}.}
 
 \item{CV}{optional logical. If \code{TRUE}, the CV is also visualized.
 Defaults to \code{FALSE}.}
