@@ -1,4 +1,4 @@
-#' @rdname plot.emdi
+#' @rdname plot.povmap
 #' @export
 plot.ebp <- function(x,
                      label = "orig",

@@ -109,7 +109,7 @@
 #'   cooks = FALSE
 #' )
 #'
-#' # Example 4: Usage of theme from ggplot2 within plot.emdi
+#' # Example 4: Usage of theme from ggplot2 within plot.povmap
 #' library(ggplot2)
 #' plot(emdi_model, gg_theme = theme(
 #'   panel.background =
@@ -300,7 +300,7 @@ plot.povmap <- function(x,
 
 
 
-#' @rdname plot.emdi
+#' @rdname plot.povmap
 #' @export
 plot.direct <- function(x, ...) {
   message(strwrap(prefix = " ", initial = "",
@@ -513,13 +513,13 @@ define_label <- function(x, label) {
                    "List elements must have following names even though not
                    all must be included: qq_res, qq_ran, d_res, d_ran, cooks,
                    opt_lambda. Every list element must have the elements title,
-                   y_lab and x_lab. See also help(plot.emdi)."))
+                   y_lab and x_lab. See also help(plot.povmap)."))
     }
     for (i in names(label)) {
       if (!all(names(label[[i]]) == c("title", "y_lab", "x_lab"))) {
         stop(strwrap(prefix = " ", initial = "",
                      "Every list element must have the elements title, y_lab
-                     and x_lab in this order. See also help(plot.emdi)."))
+                     and x_lab in this order. See also help(plot.povmap)."))
       }
     }
 
