@@ -111,7 +111,7 @@
 #' @importFrom ggplot2 theme element_blank guides scale_fill_gradient
 #' @importFrom ggplot2 scale_colour_gradient geom_sf scale_colour_manual guide_legend guide_colourbar
 #' @importFrom viridis scale_fill_viridis
-#' @import ggpattern 
+#' @importFrom ggpattern geom_sf_pattern 
 
 map_plot <- function(object,
                      indicator = "all",
