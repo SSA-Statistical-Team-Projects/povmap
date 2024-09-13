@@ -307,9 +307,7 @@ add_summary_ebp <- function(object, wb, headlines_cs) {
   )
   
   starting_row <- starting_row + 2 + nrow(su$variance)
-  
-  
-  
+
   
   writeDataTable(
     x = su$coeff_determ,
@@ -324,6 +322,23 @@ add_summary_ebp <- function(object, wb, headlines_cs) {
     tableStyle = "TableStyleMedium2"
   )
 
+  starting_row <- starting_row + 2 + nrow(su$coeff_determ)
+  writeDataTable(
+    x = su$shrinkage,
+    wb = wb,
+    withFilter = FALSE,
+    sheet = "summary",
+    startRow = starting_row,
+    startCol = 4,
+    rowNames = FALSE,
+    headerStyle = headlines_cs,
+    colNames = TRUE,
+    tableStyle = "TableStyleMedium2"
+  )
+  
+  
+  
+    
   setColWidths(
     wb = wb,
     sheet = "summary",
