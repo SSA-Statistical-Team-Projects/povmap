@@ -292,6 +292,25 @@ add_summary_ebp <- function(object, wb, headlines_cs) {
     tableStyle = "TableStyleMedium2"
   )
   starting_row <- starting_row + 2 + nrow(su$normality)
+  
+  writeDataTable(
+    x = su$variance,
+    wb = wb,
+    withFilter = FALSE,
+    sheet = "summary",
+    startRow = starting_row,
+    startCol = 3,
+    rowNames = FALSE,
+    headerStyle = headlines_cs,
+    colNames = TRUE,
+    tableStyle = "TableStyleMedium2"
+  )
+  
+  starting_row <- starting_row + 2 + nrow(su$variance)
+  
+  
+  
+  
   writeDataTable(
     x = su$coeff_determ,
     wb = wb,
