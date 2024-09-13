@@ -329,7 +329,7 @@ add_summary_ebp <- function(object, wb, headlines_cs) {
     withFilter = FALSE,
     sheet = "summary",
     startRow = starting_row,
-    startCol = 4,
+    startCol = 3,
     rowNames = FALSE,
     headerStyle = headlines_cs,
     colNames = TRUE,
