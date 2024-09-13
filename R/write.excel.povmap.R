@@ -300,7 +300,7 @@ add_summary_ebp <- function(object, wb, headlines_cs) {
     sheet = "summary",
     startRow = starting_row,
     startCol = 3,
-    rowNames = FALSE,
+    rowNames = TRUE,
     headerStyle = headlines_cs,
     colNames = TRUE,
     tableStyle = "TableStyleMedium2"
@@ -330,7 +330,7 @@ add_summary_ebp <- function(object, wb, headlines_cs) {
     sheet = "summary",
     startRow = starting_row,
     startCol = 3,
-    rowNames = FALSE,
+    rowNames = TRUE,
     headerStyle = headlines_cs,
     colNames = TRUE,
     tableStyle = "TableStyleMedium2"
