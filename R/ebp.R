@@ -128,7 +128,7 @@
 #' weights by using the weighting options of \code{\link{nlme}} and use these
 #' weights also to determine the optimal transformation parameter lambda
 #' ("nlme_lambda"); (iv) Hybrid weights that adjust all model parameters to 
-#' account for weights("hybrid"); Defaults to \code{"Guadarrama"}.
+#' account for weights("hybrid"); Defaults to \code{"nlme"}.
 #' @param benchmark The input depends on the type of benchmarking to be 
 #' performed.
 #' (i) Benchmarking with a fixed value:
@@ -403,7 +403,7 @@ ebp <- function(fixed,
   }
 
   if (is.null(weights_type) & !is.null(weights)) {
-    weights_type <- "Guadarrama"
+    weights_type <- "nlme"
   }
   
   if (is.null(benchmark_weights) & !is.null(weights)) {
