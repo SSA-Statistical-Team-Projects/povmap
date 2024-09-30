@@ -451,7 +451,7 @@ if (is.null(framework$smp_subdomains) && is.null(framework$pop_subdomains)) {  #
 #2. Calulate expected value of transformed XB+mu
   Y_pop_mu <- gen_model$mu_fixed + vu_pop + eta_pop 
   if ("Mean" %in% framework$indicator_names) {
-    EY_pop_mu <- expected_transformed_mean(Y_pop_mu,var=var_eps,transformation=transformation,lambda=lambda)
+    EY_pop_mu <- expected_untransformed_mean(Y_pop_mu,var=var_eps,transformation=transformation,lambda=lambda)
 #3. Scale down implied residual to simulate taking draws over repeated observations   
   Y_pop_b <- EY_pop_mu+((Y_pop_b-Y_pop_mu)/sqrt(framework$pop_data[,framework$MSE_pop_weights]))
     true_indicators_weighted[,"Mean"] <- mapply(FUN=weighted.mean, x=split(Y_pop_b, pop_domains_vec_tmp),w=split(pop_weights_vec,pop_domains_vec_tmp))
