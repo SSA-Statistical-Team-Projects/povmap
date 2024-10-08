@@ -672,8 +672,9 @@ if ("Poverty_Gap" %in% framework$indicator_names) {
   conditional_mean <- conditional_untransformed_mean(Head_Count=Head_Count_temp, mu=gen_model$mu,var=var, transformation=transformation,lambda=lambda,threshold=framework$threshold,shift=shift) 
   #Calculate expected value of poverty gap for each household 
   # E[PGI]=p(poor)*(1-E[Y|poor]/Z)*(1-p(poor)*0)
+  if (!is.null(conditional_mean)) {
   indicators[,"Poverty_Gap"] <- Head_Count_temp*(1-conditional_mean/framework$threshold)
-    
+  }  
   }
 if ("Gini" %in% framework$indicator_names) {
 indicators[,"Gini"] <- expected_gini(mu=gen_model$mu, var=var, transformation=transformation,lambda=lambda,popwt=pop_weights_vec,pop_domains=framework$pop_data[,framework$pop_domains])
