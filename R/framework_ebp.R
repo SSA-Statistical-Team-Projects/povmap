@@ -214,7 +214,7 @@ pop_data[[pop_subdomains]] <- factor(pop_data[[pop_subdomains]],
         sum(pop_weights)
     },
     Poverty_Severity = function(y, pop_weights, threshold) {
-      sum((1 - (y[y < threshold]/threshold)^2) * pop_weights[y < threshold])/
+      sum((1 - y[y < threshold]/threshold)^2 * pop_weights[y < threshold])/
         sum(pop_weights)
     },
     Gini = function(y, pop_weights, threshold) {
