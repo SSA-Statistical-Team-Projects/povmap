@@ -1,4 +1,4 @@
-# Extract Model Coefficients of emdi Objects -----------------------------------
+# Extract Model Coefficients of povmap Objects -----------------------------------
 
 #' @aliases coefficients
 #' @export
@@ -27,14 +27,14 @@ coef.fh <- function(object, ...) {
   fixed_effects
 }
 
-# Confidence Intervals of an emdi Object ---------------------------------------
+# Confidence Intervals of a povmap Object ---------------------------------------
 
 #' @export
 #' @method confint ebp
 #' @importFrom nlme intervals
 #' @importFrom stats confint
 
-confint.ebp <- function(object, parm = NULL, level = 0.95, ...) {
+confint.povmap <- function(object, parm = NULL, level = 0.95, ...) {
   throw_class_error(object, "ebp")
   if (!is.null(parm)) {
     confidence_intervals <- intervals(object$model, level = level)$fixed
@@ -67,7 +67,7 @@ confint.fh <- function(object, parm = NULL, level = 0.95, ...) {
   }
 }
 
-# Extract the AIC from a Model Fit of an emdi Object ---------------------------
+# Extract the AIC from a Model Fit of a povmap Object ---------------------------
 #' @export
 #' @method extractAIC fh
 #' @importFrom stats extractAIC
@@ -89,7 +89,7 @@ extractAIC.fh <- function(fit, ...) {
   }
 }
 
-# Extracts family object of emdi object ----------------------------------------
+# Extracts family object of povmap object ----------------------------------------
 #' @export
 #' @method family ebp
 #' @importFrom stats family gaussian
@@ -109,7 +109,7 @@ family.fh <- function(object, ...) {
   gaussian(link = "identity")
 }
 
-# Extract fitted values of emdi objects ----------------------------------------
+# Extract fitted values of povmap objects ----------------------------------------
 
 #' @aliases fitted.values
 #' @export
@@ -132,7 +132,7 @@ fitted.fh <- function(object, ...) {
   object$model$fitted
 }
 
-# Extract the model formula of an emdi object ----------------------------------
+# Extract the model formula of an povmap object ----------------------------------
 
 #' @export
 #' @method formula ebp
@@ -153,7 +153,7 @@ formula.fh <- function(x, ...) {
   x$fixed
 }
 
-# Extract log-Likelihood of emdi objects ---------------------------------------
+# Extract log-Likelihood of povmap objects ---------------------------------------
 #' @export
 #' @method logLik ebp
 #' @importFrom stats logLik
@@ -188,7 +188,7 @@ logLik.fh <- function(object, ...) {
   }
 }
 
-# Extract the number of `observations´ from a fit of an emdi object -----------
+# Extract the number of `observations´ from a fit of an povmap object -----------
 #' @export
 #' @method nobs ebp
 #' @importFrom stats nobs
@@ -199,7 +199,7 @@ nobs.ebp <- function(object, ...) {
   N_obs
 }
 
-# Extract the number of `observations´ from a fit of an emdi object
+# Extract the number of `observations´ from a fit of an povmap object
 #' @export
 #' @method nobs fh
 #' @importFrom stats nobs
@@ -210,23 +210,23 @@ nobs.fh <- function(object, ...) {
   N_obs
 }
 
-#' Predictions from emdi Objects
+#' Predictions from povmap Objects
 #'
-#' Method \code{predict.emdi} extracts the direct estimates, the empirical
+#' Method \code{predict.povmap} extracts the direct estimates, the empirical
 #' best linear unbiased or empirical best predictors for all domains from an
-#' emdi object.
+#' povmap object.
 #'
-#' @param object an object of type "emdi".
+#' @param object an object of type "povmap".
 #' @param ... additional arguments that are not used in this method.
 #' @return Data frame with domain predictors.
 #' @details For a better selection of prediction results, it is referred to use
 #' the generic function \code{\link{estimators}}. The methods for object of
-#' class "emdi" allows to select among the indicators of interest.
+#' class "povmap" allows to select among the indicators of interest.
 #' @seealso \code{\link{direct}}, \code{\link{ebp}}, \code{\link{fh}}
 #' @examples
 #' \donttest{
 #' # Example for class ebp
-#' emdi_model <- ebp(
+#' povmap_model <- ebp(
 #'   fixed = eqIncome ~ gender + eqsize + cash + self_empl +
 #'     unempl_ben + age_ben + surv_ben + sick_ben + dis_ben + rent + fam_allow +
 #'     house_allow + cap_inv + tax_adj, pop_data = eusilcA_pop,
@@ -234,18 +234,18 @@ nobs.fh <- function(object, ...) {
 #'   na.rm = TRUE
 #' )
 #'
-#' povmap::predict(emdi_model)
+#' povmap::predict(povmap_model)
 #' }
 #' @export 
-#' @method predict emdi
+#' @method predict povmap
 #' @importFrom stats predict
 
-predict.emdi <- function(object, ...) {
+predict.povmap <- function(object, ...) {
   object$ind
 }
 
 
-# Extract residuals of emdi objects --------------------------------------------
+# Extract residuals of povmap objects --------------------------------------------
 
 #' @aliases resid
 #' @export
@@ -274,7 +274,7 @@ residuals.fh <- function(object, ...) {
   }
 }
 
-# Extract residual standard deviation of emdi objects --------------------------
+# Extract residual standard deviation of povmap objects --------------------------
 
 #' @export
 #' @importFrom stats sigma
@@ -285,7 +285,7 @@ sigma.ebp <- function(object, ...) {
 }
 
 
-# Constructs a terms object from an emdi object --------------------------------
+# Constructs a terms object from an povmap object --------------------------------
 
 #' @export
 #' @method terms ebp
@@ -305,7 +305,7 @@ terms.fh <- function(x, ...) {
   terms(aov(x$fixed, x$framework$combined_data))
 }
 
-# Extract variance-covariance matrix of the main parameters of emdi objects ----
+# Extract variance-covariance matrix of the main parameters of povmap objects ----
 
 #' @export
 #' @method vcov ebp
@@ -317,7 +317,7 @@ vcov.ebp <- function(object, ...) {
 }
 
 
-# Extract variance-covariance matrix of the main parameters of emdi objects ----
+# Extract variance-covariance matrix of the main parameters of povmap objects ----
 
 #' @export
 #' @method vcov fh
