@@ -96,7 +96,7 @@ compare_plot_fh <- function(model, direct, indicator = "all", MSE = FALSE,
   value <- NULL
   Method <- NULL
 
-  Data <- point_emdi(object = model, indicator = "all")$ind
+  Data <- point_povmap(object = model, indicator = "all")$ind
   Data <- Data[!is.na(Data$Direct), ]
   selected_indicators <- colnames(Data)[!(colnames(Data) %in% c(
     "Domain",
