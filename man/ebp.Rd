@@ -186,7 +186,7 @@ using the weighting options of \code{\link{nlme}} from
 weights by using the weighting options of \code{\link{nlme}} and use these
 weights also to determine the optimal transformation parameter lambda
 ("nlme_lambda"); (iv) Hybrid weights that adjust all model parameters to 
-account for weights("hybrid"); Defaults to \code{"Guadarrama"}.}
+account for weights("hybrid"); Defaults to \code{"nlme"}.}
 
 \item{benchmark}{The input depends on the type of benchmarking to be 
 performed.

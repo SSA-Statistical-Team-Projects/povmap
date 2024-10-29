@@ -34,7 +34,7 @@ coef.fh <- function(object, ...) {
 #' @importFrom nlme intervals
 #' @importFrom stats confint
 
-confint.povmap <- function(object, parm = NULL, level = 0.95, ...) {
+confint.ebp <- function(object, parm = NULL, level = 0.95, ...) {
   throw_class_error(object, "ebp")
   if (!is.null(parm)) {
     confidence_intervals <- intervals(object$model, level = level)$fixed
