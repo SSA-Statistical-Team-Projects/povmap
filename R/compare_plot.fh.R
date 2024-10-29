@@ -43,9 +43,9 @@ compare_plot.fh <- function(model = NULL, direct = NULL, indicator = "all",
 #' For all indicators or a selection of indicators two plots are returned. The
 #' first plot is a scatter plot of estimates to compare and the second is a line
 #' plot with these estimates.
-#' @param model an object of type "emdi", either "ebp" or "fh", representing
+#' @param model an object of type "povmap", either "ebp" or "fh", representing
 #' point and MSE estimates.
-#' @param direct an object of type "direct","emdi", representing point
+#' @param direct an object of type "direct","povmap", representing point
 #' and MSE estimates.
 #' @param indicator optional character vector that selects which indicators
 #' shall be returned: (i) all calculated indicators ("all");
@@ -115,7 +115,7 @@ compare_plot_fh <- function(model, direct, indicator = "all", MSE = FALSE,
   }
   if ("FH_Bench" %in% indicator && !("FH_Bench" %in% selected_indicators)) {
     message(strwrap(prefix = " ", initial = "",
-                   "emdi object does not contain benchmarked fh estimates.
+                   "povmap object does not contain benchmarked fh estimates.
                    Only FH estimates are compared with direct. See also
                    help(benchmark)."))
   }
@@ -131,7 +131,7 @@ compare_plot_fh <- function(model, direct, indicator = "all", MSE = FALSE,
   }
 
   if (MSE == TRUE || CV == TRUE) {
-    all_precisions <- mse_emdi(object = model, indicator = "all", CV = TRUE)
+    all_precisions <- mse_povmap(object = model, indicator = "all", CV = TRUE)
     colnames(all_precisions$ind) <- c("Domain", paste0(c(
       "FH_Direct",
       "FH_Model"
