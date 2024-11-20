@@ -12,8 +12,7 @@
 
 The R package povmap is designed to facilitate the production of small
 area estimates of means and poverty headcount rates. It adds several new
-features to the
-[emdi](https://cran.r-project.org/web/packages/emdi/index.html) package.
+features to the [emdi](https://CRAN.R-project.org/package=emdi) package.
 These include new options for:
 
 - incorporating survey weights,
@@ -37,8 +36,8 @@ install.packages("povmap")
 ## the development version of povmap from GitHub. Sometimes, povmap maybe unavailable in CRAN (although this is typically ## unlikely)
 
 devtools::install_github("SSA-Statistical-Team-Projects/povmap")
-## alternatively,
-remotes::install_github("SSA-Statistical-Team-Projects/povmap")
+## alternatively (remove the comment for the line of code below),
+##remotes::install_github("SSA-Statistical-Team-Projects/povmap")
 ```
 
 ## Usage

@@ -32,7 +32,7 @@
 #' result in different files for point estimates and their precisions.
 #' Defaults to \code{FALSE}.
 #' @param model logical if \code{TRUE}, the estimation model is exported.
-#' #' Defaults to \code{FALSE}. 
+#' #' Defaults to \code{FALSE}.
 #' @return An Excel file is created in your working directory, or at the given
 #' path. Alternatively multiple ODS files are created at the given path.
 #' @details These functions create an Excel file via the package
@@ -87,7 +87,7 @@
 #' write.excel(emdi_model, indicator = "all", MSE = TRUE, CV = TRUE,
 #'             split = TRUE)
 #'
-#' # Example 3: Same as example 1 but for an ODS output, skipped due to lack of zip app 
+#' # Example 3: Same as example 1 but for an ODS output, skipped due to lack of zip app
 #' # write.ods(emdi_model, indicator = "all", MSE = TRUE, CV = TRUE)
 #' }
 #'
@@ -172,7 +172,7 @@ write.excel <- function(object,
       )
     }
   }
-  
+
     if (model) {
       wb <- add_model(object=object,
       wb=wb
@@ -715,7 +715,7 @@ add_estims <- function(object, indicator, wb, headlines_cs, MSE, CV) {
 }
 
 add_model <- function(object,  wb) {
-  
+
   model <- ebp_reportcoef_table(object,decimals=3)
   addWorksheet(wb, sheetName = "Model", gridLines = FALSE)
   headlines_cs <- createStyle(
@@ -727,7 +727,7 @@ add_model <- function(object,  wb) {
     border = "Bottom",
     borderStyle = "medium"
   )
-  
+
   writeDataTable(
     x = model,
     sheet = "Model",
