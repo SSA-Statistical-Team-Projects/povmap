@@ -201,7 +201,7 @@ ell <- function(fixed,
     benchmark_weights = benchmark_weights,MSE_pop_weights=NULL 
   )
   
-  if (!is.null(alpha) & transformation!="log" & transformation!="log.shift") {
+  if (!is.null(alpha) & transformation!="log" & transformation!="log.shift" & transformation!="no") {
     stop(strwrap(prefix = " ", initial = "",
                  "Must use log or log shift transformation when using alpha model."))
   }
