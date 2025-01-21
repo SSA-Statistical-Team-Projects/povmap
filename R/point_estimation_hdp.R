@@ -137,7 +137,7 @@ point_estim_hdp <- function(framework,
   }
 
   # The monte-carlo function returns a data frame of desired indicators.
-  indicator_prediction <- monte_carlo(
+  indicator_prediction <- monte_carlo_hdp(
     L = L,
     framework = framework,
     model_par = est_par,
@@ -714,7 +714,7 @@ prediction_y <- function(gen_model,
 } # End prediction_y
 
 # Monte-Carlo approximation ----------------------------------------------------
-monte_carlo <- function(transformation,
+monte_carlo_hdp <- function(transformation,
                         L,
                         framework,
                         lambda,
