@@ -46,7 +46,9 @@ Imports:
     sf,
     FNN,
     plm,
-    data.table
+    data.table,
+    ggpattern,
+    UPSvarApprox
 Suggests:
     testthat,
     R.rsp,
