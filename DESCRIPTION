@@ -48,7 +48,8 @@ Imports:
     plm,
     data.table,
     ggpattern,
-    UPSvarApprox
+    UPSvarApprox,
+    pracma
 Suggests:
     testthat,
     R.rsp,
