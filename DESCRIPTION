@@ -50,11 +50,12 @@ Imports:
     ggpattern,
     UPSvarApprox,
     pracma,
-    lmeInfo
+    lmeInfo,
+    viridis
 Suggests:
     testthat,
     R.rsp,
     simFrame,
     laeken,
-    graphics
+    graphics,
 VignetteBuilder: R.rsp
