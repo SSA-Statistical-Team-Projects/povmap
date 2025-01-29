@@ -417,7 +417,7 @@ fw_check1 <- function(pop_data, mod_vars, pop_domains, pop_subdomains=pop_subdom
   if (!all(mod_vars %in% colnames(pop_data))) {
     stop(strwrap(prefix = " ", initial = "",
                  paste0("Variable ",
-                        mod_vars[which(!(mod_vars %in% colnames(smp_data)))],
+                        mod_vars[(which(!mod_vars %in% colnames(pop_data)))],
                         " is not contained in pop_data. Please provide valid
                         variable names for the explanatory variables."
     )))
