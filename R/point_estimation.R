@@ -572,15 +572,16 @@ random_arg[framework$smp_domains] <- list(as.formula(~1))
 args <- list(fixed=e0~1,
              data = transformed_par,
              random = random_arg,
-             method = framework$nlme_method,weights=~1/weight_smp,
-             control = nlme::lmeControl(maxIter = framework$nlme_maxiter,
-                                        tolerance = framework$nlme_tolerance,
-                                        opt = framework$nlme_opt,
-                                        optimMethod = framework$nlme_optimmethod, 
-                                        msMaxIter=framework$nlme_msmaxiter,
-                                        msTol=framework$nlme_mstol,
-                                        returnObject = framework$nlme_returnobject 
-             ))
+             method = framework$nlme_method,weights=~1/weight_smp
+#control = nlme::lmeControl(maxIter = framework$nlme_maxiter,
+#                          tolerance = framework$nlme_tolerance,
+#                         opt = framework$nlme_opt,
+              #                          optimMethod = framework$nlme_optimmethod, 
+            #                            msMaxIter=framework$nlme_msmaxiter,
+            #                            msTol=framework$nlme_mstol,
+            #                            returnObject = framework$nlme_returnobject 
+# )
+             )
 revised_var <- do.call(nlme:::lme,args)
 
 if (!is.null(framework$smp_subdomains) && !is.null(framework$pop_subdomains)) {
