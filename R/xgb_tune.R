@@ -100,9 +100,12 @@ xgb_tune <- function(fixed,
 
   # Data preparation
   #_____________________________________________________________________________
-  split <- strsplit(as.character(fixed), "~", fixed = TRUE)
-  outcome <- trimws(split[[1]][1])
-  covariates <- trimws(strsplit(trimws(split[[1]][2]), "\\+")[[1]])
+  outcome <- all.vars(fixed[[2]])
+  covariates <- all.vars(fixed[[3]])
+  
+  #split <- strsplit(as.character(fixed), "~", fixed = TRUE)
+  #outcome <- trimws(split[[1]][1])
+  #covariates <- trimws(strsplit(trimws(split[[1]][2]), "\\+")[[1]])
   X_smp <- smp_data[,covariates]
   Y_smp <- data.frame(smp_data[,outcome])
 
