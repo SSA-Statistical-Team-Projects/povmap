@@ -445,7 +445,26 @@ add_summary_ell <- function(object, wb, headlines_cs) {
     colNames = TRUE,
     tableStyle = "TableStyleMedium2"
   )
+
   starting_row <- starting_row + 2 + nrow(su$normality)
+  
+  writeDataTable(
+    x = su$variance,
+    wb = wb,
+    withFilter = FALSE,
+    sheet = "summary",
+    startRow = starting_row,
+    startCol = 3,
+    rowNames = TRUE,
+    headerStyle = headlines_cs,
+    colNames = TRUE,
+    tableStyle = "TableStyleMedium2"
+  )
+  
+  starting_row <- starting_row + 2 + nrow(su$variance)
+  
+  
+  
   writeDataTable(
     x = su$coeff_determ,
     wb = wb,
