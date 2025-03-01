@@ -345,8 +345,10 @@ ebp_reportcoef_table <- function(model,
   colnames(varname_dt) <- "Variable"
 
   coef_dt <- as.data.frame(coef(summary(model$model)))
+ 
   
-  colnames(coef_dt)[which(names(coef_dt) == "Pr(>|z|)")] <- "p-value" 
+  colnames(coef_dt)[colnames(coef_dt) %in% c("Pr(>|z|)", "Estimate","Std. Error")] <-
+    c("p-value", "Value","Std.Error")
   
   if (!is.null(model$call$weights_type)) {
   if (model$call$weights_type=="Guadarrama" | model$call$weights_type=="hybrid") {
