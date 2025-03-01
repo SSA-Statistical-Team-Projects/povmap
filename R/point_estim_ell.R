@@ -67,8 +67,6 @@ point_estim_ell <- function(framework,
  
  re_model <- do.call(plm:::plm, args)
  
- 
- 
   # Function model_par extracts the needed parameters theta from the random
   # effects linear regression model. It returns the beta coefficients (betas),
   # sigmae2est, and sigmau2est.

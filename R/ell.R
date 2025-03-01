@@ -247,7 +247,7 @@ ell <- function(fixed,
   
   
   # Point Estimation -----------------------------------------------------------
-  # The function point_estim can be found in script point_estimation.R
+  # The function point_estim can be found in script point_estimation_ell.R
   point_estim <- point_estim_ell(
     framework = framework,
     fixed = fixed,
