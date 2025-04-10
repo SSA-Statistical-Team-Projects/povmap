@@ -185,13 +185,13 @@ ell <- function(fixed,
 ) {
   
   start.time <- Sys.time()
-  ebp_check1(
+  ell_check1(
     fixed = fixed, pop_data = pop_data, pop_domains = pop_domains,
     smp_data = smp_data, smp_domains = smp_domains, L = L
   )
   
   
-  ebp_check2(
+  ell_check2(
     threshold = threshold, transformation = transformation,
     interval = interval, MSE = F, boot_type = "parametric", B = 50, L= L, 
     custom_indicator = custom_indicator, cpus = 1, seed = seed,
