@@ -118,7 +118,7 @@
 #' with weights differing from the survey weights (Default for weighting for
 #' internal benchmarking).
 #' @param random_method selects the method used by the plm function to estimate the random effects model.
-#' It can take on the values "swar" (default), "amemiya", "walhus", or "nerlove"
+#' It can take on the values "swar", "amemiya", "walhus" (default), or "nerlove". 
 #' @param rescale_weights a logical indicating if the sample weights are scaled.
 #' If \code{FALSE} (default), the sample weights do not change. When \code{TRUE}
 #' , the sample weights are rescaled such that the average weight is 1
@@ -177,7 +177,7 @@ ell <- function(fixed,
                 benchmark_level = NULL,
                 benchmark_weights = NULL,
                 rescale_weights = FALSE,
-                random_method = NULL, 
+                random_method = "walhus", 
                 Ydump = NULL, 
                 errors = "normal",
                 model_parameters = "variable", 
