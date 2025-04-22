@@ -3,7 +3,7 @@
 
 
 # Function called in ebp
-ebp_check1 <- function(fixed, pop_data, pop_domains, smp_data, smp_domains, L) {
+ebp_check1 <- function(fixed, pop_data, pop_domains, smp_data, smp_domains, L,transformation) {
   if (is.null(fixed) || !inherits(fixed, "formula")) {
     stop("Fixed must be a formula object. See also help(ebp).")
   }
@@ -45,6 +45,13 @@ ebp_check1 <- function(fixed, pop_data, pop_domains, smp_data, smp_domains, L) {
                 "The sample data contains domains that are not contained in the
                 population data."))
   }
+  
+  
+  if (transformation=="arcsin" & (min(smp_data[,fixed[[2]]])<0) | max(smp_data[,fixed[[2]]])>1)  {
+    stop("The dependent variable must be between zero and one when using the arcsin transformation")
+  }
+  
+  
 }
 
 ebp_check2 <- function(threshold, transformation, interval, MSE, boot_type, B,

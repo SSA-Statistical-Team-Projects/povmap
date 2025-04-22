@@ -372,7 +372,7 @@ ebp <- function(fixed,
    start.time <- Sys.time()
   ebp_check1(
     fixed = fixed, pop_data = pop_data, pop_domains = pop_domains,
-    smp_data = smp_data, smp_domains = smp_domains, L = L
+    smp_data = smp_data, smp_domains = smp_domains, L = L, transformation=transformation
   )
 
   ebp_check2(
