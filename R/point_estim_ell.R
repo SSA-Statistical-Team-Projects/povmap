@@ -156,7 +156,7 @@ estimate_model_plm <- function(formula=formula,data=data,framework=framework) {
   
   # Using do.call passes the name of the weight vector from framework to the plm function 
   # if weight is NULL, that is appropriately passed to PLM 
-  args <- list(formula=fixed, 
+  args <- list(formula=formula, 
                data = data, 
                weights = weights_arg,
                model="random",
