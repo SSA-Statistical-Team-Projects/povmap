@@ -49,6 +49,25 @@ framework_ell <- function(fixed, alpha, pop_data, pop_domains, pop_subdomains, s
   }
   
   
+  #standardize sample and population if requested
+  if (standardize==TRUE) {
+    smp_std <- smp_data
+    smp_std[,mod_vars]<-scale(smp_data[,mod_vars])
+    means <- as.numeric(attributes(scale(smp_data[,mod_vars]))[[3]])
+    sd <- as.numeric(attributes(scale(smp_data[,mod_vars]))[[4]])
+    smp_std2 <- smp_data # this checks to make sure standardization is correct
+    summary(smp_std[,2])  
+
+    #smp_std2[,mod_vars] <- sweep(smp_data[,mod_vars],FUN="-",STATS=means,MARGIN=2) 
+    #smp_std2[,mod_vars] <- sweep(smp_std2[,mod_vars],FUN="/",STATS=sd,MARGIN=2) # this replicates smp_std 
+  
+    pop_std <- pop_data
+    pop_std[,mod_vars] <- sweep(pop_data[,mod_vars],FUN="-",STATS=means,MARGIN=2)
+    pop_std[,mod_vars] <- sweep(pop_std[,mod_vars],FUN="/",STATS=sd,MARGIN=2)
+    pop_data <- pop_std 
+    smp_data <- smp_std 
+  }
+  
   
   
   # Deletion of NA
@@ -138,6 +157,8 @@ framework_ell <- function(fixed, alpha, pop_data, pop_domains, pop_subdomains, s
   n_smp <- as.vector(table(smp_domains_vec_tmp))
   smp_subdomains_vec_tmp <- as.numeric(smp_subdomains_vec)
   n_smp_subdom <- as.vector(table(smp_subdomains_vec_tmp))
+  
+
   
   
   
