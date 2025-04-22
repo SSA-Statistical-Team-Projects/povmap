@@ -50,7 +50,7 @@ point_estim_ell <- function(framework,
 
   
   estimate_model_plm <- function(formula=formula,data=data,framework=framework) {
-  # Do an unconditional random effect model 
+  # estimate an unconditional random effect model using plm 
   random_arg <- NULL 
   random_arg[framework$smp_domains] <- list(as.formula(~1))
   names(random_arg) <- c(framework$smp_domains)
@@ -62,7 +62,7 @@ point_estim_ell <- function(framework,
   # Using do.call passes the name of the weight vector from framework to the plm function 
   # if weight is NULL, that is appropriately passed to PLM 
   args <- list(formula=fixed, 
-               data = transformation_par$transformed_data, 
+               data = data, 
                weights = weights_arg,
                model="random",
                index = framework$smp_domains,
@@ -76,9 +76,33 @@ point_estim_ell <- function(framework,
   } # end function estimate_model_plm 
  
   
+  estimate_model_gls <- function(formula=formula,data=data,framework=framework) {
+  # estimate an unconditional random effects model using gls 
+    args <- list(model=formula,
+                 data=data,
+                 weights = weights_arg, 
+                 method = "ML",
+                 correlation = paste0("form= ~1 | ",framework$smp_domain)
+    ) 
+    
+    gls_model <- do.call(nlme:::gls,args)
+    #lme_gls <- nlme:::gls(model=formula,data=data,correlation =  corCompSymm(form = ~ 1 | TA_CODE),method="ML")
+    return(gls_model)
+    
+    
+    
+  }
+  
+if (framework$method=="plm") {  
   re_model <- estimate_model_plm(formula=fixed,data=transformation_par$transformed_data,
                                  framework=framework)
-   
+}
+  else if (framework$method=="gls") {
+  gls_model <- estimate_model_gls(formula=fixed,data=transformation_par$transformed_data,
+                                  framework=framework)    
+  }
+    
+
   # Function model_par extracts the needed parameters theta from the random
   # effects linear regression model. It returns the beta coefficients (betas),
   # sigmae2est, and sigmau2est.
