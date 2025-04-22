@@ -266,7 +266,7 @@ model_par_ell_gls <- function(framework,
   sigmae2est <- lme_gls$sigma^2*(1-rho)
   
   if (framework$model_parameters!="fixed") {
-    varFix <- gls_model$vcov
+    varFix <- gls_model$varBeta
   }
   else {
     varFix = NULL 
