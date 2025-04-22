@@ -256,21 +256,22 @@ model_par_ell_gls <- function(framework,
                           fixed,
                           transformation_par) {
   
-  browser()
   # fixed parameters
-  betas <- gls_model$coefficients 
-  # Estimated error variance
-  sigmae2est <- re_model$ercomp$sigma2[1]
-  # VarCorr(fit2) is the estimated random error variance
-  sigmau2est <- re_model$ercomp$sigma2[2]
+  betas <- gls_model$coefficients
+  # variance parameters 
+  rho<-coef(lme_gls$modelStruct,unconstrained=F)
+  # area effect 
+  sigmau2est <- lme_gls$sigma^2*rho
+  # Estimated epsilon error variance
+  sigmae2est <- lme_gls$sigma^2*(1-rho)
   
   if (framework$model_parameters!="fixed") {
-    varFix <- re_model$vcov
+    varFix <- gls_model$vcov
   }
   else {
     varFix = NULL 
   }
-  residuals <- as.vector(re_model$model[,1]-predict(re_model))
+  residuals <- gls_model$residuals
   if (is.null(framework$weights)) {
     weights <- rep(1,framework$N_smp)
   }
