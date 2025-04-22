@@ -93,11 +93,11 @@ point_estim_ell <- function(framework,
     
   }
   
-if (framework$method=="plm") {  
+if (framework$estimation_method=="plm") {  
   re_model <- estimate_model_plm(formula=fixed,data=transformation_par$transformed_data,
                                  framework=framework)
 }
-  else if (framework$method=="gls") {
+  else if (framework$estimation_method=="gls") {
   gls_model <- estimate_model_gls(formula=fixed,data=transformation_par$transformed_data,
                                   framework=framework)    
   }
