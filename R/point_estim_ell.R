@@ -67,13 +67,15 @@ point_estim_ell <- function(framework,
                model="random",
                index = framework$smp_domains,
                random.method=framework$random_method)
-  } # end function estimate_model_plm 
+
   
   
   re_model <- estimate_model_plm(formula=fixed,data=transformation_par$transformed_data,
                      framework=framework)
   
- 
+  return(re_model)
+  } # end function estimate_model_plm 
+  
   # Function model_par extracts the needed parameters theta from the random
   # effects linear regression model. It returns the beta coefficients (betas),
   # sigmae2est, and sigmau2est.
