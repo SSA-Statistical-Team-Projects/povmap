@@ -72,7 +72,7 @@ if (framework$estimation_method=="plm") {
     fixed=fixed,
     transformation_par = transformation_par 
   )
-  
+  re_model <- gls_model 
   
   }
     
@@ -122,6 +122,8 @@ if (framework$estimation_method=="plm") {
       stop(strwrap(prefix = " ", initial = "",
                    "L must be positive when using ELL estimation"))
     }
+  
+  
   
   return(list(
     ind = indicator_prediction$point_estimates,
