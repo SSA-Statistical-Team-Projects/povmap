@@ -46,7 +46,7 @@ ell_check1 <- function(fixed, pop_data, pop_domains, smp_data, smp_domains, L,tr
                 population data."))
   }
   
-  if (transformation=="arcsin" & (min(smp_data[,fixed[[2]]])<0) | max(smp_data[,fixed[[2]]])>1)  {
+  if (transformation=="arcsin" & (min(smp_data[,fixed[[2]]])<0 | max(smp_data[,fixed[[2]]])>1)  {
     stop("The dependent variable must be between zero and one when using the arcsin transformation")
   }
   
