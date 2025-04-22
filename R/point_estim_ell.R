@@ -42,76 +42,44 @@ point_estim_ell <- function(framework,
     lambda = optimal_lambda
   )
   shift_par <- transformation_par$shift
-  
+   
   
   # Make functions for different estimation_methods 
   
   # Model estimation, model parameter and parameter of generating model --------
 
   
-  estimate_model_plm <- function(formula=formula,data=data,framework=framework) {
-  # estimate an unconditional random effect model using plm 
-  random_arg <- NULL 
-  random_arg[framework$smp_domains] <- list(as.formula(~1))
-  names(random_arg) <- c(framework$smp_domains)
-  weights_arg <- NULL
-  if (!is.null(framework$weight)) {
-    weights_arg <- framework$smp_data[,framework$weights]
-  }
-  
-  # Using do.call passes the name of the weight vector from framework to the plm function 
-  # if weight is NULL, that is appropriately passed to PLM 
-  args <- list(formula=fixed, 
-               data = data, 
-               weights = weights_arg,
-               model="random",
-               index = framework$smp_domains,
-               random.method=framework$random_method)
-
-  
-  re_model <- do.call(plm:::plm, args)
  
-  
-  return(re_model)
-  } # end function estimate_model_plm 
- 
-  
-  estimate_model_gls <- function(formula=formula,data=data,framework=framework) {
-  # estimate an unconditional random effects model using gls 
-    args <- list(model=formula,
-                 data=data,
-                 weights = weights_arg, 
-                 method = "ML",
-                 correlation = paste0("form= ~1 | ",framework$smp_domain)
-    ) 
-    
-    gls_model <- do.call(nlme:::gls,args)
-    #lme_gls <- nlme:::gls(model=formula,data=data,correlation =  corCompSymm(form = ~ 1 | TA_CODE),method="ML")
-    return(gls_model)
-    
-    
-    
-  }
   
 if (framework$estimation_method=="plm") {  
   re_model <- estimate_model_plm(formula=fixed,data=transformation_par$transformed_data,
                                  framework=framework)
-}
-  else if (framework$estimation_method=="gls") {
-  gls_model <- estimate_model_gls(formula=fixed,data=transformation_par$transformed_data,
-                                  framework=framework)    
-  }
-    
-
-  # Function model_par extracts the needed parameters theta from the random
-  # effects linear regression model. It returns the beta coefficients (betas),
-  # sigmae2est, and sigmau2est.
   est_par <- model_par_ell (
     re_model = re_model,
     framework = framework,
     fixed = fixed,
     transformation_par = transformation_par
   )
+  
+}
+  else if (framework$estimation_method=="gls") {
+  gls_model <- estimate_model_gls(formula=fixed,data=transformation_par$transformed_data,
+                                  framework=framework)    
+  
+  est_par <- model_par_ell_gls (
+    gls_model = gls_model,
+    framework = framework,
+    fixed=fixed,
+    transformation_par = transformation_par 
+  )
+  
+  
+  }
+    
+
+  # Function model_par extracts the needed parameters theta from the random
+  # effects linear regression model. It returns the beta coefficients (betas),
+  # sigmae2est, and sigmau2est.
   
   
   
@@ -174,6 +142,65 @@ if (framework$estimation_method=="plm") {
 
 # All following functions are only internal ------------------------------------
 
+# functions to estimate random effects model 
+
+estimate_model_plm <- function(formula=formula,data=data,framework=framework) {
+  # estimate an unconditional random effect model using plm 
+  random_arg <- NULL 
+  random_arg[framework$smp_domains] <- list(as.formula(~1))
+  names(random_arg) <- c(framework$smp_domains)
+  weights_arg <- NULL
+  if (!is.null(framework$weight)) {
+    weights_arg <- framework$smp_data[,framework$weights]
+  }
+  
+  # Using do.call passes the name of the weight vector from framework to the plm function 
+  # if weight is NULL, that is appropriately passed to PLM 
+  args <- list(formula=fixed, 
+               data = data, 
+               weights = weights_arg,
+               model="random",
+               index = framework$smp_domains,
+               random.method=framework$random_method)
+  
+  
+  re_model <- do.call(plm:::plm, args)
+  
+  
+  return(re_model)
+} # end function estimate_model_plm 
+
+
+estimate_model_gls <- function(formula=formula,data=data,framework=framework) {
+  # estimate an unconditional random effects model using gls 
+  weights_arg <- NULL
+  if (!is.null(framework$weight)) {
+    data$weights_temp <- framework$smp_data[,framework$weights]
+    weights_arg <- ~1/weights_temp
+  }
+  correlation_form <- as.formula(paste0("~1 |",framework$smp_domains))
+  correlation_arg <- paste0("nlme:::corCompSymm(form= ~ 1 | TA_CODE)")
+  coefs <- all.vars(formula)
+  summary(data[,coefs])
+  
+  ## lme_gls <- nlme:::gls(model=ebpformula,data=estimationSample,correlation =  corCompSymm(form = ~ 1 | TA_CODE),method="ML")
+  
+  corr_form <- as.formula(paste0("~1 | ",framework$smp_domains))
+  corr_arg <- nlme:::corCompSymm(form= corr_form)
+  
+  args <- list(model=formula,
+               data=data,
+               weights = weights_arg, 
+               method = "ML",
+               correlation = corr_arg
+  ) 
+  gls_model <- do.call(nlme:::gls,args)
+  return(gls_model)
+} # end function estimate_model_gls 
+
+
+
+
 # Functions to extract and calculate model parameter----------------------------
 
 # Function model_par extracts the needed parameters theta from the nested
@@ -223,6 +250,55 @@ model_par_ell <- function(framework,
       mu_fixed = mu_fixed 
     ))
   } 
+
+model_par_ell_gls <- function(framework,
+                          gls_model,
+                          fixed,
+                          transformation_par) {
+  
+  browser()
+  # fixed parameters
+  betas <- gls_model$coefficients 
+  # Estimated error variance
+  sigmae2est <- re_model$ercomp$sigma2[1]
+  # VarCorr(fit2) is the estimated random error variance
+  sigmau2est <- re_model$ercomp$sigma2[2]
+  
+  if (framework$model_parameters!="fixed") {
+    varFix <- re_model$vcov
+  }
+  else {
+    varFix = NULL 
+  }
+  residuals <- as.vector(re_model$model[,1]-predict(re_model))
+  if (is.null(framework$weights)) {
+    weights <- rep(1,framework$N_smp)
+  }
+  else {
+    weights <- framework$smp_data[,framework$weights]
+  }
+  mean_residuals <- aggregate_weighted_mean(df=residuals,by=list(framework$smp_data[,framework$smp_domains]),
+                                            w=weights)[,2]
+  framework$pop_data[[paste0(fixed[2])]] <- seq_len(nrow(framework$pop_data))
+  X_pop <- model.matrix(fixed, framework$pop_data)
+  mu_fixed <- X_pop %*% betas
+  
+  
+  return(list(
+    betas = betas,
+    sigmae2est = sigmae2est,
+    sigmau2est = sigmau2est,
+    varFix = varFix,
+    varErr = NULL,
+    residuals = residuals,
+    mean_residuals = mean_residuals, 
+    mu_fixed = mu_fixed 
+  ))
+} 
+
+
+
+
 
 
 # function rowvar 

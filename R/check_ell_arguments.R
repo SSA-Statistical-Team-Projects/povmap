@@ -3,7 +3,7 @@
 
 
 # Function called in ell
-ell_check1 <- function(fixed, pop_data, pop_domains, smp_data, smp_domains, L) {
+ell_check1 <- function(fixed, pop_data, pop_domains, smp_data, smp_domains, L,transformation) {
   if (is.null(fixed) || !inherits(fixed, "formula")) {
     stop("Fixed must be a formula object. See also help(ell).")
   }
@@ -45,6 +45,11 @@ ell_check1 <- function(fixed, pop_data, pop_domains, smp_data, smp_domains, L) {
                 "The sample data contains domains that are not contained in the
                 population data."))
   }
+  
+  if (transformation=="arcsin" & min(smp_data$fixed[[1]])<0) {
+    stop("The dependent variable cannot be negative when using an arcsin transformation")
+  }
+  
 }
 
 ell_check2 <- function(threshold, transformation, interval, MSE, boot_type, B,
@@ -90,6 +95,8 @@ ell_check2 <- function(threshold, transformation, interval, MSE, boot_type, B,
                  "MSE population weights not supported with transformations other than log, log shift, and arcsin at this time")) 
   }
   
+  
+
   
   
   if (any(interval != "default") & (!is.vector(interval, mode = "numeric") ||
