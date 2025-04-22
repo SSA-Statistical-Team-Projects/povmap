@@ -181,6 +181,7 @@ ell <- function(fixed,
                 Ydump = NULL, 
                 errors = "normal",
                 model_parameters = "variable", 
+                estimation_method = "plm",
                 indicators = NULL
 ) {
   
@@ -241,7 +242,8 @@ ell <- function(fixed,
     errors = errors,
     indicators = indicators,
     random_method = random_method, 
-    model_parameters = model_parameters
+    model_parameters = model_parameters,
+    estimation_method=estimation_method
   )
   
   

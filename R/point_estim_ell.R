@@ -43,14 +43,17 @@ point_estim_ell <- function(framework,
   )
   shift_par <- transformation_par$shift
   
-  # Model estimation, model parameter and parameter of generating model --------
   
+  # Make functions for different estimation_methods 
+  
+  # Model estimation, model parameter and parameter of generating model --------
 
+  
+  estimate_model_plm <- function(formula=formula,data=data,framework=framework) {
   # Do an unconditional random effect model 
   random_arg <- NULL 
   random_arg[framework$smp_domains] <- list(as.formula(~1))
   names(random_arg) <- c(framework$smp_domains)
- 
   weights_arg <- NULL
   if (!is.null(framework$weight)) {
     weights_arg <- framework$smp_data[,framework$weights]
@@ -58,14 +61,18 @@ point_estim_ell <- function(framework,
   
   # Using do.call passes the name of the weight vector from framework to the plm function 
   # if weight is NULL, that is appropriately passed to PLM 
- args <- list(formula=fixed, 
-           data = transformation_par$transformed_data, 
-           weights = weights_arg,
-           model="random",
-           index = framework$smp_domains,
-           random.method=framework$random_method)
- 
- re_model <- do.call(plm:::plm, args)
+  args <- list(formula=fixed, 
+               data = transformation_par$transformed_data, 
+               weights = weights_arg,
+               model="random",
+               index = framework$smp_domains,
+               random.method=framework$random_method)
+  } # end function estimate_model_plm 
+  
+  
+  re_model <- estimate_model_plm(formula=fixed,data=transformation_par$transformed_data,
+                     framework=framework)
+  
  
   # Function model_par extracts the needed parameters theta from the random
   # effects linear regression model. It returns the beta coefficients (betas),
