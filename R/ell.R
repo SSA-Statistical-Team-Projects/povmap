@@ -182,6 +182,7 @@ ell <- function(fixed,
                 errors = "normal",
                 model_parameters = "variable", 
                 estimation_method = "plm",
+                standardize = FALSE, 
                 indicators = NULL
 ) {
   
@@ -243,7 +244,8 @@ ell <- function(fixed,
     indicators = indicators,
     random_method = random_method, 
     model_parameters = model_parameters,
-    estimation_method=estimation_method
+    estimation_method=estimation_method,
+    standardize=standardize
   )
   
   
