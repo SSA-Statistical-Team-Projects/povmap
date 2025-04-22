@@ -133,7 +133,13 @@
 #' estimates of model parameters beta and sigma will be drawn from their estimated 
 #' distribution. Otherwise they are assumed fixed. Defaults to "variable".  
 #' @param indicators a list of strings containing outcome indicators that should be calculated. 
-#' Defaults to NULL, which selects all indicators.  
+#' Defaults to NULL, which selects all indicators. 
+#' @param standardize If \code{TRUE}, all right hand side predictors in both the sample and population data
+#' are rescaled by substracting the sample mean and dividing by the sample standard deviation. This can make it 
+#' easier to estimate models when using the plm estimation method. Defaults to \code{FALSE}.  
+#' @param estimation_method. When set to "plm", uses the plm function in the plm package to estimate the model. 
+#' When set to "gls", uses the gls function in the nlme package to estimate the model. The former uses a GLS transformation
+#' to estimate the model while the latter uses maximum likelihood estimation.    
 #' @return An object of class "ell", "emdi" that provides estimators for
 #' regional disaggregated indicators.
 #' Several generic functions have methods for the returned object. For a full
