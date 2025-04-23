@@ -12,10 +12,11 @@ framework_ell <- function(fixed, alpha, pop_data, pop_domains, pop_subdomains, s
                           benchmark_level, benchmark_weights, rescale_weights, errors,random_method,model_parameters, indicators,estimation_method,standardize) {
 
 
-  # Reduction of number of variables
+  # Identify model predictor variables 
   mod_vars <- all.vars(nlme::asOneFormula(fixed,alpha))
   mod_vars <- mod_vars[mod_vars != as.character(fixed[2])]
 
+  # Reduce number of variables in smp and pop dataframes to ones we need 
   if (!is.null(weights) && benchmark_weights==weights) {
     smp_vars <- c(as.character(fixed[2]), mod_vars, smp_domains, smp_subdomains, weights,
                   benchmark_level)
@@ -27,8 +28,11 @@ framework_ell <- function(fixed, alpha, pop_data, pop_domains, pop_subdomains, s
   pop_vars <- c(mod_vars, pop_domains, pop_subdomains, aggregate_to, pop_weights,
                 benchmark_level)
   smp_data <- smp_data[, smp_vars]
-  weights <- weights
-  pop_weights <- pop_weights
+  #weights <- weights
+  #pop_weights <- pop_weights
+  
+  # start checks 
+  
   fw_check1(
     pop_data = pop_data, mod_vars = mod_vars, pop_domains = pop_domains,
     smp_data = smp_data, aggregate_to = aggregate_to, fixed = fixed,
@@ -40,7 +44,7 @@ framework_ell <- function(fixed, alpha, pop_data, pop_domains, pop_subdomains, s
 
 
   pop_data <- pop_data[, pop_vars]
-  # convert to dataframe if necessary 
+  # convert from datatable to dataframe if necessary 
   if ("tbl_df" %in% class(pop_data)) {
     pop_data <- as.data.frame(pop_data)
   }
@@ -49,21 +53,31 @@ framework_ell <- function(fixed, alpha, pop_data, pop_domains, pop_subdomains, s
   }
   
   
-  #standardize sample and population if requested
-  if (standardize==TRUE) {
-    smp_std <- smp_data
-    smp_std[,mod_vars]<-scale(smp_data[,mod_vars])
-    means <- as.numeric(attributes(scale(smp_data[,mod_vars]))[[3]])
-    sd <- as.numeric(attributes(scale(smp_data[,mod_vars]))[[4]])
-    smp_std2 <- smp_data # this checks to make sure standardization is correct
-    summary(smp_std[,2])  
+   wscale<-function(df=df,w=w){
+     wmeans <- apply(df,weighted.mean,MARGIN=2,w=t(w))
+     wsd <- apply(df,weighted.sd,MARGIN=2,w=t(w))
+     normdf <- (df-wmeans)/wsd
+     return(normdf)
+     }
 
-    #smp_std2[,mod_vars] <- sweep(smp_data[,mod_vars],FUN="-",STATS=means,MARGIN=2) 
-    #smp_std2[,mod_vars] <- sweep(smp_std2[,mod_vars],FUN="/",STATS=sd,MARGIN=2) # this replicates smp_std 
   
+  
+  #standardize sample and population if requested
+   smp_std <- smp_data
+   if (standardize==TRUE) {
+    if (!is.null(weights)) {
+    wmeans <- apply(smp_data[,mod_vars],weighted.mean,MARGIN=2,w=t(smp_std[,weights]))
+    wsd <- apply(smp_data[,mod_vars],weighted.sd,MARGIN=2,w=t(smp_std[,weights]))
+    }
+     else {
+       wmeans <- apply(smp_data[,mod_vars],mean,MARGIN=2)
+       wsd <- apply(smp_data[,mod_vars],sd,MARGIN=2)
+     }
+    smp_std[,mod_vars] <- sweep(smp_data[,mod_vars],FUN="-",STATS=wmeans,MARGIN=2) 
+    smp_std[,mod_vars] <- sweep(smp_std[,mod_vars],FUN="/",STATS=wsd,MARGIN=2) 
     pop_std <- pop_data
-    pop_std[,mod_vars] <- sweep(pop_data[,mod_vars],FUN="-",STATS=means,MARGIN=2)
-    pop_std[,mod_vars] <- sweep(pop_std[,mod_vars],FUN="/",STATS=sd,MARGIN=2)
+    pop_std[,mod_vars] <- sweep(pop_data[,mod_vars],FUN="-",STATS=wmeans,MARGIN=2)
+    pop_std[,mod_vars] <- sweep(pop_std[,mod_vars],FUN="/",STATS=wsd,MARGIN=2)
     pop_data <- pop_std 
     smp_data <- smp_std 
   }
