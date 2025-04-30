@@ -53,25 +53,17 @@ framework_ell <- function(fixed, alpha, pop_data, pop_domains, pop_subdomains, s
   }
   
   
-   wscale<-function(df=df,w=w){
-     wmeans <- apply(df,weighted.mean,MARGIN=2,w=t(w))
-     wsd <- apply(df,weighted.sd,MARGIN=2,w=t(w))
-     normdf <- (df-wmeans)/wsd
-     return(normdf)
-     }
-
-  
   
   #standardize sample and population if requested
    smp_std <- smp_data
    if (standardize==TRUE) {
     if (!is.null(weights)) {
-    wmeans <- apply(smp_data[,mod_vars],weighted.mean,MARGIN=2,w=t(smp_std[,weights]))
-    wsd <- apply(smp_data[,mod_vars],weighted.sd,MARGIN=2,w=t(smp_std[,weights]))
+    wmeans <- apply(as.data.frame(smp_data[,mod_vars]),weighted.mean,MARGIN=2,w=t(smp_std[,weights]))
+    wsd <- apply(as.data.frame(smp_data[,mod_vars]),weighted.sd,MARGIN=2,w=t(smp_std[,weights]))
     }
      else {
-       wmeans <- apply(smp_data[,mod_vars],mean,MARGIN=2)
-       wsd <- apply(smp_data[,mod_vars],sd,MARGIN=2)
+       wmeans <- apply(as.data.frame(smp_data[,mod_vars]),mean,MARGIN=2)
+       wsd <- apply(as.data.frame(smp_data[,mod_vars]),sd,MARGIN=2)
      }
     smp_std[,mod_vars] <- sweep(smp_data[,mod_vars],FUN="-",STATS=wmeans,MARGIN=2) 
     smp_std[,mod_vars] <- sweep(smp_std[,mod_vars],FUN="/",STATS=wsd,MARGIN=2) 
