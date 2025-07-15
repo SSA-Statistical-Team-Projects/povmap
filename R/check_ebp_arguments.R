@@ -80,9 +80,9 @@ ebp_check2 <- function(threshold, transformation, interval, MSE, boot_type, B,
     transformation == "log.shift" || transformation == "no" ||
     transformation == "ordernorm" || transformation == "arcsin"))  {
     stop(strwrap(prefix = " ", initial = "",
-                 "The seven options for transformation are no', log,
-                 'box.cox', dual', log.shift', 'ordernorm', and
-                 'arcsin'."))
+                 "The eight options for transformation are no', log,
+                 'box.cox', dual', log.shift', 'ordernorm',
+                 'arcsin', and 'logit'."))
   }
   
   

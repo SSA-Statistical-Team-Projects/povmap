@@ -509,6 +509,8 @@ arcsin_transform <- function(y, shift = NULL) {
 
 arcsin_transform_back <- function(y, shift = NULL) {
   y <- sin(y)^2
+  y <- max(y,0)
+  y <- min(y,1)
   return(y = y)
 }
 
