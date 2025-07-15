@@ -343,7 +343,7 @@ alphamodel <- function(residuals, alpha,framework) {
     B_smp <- exp(predict(alpha_model))
     
     var_r <- summary(alpha_model)$sigma^2
-    # This formula comes from 
+    # This formula comes from Zhao (2006): User Manual for Povmap 
     sigmae2est_smp <- (A * B_smp / (1+B_smp)) + 0.5*var_r*(A*B_smp*(1-B_smp)/(1+B_smp)^3)
     dev_resid_std <- dev_resid/sigmae2est_smp^0.5
     dev_resid_std <- dev_resid_std-ave(dev_resid_std,by=framework$smp_data[,framework$smp_domains]) # ELL p.357 eq (3)
