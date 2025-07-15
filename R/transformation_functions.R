@@ -514,4 +514,16 @@ arcsin_transform_back <- function(y, shift = NULL) {
   return(y = y)
 }
 
+# The Logit transformation ------------------------------------------------------
+
+logit_transform <- function(y,shift=NULL) {
+  y <- log(y/(1-y))
+    return(list(y=y, shift=shift))
+}
+
+logit_transform_back <- function(y,shift=NULL)
+  y <- exp(y)/(1+exp(y))
+  return(y = y)
+
+# The logistic transformation 
 
