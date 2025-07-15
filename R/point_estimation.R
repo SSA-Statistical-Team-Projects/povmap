@@ -555,6 +555,7 @@ rand_eff_smp <- rep(rand_eff[framework$dist_obs_dom],framework$n_smp)
 
 
 
+
 transformed_par <- data.frame(e0,weight_smp,framework$smp_data[,framework$smp_domains])
 colnames(transformed_par) <- c("e0","weight_smp",framework$smp_domains)
 #transformed_par <- data.frame(dep_var,weights_tmp=weight_smp,framework$smp_data)
