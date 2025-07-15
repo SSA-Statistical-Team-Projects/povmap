@@ -565,6 +565,9 @@ if (!is.null(framework$smp_subdomains) && !is.null(framework$pop_subdomains)) {
 # Do two fold model 
 random_arg <- list(as.formula(~1),as.formula(~1))
 names(random_arg) <- c(framework$smp_domains,framework$smp_subdomains)
+transformed_par <- cbind(transformed_par,framework$smp_data[,framework$smp_subdomains])
+colnames(transformed_par)[4] <- framework$smp_subdomains
+
 }
 else {
 random_arg[framework$smp_domains] <- list(as.formula(~1))
