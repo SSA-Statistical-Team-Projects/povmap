@@ -358,7 +358,20 @@ gen_model <- function(fixed,
     rand_eff_h <- newbetas$rand_eff_h 
     updated_sigma2 <- update_sigma2(dep_var=dep_var,betas=betas,weight_smp=weight_smp,framework=framework,rand_eff=rand_eff,fixed=fixed)
     sigmau2est <- updated_sigma2$sigmau2est 
-    sigmae2est <- updated_sigma2$sigmae2est 
+    sigmae2est <- updated_sigma2$sigmae2est
+    if (model_par$sigmah2est > 0) {
+      sums_sub <- aggregate(data.frame(weight_smp, weight_smp^2)[framework$smp_subdomains_vec, 
+      ], by = list(framework$smp_subdomains_vec), 
+      FUN = sum)
+      sums_sub <- sums_sub[framework$dist_obs_smp_subdom, 
+      ]
+      delta2_sub <- sums_sub[, 3]/sums_sub[, 2]^2
+      gamma_sub <- model_par$sigmah2est/(model_par$sigmah2est + 
+                                           model_par$sigmae2est * delta2_sub)
+    }
+    
+    
+    
     } # close hybrid
     else if (framework$weights_type=="Guadarrama") {
       # Calculations needed for pseudo EB for Guadarrama option 
@@ -558,9 +571,7 @@ rand_eff_smp <- rep(rand_eff[framework$dist_obs_dom],framework$n_smp)
 
 transformed_par <- data.frame(e0,weight_smp,framework$smp_data[,framework$smp_domains])
 colnames(transformed_par) <- c("e0","weight_smp",framework$smp_domains)
-#transformed_par <- data.frame(dep_var,weights_tmp=weight_smp,framework$smp_data)
-#transformed_par$ing_lab_pc_v2 <- transformed_par$ing_lab_pc_v2 - indep_smp %*% betas + betas[1]       
-random_arg <- NULL 
+     random_arg <- NULL 
 
 if (!is.null(framework$smp_subdomains) && !is.null(framework$pop_subdomains)) {
 # Do two fold model 
