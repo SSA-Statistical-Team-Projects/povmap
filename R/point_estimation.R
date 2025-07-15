@@ -555,8 +555,8 @@ rand_eff_smp <- rep(rand_eff[framework$dist_obs_dom],framework$n_smp)
 
 
 
-transformed_par <- data.frame(e0,weight_smp,framework$smp_data[,framework$smp_domains],framework$smp_data[,framework$smp_subdomains])
-colnames(transformed_par) <- c("e0","weight_smp",framework$smp_domains,framework$smp_subdomains)
+transformed_par <- data.frame(e0,weight_smp,framework$smp_data[,framework$smp_domains])
+colnames(transformed_par) <- c("e0","weight_smp",framework$smp_domains)
 #transformed_par <- data.frame(dep_var,weights_tmp=weight_smp,framework$smp_data)
 #transformed_par$ing_lab_pc_v2 <- transformed_par$ing_lab_pc_v2 - indep_smp %*% betas + betas[1]       
 random_arg <- NULL 
