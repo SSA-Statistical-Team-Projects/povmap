@@ -558,8 +558,8 @@ rand_eff_smp <- rep(rand_eff[framework$dist_obs_dom],framework$n_smp)
 
 transformed_par <- data.frame(e0,weight_smp,framework$smp_data[,framework$smp_domains])
 colnames(transformed_par) <- c("e0","weight_smp",framework$smp_domains)
-#transformed_par <- data.frame(dep_var,weights_tmp=weight_smp,framework$smp_data)
-#transformed_par$ing_lab_pc_v2 <- transformed_par$ing_lab_pc_v2 - indep_smp %*% betas + betas[1]       
+transformed_par <- data.frame(dep_var,weights_tmp=weight_smp,framework$smp_data)
+transformed_par$ing_lab_pc_v2 <- transformed_par$ing_lab_pc_v2 - indep_smp %*% betas + betas[1]       
 random_arg <- NULL 
 
 if (!is.null(framework$smp_subdomains) && !is.null(framework$pop_subdomains)) {
@@ -702,11 +702,6 @@ if (!is.null(Ydump)) {
   colnames(Ydumpdf) <- c("Domain",framework$indicator_names,"Mu","Variance","Var_vu","Var_eta","Var_eps","pop_weight","Observed_dom","Area_reffect","Xbhat")
   write.table(Ydumpdf,file=Ydump,row.names = FALSE,append=FALSE,col.names=T, sep=",")
 }
-
-
-
-
-
 
 point_estimates <- aggregate_weighted_mean(indicators,by=list("Domain" = pop_domains_vec_tmp),w=pop_weights_vec) 
 #point_estimates <- cbind(point_estimates, data.frame(matrix(ncol=9-length(framework$indicator_names),nrow=N_dom_pop_tmp)))
