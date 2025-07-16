@@ -6,7 +6,8 @@ framework_xgb <-function(fixed,
                          domains,
                          transformation,
                          conf_level,
-                         sub_domains) {
+                         sub_domains,
+                         na.rm) {
 
   # Data preparation
   # Splitting the fixed string to extract outcome and covariates
@@ -18,6 +19,17 @@ framework_xgb <-function(fixed,
   X_smp <- smp_data[, covariates]
   Y_smp <- smp_data[, outcome]
 
+  # Deletion of NA
+  if (na.rm == TRUE) {
+    pop_data <- na.omit(pop_data)
+    smp_data <- na.omit(smp_data)
+  } else if (any(is.na(pop_data)) || any(is.na(smp_data))) {
+    stop(strwrap(prefix = " ", initial = "",
+                 "XGB does not work with missing values. Set na.rm = TRUE in
+                 function xgb."))
+  }
+  
+  
   # Handling sample and population weights
   if (!is.null(smp_weights)) {
     smp_weights <- smp_data[, smp_weights]

@@ -71,6 +71,9 @@
 #' Defaults to 1.
 #' @param alpha L1 regularization term on weights. Increasing this value will result in a more conservative model.
 #' Defaults to 0.
+#' @param na.rm if \code{TRUE}, observations with \code{NA} values are deleted
+#' from the population and sample data. For the XGB procedure complete
+#' observations are required. Defaults to \code{FALSE}.
 #' @param ... additional parameters to be passed to \code{xgboost}.
 #'
 #' @return An object of class \code{xgb}, \code{emdi}, which encompasses point estimates,
@@ -146,6 +149,7 @@ xgb <- function(fixed,
                 max_delta_step = 0,
                 lambda = 1,
                 alpha = 0,
+                na.rm = FALSE,
                 ...){
 
   out_call <- match.call()
@@ -160,7 +164,8 @@ xgb <- function(fixed,
                        domains = domains,
                        transformation = transformation,
                        conf_level = conf_level,
-                       sub_domains = sub_domains)
+                       sub_domains = sub_domains,
+                       na.rm = na.rm)
 
   # Direct estimates
   #_____________________________________________________________________________
