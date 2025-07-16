@@ -5,7 +5,7 @@
 #' Function \code{map_plot} creates spatial visualizations of the estimates
 #' obtained by small area estimation methods or direct estimation.
 #'
-#' @param object an object of type povmap, containing the estimates to be
+#' @param object an object of type emdi, containing the estimates to be
 #' visualized.
 #' @param indicator optional character vector that selects which indicators
 #' shall be returned: (i) all calculated indicators ("all");
@@ -17,12 +17,10 @@
 #' defined as argument for model-based approaches (see also \code{\link{ebp}})
 #' and do not appear in groups of indicators even though these might belong to
 #' one of the groups. If the \code{model} argument is of type "fh",
-#' indicator can be set to "all", "Direct", FH", or "FH_Bench" (if povmap
+#' indicator can be set to "all", "Direct", FH", or "FH_Bench" (if emdi
 #' object is overwritten by function benchmark). Defaults to "all".
 #' @param MSE optional logical. If \code{TRUE}, the MSE is also visualized.
 #' Defaults to \code{FALSE}.
-#' @param var optional logical. If \code{TRUE} and the object is an ELL object,
-#' the variance is also visualized. Defaults to \code{FALSE}.
 #' @param CV optional logical. If \code{TRUE}, the CV is also visualized.
 #' Defaults to \code{FALSE}.
 #' @param map_obj an \code{sf, data.frame} object as defined by the
@@ -36,35 +34,27 @@
 #' in both objects (`map_obj` and `object`) differ.
 #' @param color a \code{vector} of length 2 defining the lowest and highest
 #' color in the plots.
-#' @param viridis_option a one-character string between "A" and "H" requesting a 
-#' viridis palette with the specified option. Defaults to NULL 
 #' @param scale_points a structure defining the lowest and the highest
 #' value of the colorscale. If a numeric vector of length two is given, this
 #' scale will be used for every plot.
 #' @param guide character passed to
 #' \code{scale_colour_gradient} from \pkg{ggplot2}.
 #' Possible values are "none", "colourbar", and "legend".
-#' @param na.color a character string indicating the color used to plot regions with no data, 
-#' passed to the na.value argument in scale_fill_gradient in ggplot2. Defaults to "transparent".  
 #' @param return_data if set to \code{TRUE}, a fortified data frame including
 #' the map data as well as the chosen indicators is returned. Customized maps
 #' can easily be obtained from this data frame via the package \pkg{ggplot2}.
 #' Defaults to \code{FALSE}.
-#' @param save_file a character string that specified the prefix of the file name to save the plot. 
-#' The suffix is the name of the indicator. Defaults to NULL, in which case plots are not saved. 
-#' @param save_format a character string that is passed to ggsave's device argument to determine the 
-#' format that the plot is saved in. Defaults to "pdf"
 #' @return Creates the plots demanded, and, if selected, a fortified data.frame
 #' containing the mapdata and chosen indicators.
 #' @seealso \code{\link{direct}}, \code{\link{ebp}}, \code{\link{fh}},
-#' \code{\link{povmapObject}}
+#' \code{\link{emdiObject}}
 #' @examples
 #' \donttest{
 #' data("eusilcA_pop")
 #' data("eusilcA_smp")
 #'
-#' # Generate povmap object with additional indicators; here via function ebp()
-#' povmap_model <- ebp(
+#' # Generate emdi object with additional indicators; here via function ebp()
+#' emdi_model <- ebp(
 #'   fixed = eqIncome ~ gender + eqsize + cash +
 #'     self_empl + unempl_ben + age_ben + surv_ben + sick_ben +
 #'     dis_ben + rent + fam_allow + house_allow + cap_inv +
@@ -79,7 +69,7 @@
 #'
 #' # Create map plot for mean indicator - point and MSE estimates but no CV
 #' map_plot(
-#'   object = povmap_model, MSE = TRUE, CV = FALSE,
+#'   object = emdi_model, MSE = TRUE, CV = FALSE,
 #'   map_obj = shape_austria_dis, indicator = c("Mean"),
 #'   map_dom_id = "PB"
 #' )
@@ -88,11 +78,11 @@
 #' # file
 #'
 #' # First find the right order
-#' dom_ord <- match(shape_austria_dis$PB, povmap_model$ind$Domain)
+#' dom_ord <- match(shape_austria_dis$PB, emdi_model$ind$Domain)
 #'
 #' # Create the mapping table based on the order obtained above
 #' map_tab <- data.frame(
-#'   pop_data_id = povmap_model$ind$Domain[dom_ord],
+#'   pop_data_id = emdi_model$ind$Domain[dom_ord],
 #'   shape_id = shape_austria_dis$BKZ
 #' )
 #'
@@ -100,7 +90,7 @@
 #' # using the numerical domain identifiers of the shape file
 #'
 #' map_plot(
-#'   object = povmap_model, MSE = FALSE, CV = TRUE,
+#'   object = emdi_model, MSE = FALSE, CV = TRUE,
 #'   map_obj = shape_austria_dis, indicator = c("Mean"),
 #'   map_dom_id = "BKZ", map_tab = map_tab
 #' )
@@ -109,32 +99,23 @@
 #' @importFrom reshape2 melt
 #' @importFrom ggplot2 aes geom_polygon facet_wrap fortify coord_equal labs
 #' @importFrom ggplot2 theme element_blank guides scale_fill_gradient
-#' @importFrom ggplot2 scale_colour_gradient geom_sf scale_colour_manual guide_legend guide_colourbar
-#' @importFrom viridis scale_fill_viridis
-#' @importFrom ggpattern geom_sf_pattern 
+#' @importFrom ggplot2 scale_colour_gradient geom_sf
 
 map_plot <- function(object,
                      indicator = "all",
                      MSE = FALSE,
-                     var = FALSE, 
                      CV = FALSE,
                      map_obj = NULL,
                      map_dom_id = NULL,
                      map_tab = NULL,
                      color = c("white", "red4"),
-                     viridis_option = NULL, 
                      scale_points = NULL,
-                     na.color = "transparent",
                      guide = "colourbar",
-                     return_data = FALSE,
-                     save_file = NULL,
-                     save_format = "pdf") {
+                     return_data = FALSE) {
   if (is.null(map_obj)) {
     message(strwrap(prefix = " ", initial = "", "No Map Object has been
                     provided. An artificial polygon is used for
                     visualization"))
-    
-   
     map_pseudo(
       object = object, indicator = indicator, panelplot = FALSE,
       MSE = MSE, CV = CV
@@ -153,19 +134,14 @@ map_plot <- function(object,
     plot_real(object,
       indicator = indicator,
       MSE = MSE,
-      var=var, 
       CV = CV,
       map_obj = map_obj,
       map_dom_id = map_dom_id,
       map_tab = map_tab,
       col = color,
-      viridis_option = viridis_option, 
       scale_points = scale_points,
       return_data = return_data,
-      na.color = na.color, 
-      guide = guide,
-      save_format = save_format, 
-      save_file = save_file
+      guide = guide
     )
   }
 }
@@ -206,19 +182,14 @@ map_pseudo <- function(object, indicator, panelplot, MSE, CV) {
 plot_real <- function(object,
                       indicator = "all",
                       MSE = FALSE,
-                      var=var, 
                       CV = FALSE,
                       map_obj = NULL,
                       map_dom_id = NULL,
                       map_tab = NULL,
                       col = col,
-                      viridis_option = NULL, 
                       scale_points = NULL,
-                      na.color = "transparent",
                       return_data = FALSE,
-                      guide = NULL,
-                      save_file = NULL,
-                      save_format = "pdf") {
+                      guide = NULL) {
   if (!is.null(map_obj) && is.null(map_dom_id)) {
     stop("No Domain ID for the map object is given")
   }
@@ -228,7 +199,7 @@ plot_real <- function(object,
 
   map_data <- estimators(
     object = object, indicator = indicator,
-    MSE = MSE, var=var, CV = CV
+    MSE = MSE, CV = CV
   )$ind
 
   if (!is.null(map_tab)) {
@@ -249,13 +220,12 @@ plot_real <- function(object,
                      map_tab"))
       } else {
         warning(strwrap(prefix = " ", initial = "",
-                         "Not all Domains of map_tab and Map objects could be
+                         "Not all Domains of map_tab and Map object could be
                          matched. Check map_tab"))
-        #missing_domains <- TRUE
       }
     }
     map_data <- map_data[matcher, ]
-
+    map_obj <- merge(x = map_obj, y = map_data)
     # map_data <- map_data[, !colnames(map_data) %in% c(
     #   map_dom_id,
     #   names(map_tab)
@@ -267,18 +237,18 @@ plot_real <- function(object,
     if (any(is.na(matcher))) {
       if (all(is.na(matcher))) {
         stop(strwrap(prefix = " ", initial = "",
-                     "Domain of povmap and Map object do not match. Try using
+                     "Domain of EMDI and Map object do not match. Try using
                      map_tab"))
       } else {
         warning(strwrap(prefix = " ", initial = "",
-                        "Not all Domains of povmap and Map objects could be matched."))
-        #missing_domains <- TRUE 
+                        "Not all Domains of EMDI and Map object could be
+                        matched. Try using map_tab"))
       }
     }
     map_data <- map_data[matcher, ]
-  }
 
-  map_obj <- merge(x = map_obj, y = map_data,by.x=map_dom_id,by.y="Domain",all.x=T)
+    map_obj <- merge(x = map_obj, y = map_data, by.x = map_dom_id, by.y = "Domain")
+  }
 
   indicator <- colnames(map_data)
   indicator <- indicator[!(indicator %in% c("Domain", map_dom_id))]
@@ -289,52 +259,19 @@ plot_real <- function(object,
 
     scale_point <- get_scale_points(map_obj2[ind][, 1], ind, scale_points)
 
-    if (is.null(viridis_option)) {
-      print(ggplot(data=map_obj,
-                   aes(fill = get(ind),color="black")) +
-              labs(x = "", y = "", fill=gsub(pattern = "_", replacement = " ", x = ind)) +
-              #ggtitle(gsub(pattern = "_", replacement = " ", x = ind)) +
-              geom_sf(color = "black") +
-              scale_fill_gradient(
-                low = col[1], high = col[2],
-                limits = scale_point, guide = guide, na.value=na.color
-              ) +
-              theme(
-                axis.ticks = element_blank(), axis.text = element_blank(),
-              ) + ggpattern:::geom_sf_pattern(data=map_obj[(is.na(map_obj$Head_Count)),], aes(fill=get(ind), colour=""),pattern_color="black") +
-              geom_sf(data=map_obj[(is.na(map_obj[,ind])),],color="black",fill="transparent")+
-              guides(colour=guide_legend(order=2,"No estimates", override.aes=list(fill=na.color,color="black"))) +
-              guides(fill = guide_colourbar(order=1))
-      )
-    
-    }
-    else {
-      
-      print(ggplot(map_obj,
-                   aes(fill = get(ind),color="black")) +
-              labs(x = "", y = "",fill=gsub(pattern = "_", replacement = " ", x = ind)) +
-            
-              #ggtitle(gsub(pattern = "_", replacement = " ", x = ind)) +
-              geom_sf(color = "black") +
-              scale_fill_viridis(option=viridis_option,na.value=na.color) +
-              scale_colour_manual(values=NA) +
-              theme(
-                axis.ticks = element_blank(), axis.text = element_blank()
-              ) +
-              geom_sf_pattern(data=map_obj[(is.na(map_obj[,ind])),], aes(fill=get(ind), colour=""),pattern_color="black") +
-              guides(colour=guide_legend(order=2,"No estimates", override.aes=list(fill=na.color,color="black"))) +
-              geom_sf(data=map_obj[(is.na(map_obj[,ind])),],color="black",fill="transparent")+
-              guides(fill = guide_colourbar(order=1)) 
-      )
-      
-      
-    }
-    
-    
-    if (!is.null(save_file)) {
-    ggplot2:::ggsave(file=paste0(save_file,"_",ind,".",save_format))
-    }
-           
+    print(ggplot(map_obj,
+                 aes(fill = get(ind))) +
+          geom_sf(color = "azure3") +
+          labs(x = "", y = "", fill = ind) +
+          ggtitle(gsub(pattern = "_", replacement = " ", x = ind)) +
+          scale_fill_gradient(
+            low = col[1], high = col[2],
+            limits = scale_point, guide = guide
+          ) +
+          theme(
+            axis.ticks = element_blank(), axis.text = element_blank(),
+            legend.title = element_blank()
+          ))
     if (!ind == tail(indicator, 1)) {
       cat("Press [enter] to continue")
       line <- readline()
