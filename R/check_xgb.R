@@ -18,11 +18,11 @@ xgb_check1 <- function(transformation,
     if(min(Y_smp)<=0) stop("The outcome variable must be strictly greater than 0 for log transformations.")
   }
 
-  if(sum(is.na(Y_smp))>0) stop("There are missing values in the outcome variable.")
+  #if(sum(is.na(Y_smp))>0) stop("There are missing values in the outcome variable.")
 
-  if(sum(is.na(X_smp))>0) stop("There are missing values in the independent variables in the sample dataset.")
+  #if(sum(is.na(X_smp))>0) stop("There are missing values in the independent variables in the sample dataset.")
 
-  if(sum(is.na(X_pop))>0) stop("There are missing values in the independent variables in the population dataset")
+  #if(sum(is.na(X_pop))>0) stop("There are missing values in the independent variables in the population dataset")
 
   if(sum(is.na(smp_weights))>0) stop("There are missing values in the sample weights.")
 
