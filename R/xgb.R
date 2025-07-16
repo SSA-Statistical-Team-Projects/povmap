@@ -132,8 +132,8 @@ xgb <- function(fixed,
                 smp_weights = NULL,
                 pop_data,
                 pop_weights = NULL,
-                domains,
-                sub_domains,
+                smp_domains,
+                smp_subdomains,
                 transformation = "no",
                 B = 100,
                 conf_level = 0.95,
@@ -164,22 +164,22 @@ xgb <- function(fixed,
                        domains = domains,
                        transformation = transformation,
                        conf_level = conf_level,
-                       sub_domains = sub_domains,
+                       sub_domains = smp_subdomains,
                        na.rm = na.rm)
 
   # Direct estimates
   #_____________________________________________________________________________
   # Subdomains
   sub_domains_direct <- data.frame(cbind(fwk$Y_smp,
-                                         fwk$X_smp[[paste0(sub_domains)]],
-                                         fwk$X_smp[[paste0(domains)]]))
+                                         fwk$X_smp[[paste0(smp_subdomains)]],
+                                         fwk$X_smp[[paste0(smp_domains)]]))
   colnames(sub_domains_direct) <- c("outcome", "sub_domains", "domains")
   sub_domains_direct$outcome <- as.numeric(sub_domains_direct$outcome)
 
   # Domains
   domains_direct <- data.frame(cbind(fwk$Y_smp,
                                      fwk$smp_weights,
-                                     fwk$X_smp[[paste0(domains)]]))
+                                     fwk$X_smp[[paste0(smp_domains)]]))
   colnames(domains_direct) <- c("outcome", "wts", "domains")
   domains_direct$outcome <- as.numeric(domains_direct$outcome)
   domains_direct$wts <- as.numeric(domains_direct$wts)
@@ -196,9 +196,9 @@ xgb <- function(fixed,
   # XGBoost
   #_____________________________________________________________________________
   X_smp_xgb <- fwk$X_smp %>%
-    dplyr::select(-c(paste0(domains), paste0(sub_domains)))
+    dplyr::select(-c(paste0(smp_domains), paste0(smp_subdomains)))
   X_pop_xgb <- fwk$X_pop %>%
-    dplyr::select(-c(paste0(domains), paste0(sub_domains)))
+    dplyr::select(-c(paste0(smp_domains), paste0(smp_subdomains)))
 
   xgb_fit <- xgboost::xgboost(
     data = as.matrix(X_smp_xgb),
@@ -224,8 +224,8 @@ xgb <- function(fixed,
   #_____________________________________________________________________________
   sub_pred <- data.frame(
     cbind(
-      fwk$X_pop[[paste0(domains)]],
-      fwk$X_pop[[paste0(sub_domains)]],
+      fwk$X_pop[[paste0(smp_domains)]],
+      fwk$X_pop[[paste0(smp_subdomains)]],
       fwk$pop_weights,
       predict(xgb_fit, as.matrix(X_pop_xgb))
     )
@@ -324,7 +324,7 @@ xgb <- function(fixed,
     xgbModel = c(xgb_fit, call = out_call, smp_data = list(smp_data), transformation = transformation,
                  fwk$saeinfo)
   )
-  class(result) <- c("xgb","emdi")
+  class(result) <- c("xgb","povmap")
   return(result)
 
 }
