@@ -10,9 +10,9 @@ framework_xgb <-function(fixed,
 
   # Data preparation
   # Splitting the fixed string to extract outcome and covariates
-  split <- strsplit(as.character(fixed), "~", fixed = TRUE)
+  split <- strsplit(as.character(fixed[-1]), "~", fixed = TRUE)
   outcome <- trimws(split[[1]][1])
-  covariates <- trimws(strsplit(trimws(split[[1]][2]), "\\+")[[1]])
+  covariates <- trimws(strsplit(trimws(split[[2]]), "\\+")[[1]])
 
   # Extracting relevant subsets of data
   X_smp <- smp_data[, covariates]
