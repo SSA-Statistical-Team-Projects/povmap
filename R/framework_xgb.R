@@ -28,7 +28,7 @@ framework_xgb <-function(fixed,
   }
   # Extracting relevant subsets of data
   X_smp <- smp_data[, c(domains,covariates)]
-  Y_smp <- smp_data[, outcome]
+  Y_smp <- smp_data[, c(domains,outcome)]
   
   # Handling sample and population weights
   if (!is.null(smp_weights)) {
