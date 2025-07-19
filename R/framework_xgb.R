@@ -15,7 +15,9 @@ framework_xgb <-function(fixed,
   outcome <- trimws(split[[1]][1])
   covariates <- trimws(strsplit(trimws(split[[2]]), "\\+")[[1]])
 
-
+  # Extracting relevant subsets of data
+  X_smp <- smp_data[, covariates]
+  Y_smp <- smp_data[, outcome]
 
   # Deletion of NA
   if (na.rm == TRUE) {
@@ -26,9 +28,7 @@ framework_xgb <-function(fixed,
                  "XGB does not work with missing values. Set na.rm = TRUE in
                  function xgb."))
   }
-  # Extracting relevant subsets of data
-  X_smp <- smp_data[, c(domains,covariates)]
-  Y_smp <- smp_data[, outcome]
+  
   
   # Handling sample and population weights
   if (!is.null(smp_weights)) {
