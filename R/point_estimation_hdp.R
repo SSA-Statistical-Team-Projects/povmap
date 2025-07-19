@@ -40,7 +40,7 @@ point_estim_hdp <- function(framework,
   if(is.null(framework$weights)){
     var.weights = rep(1, nrow(xs))
   }
-  else{var.weights = framework$weights}
+  else{var.weights = framework$smp_data[,framework$weights]}
   mod <- QRLM(y = ys, x = xs, q = framework$Q, var.weights = var.weights, maxit = framework$maxit, acc = framework$tol, k = framework$k_b)
   qo <- matrix(c(gridfitinter(ys, mod$fitted.values, mod$q.values)), nrow = framework$N_smp, ncol=1)
   qmat <- matrix(c(qo, area.s), nrow = framework$N_smp, ncol = 2)
