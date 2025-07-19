@@ -10,12 +10,14 @@ xgb_check1 <- function(transformation,
 
   if(!(transformation %in% c("no", "arcsin", "log"))) stop("For transformation, please choose no, arcsin, or log.")
 
+ 
+  
   if (transformation=="arcsin"){
-    if(min(Y_smp)<0 | max(Y_smp)>1) stop("The outcome variable must be between 0 and 1 for arcsin transformations.")
+    if(min(Y_smp[,2])<0 | max(Y_smp[,2])>1) stop("The outcome variable must be between 0 and 1 for arcsin transformations.")
   }
 
   if (transformation=="log"){
-    if(min(Y_smp)<=0) stop("The outcome variable must be strictly greater than 0 for log transformations.")
+    if(min(Y_smp[,2])<=0) stop("The outcome variable must be strictly greater than 0 for log transformations.")
   }
 
   #if(sum(is.na(Y_smp))>0) stop("There are missing values in the outcome variable.")
@@ -30,7 +32,7 @@ xgb_check1 <- function(transformation,
 
   if(conf_level<=0 | conf_level>=1) stop("Please specify a confidence level between 0 and 1 (e.g. 0.95).")
 
-  if (length(Y_smp)!=nrow(X_smp)) stop("The lengths of the outcome variable and independent variables are different.")
+  if (nrow(Y_smp)!=nrow(X_smp)) stop("The lengths of the outcome variable and independent variables are different.")
 
   if (length(which(colnames(X_smp)==paste0(domains)))==0) stop("The domain variable is not in the sample data.")
 
@@ -63,20 +65,20 @@ xgb_check2 <- function(transformation,
   if(!(transformation %in% c("no", "arcsin", "log"))) stop("For transformation, please choose no, arcsin, or log.")
 
   if (transformation=="arcsin"){
-    if(min(Y_smp)<0 | max(Y_smp)>1) stop("The outcome variable must be between 0 and 1 for arcsin transformations.")
+    if(min(Y_smp[,2])<0 | max(Y_smp[,2])>1) stop("The outcome variable must be between 0 and 1 for arcsin transformations.")
   }
 
   if (transformation=="log"){
-    if(min(Y_smp)<=0) stop("The outcome variable must be strictly greater than 0 for log transformations.")
+    if(min(Y_smp[,2])<=0) stop("The outcome variable must be strictly greater than 0 for log transformations.")
   }
 
-  if(sum(is.na(Y_smp))>0) stop("There are missing values in the outcome variable.")
+  if(sum(is.na(Y_smp[,2]))>0) stop("There are missing values in the outcome variable.")
 
   if(sum(is.na(X_smp))>0) stop("There are missing values in the independent variables in the sample dataset.")
 
   if(sum(is.na(smp_weights))>0) stop("There are missing values in the sample weights.")
 
-  if (length(colnames(Y_smp))>1) stop("The outcome variable must be a vector or have just one column.")
+  if (length(colnames(Y_smp))>2) stop("The outcome variable must be a vector or have just one column.")
 
   if (nrow(Y_smp)!=nrow(X_smp)) stop("The lengths of the outcome variable and independent variables are different.")
 
