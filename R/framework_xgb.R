@@ -16,7 +16,7 @@ framework_xgb <-function(fixed,
   covariates <- trimws(strsplit(trimws(split[[2]]), "\\+")[[1]])
 
   # Extracting relevant subsets of data
-  X_smp <- smp_data[, covariates]
+  X_smp <- smp_data[, c(covariates,domains,sub_domains)]
   Y_smp <- smp_data[, outcome]
 
   # Deletion of NA
@@ -38,12 +38,12 @@ framework_xgb <-function(fixed,
   }
 
   if (!is.null(pop_weights)) {
-    pop_weights <- pop_data[, smp_weights]
+    pop_weights <- pop_data[, pop_weights]
   } else {
     pop_weights <- rep(1, length = nrow(pop_data))
   }
 
-  X_pop <- pop_data[, covariates]
+  X_pop <- pop_data[, c(covariates,domains,sub_domains)]
 
   # Determining domains in sample and population
   in_smp <- unique(smp_data[[domains]])

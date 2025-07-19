@@ -243,7 +243,8 @@ xgb <- function(fixed,
   #_____________________________________________________________________________
   # Subdomains
   sub_domains_direct <- sub_domains_direct %>%
-    dplyr::left_join(sub_pred, by = c("sub_domains", "domains"))
+    #dplyr::left_join(sub_pred, by = c("sub_domains", "domains"))
+    dplyr::inner_join(sub_pred, by = c("sub_domains", "domains"))
   resid_sub_domains <- as.numeric(sub_domains_direct$outcome) - as.numeric(sub_domains_direct$hat)
   grouped_domains2 <- split(sub_pred$hat, sub_pred$domains)
   weighted_means2 <- sapply(grouped_domains2, function(group) {

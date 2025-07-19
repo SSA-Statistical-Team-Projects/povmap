@@ -46,7 +46,7 @@ xgb_check1 <- function(transformation,
   #  stop("The length of weight variable does not equal the the number of rows in the sample data.")
   #}
 
-  if (length(pop_weights)!=nrow(X_pop)) stop("The length of the population weight vector does not equal the number of independent variables.")
+  if (length(pop_weights)!=nrow(X_pop)) stop("The length of the population weight vector does not equal the number of rows in the population data.")
 
   #if (is.null(pop_weights)==FALSE & length(pop_weights)!=nrow(X_pop)){
   #  stop("Length of population weights must be the same as the number of rows of the population features.")
@@ -80,7 +80,7 @@ xgb_check2 <- function(transformation,
 
   if (nrow(Y_smp)!=nrow(X_smp)) stop("The lengths of the outcome variable and independent variables are different.")
 
-  if (length(which(colnames(X_smp)==paste0(cluster)))==0) stop("The cluster variable is not in the sample data.")
+  if (length(which(colnames(X_smp)==paste0(cluster)))==0 & cluster!=domains) stop("The cluster variable is not in the sample data.")
 
   if (length(which(colnames(X_smp)==paste0(domains)))==0) stop("The domain variable is not in the sample data.")
 
