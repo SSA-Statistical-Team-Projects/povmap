@@ -6,7 +6,7 @@ framework_xgb <-function(fixed,
                          domains,
                          transformation,
                          conf_level,
-                         sub_domains = NULL,
+                         sub_domains,
                          na.rm) {
 
   # Data preparation
@@ -27,23 +27,23 @@ framework_xgb <-function(fixed,
                  function xgb."))
   }
   # Extracting relevant subsets of data
-  X_smp <- smp_data[, c(domains,subdomains,covariates)]
+  X_smp <- smp_data[, c(domains,covariates)]
   Y_smp <- smp_data[, c(domains,outcome)]
   
   # Handling sample and population weights
   if (!is.null(smp_weights)) {
     smp_weights <- smp_data[, smp_weights]
   } else {
-    smp_weights <- rep(1, length = nrow(Y_smp))
+    smp_weights <- rep(1, length = length(Y_smp))
   }
 
   if (!is.null(pop_weights)) {
-    pop_weights <- pop_data[, pop_weights]
+    pop_weights <- pop_data[, smp_weights]
   } else {
     pop_weights <- rep(1, length = nrow(pop_data))
   }
 
-  X_pop <- pop_data[, c(domains,covariates)]
+  X_pop <- pop_data[, covariates]
 
   # Determining domains in sample and population
   in_smp <- unique(smp_data[[domains]])
@@ -79,9 +79,9 @@ framework_xgb <-function(fixed,
   # Applying specified transformations to Y_smp
   if (!is.null(transformation)) {
     if (transformation == "arcsin") {
-      Y_smp[,2] <- asin(sqrt(Y_smp[,2]))
+      Y_smp <- asin(sqrt(Y_smp))
     } else if (transformation == "log") {
-      Y_smp[,2] <- log(Y_smp[,2])
+      Y_smp <- log(Y_smp)
     }
   }
 

@@ -74,7 +74,6 @@
 #' @param na.rm if \code{TRUE}, observations with \code{NA} values are deleted
 #' from the population and sample data. For the XGB procedure complete
 #' observations are required. Defaults to \code{FALSE}.
-#' @param bootstrap requests a cluster residual bootstrap to estimate uncertainty. Defaults to TRUE.  
 #' @param ... additional parameters to be passed to \code{xgboost}.
 #'
 #' @return An object of class \code{xgb}, \code{emdi}, which encompasses point estimates,
@@ -151,7 +150,6 @@ xgb <- function(fixed,
                 lambda = 1,
                 alpha = 0,
                 na.rm = FALSE,
-                bootstrap = TRUE, 
                 ...){
 
   out_call <- match.call()
@@ -172,16 +170,14 @@ xgb <- function(fixed,
   # Direct estimates
   #_____________________________________________________________________________
   # Subdomains
-  sub_domains_direct <- data.frame(cbind(fwk$Y_smp[,2],
+  sub_domains_direct <- data.frame(cbind(fwk$Y_smp,
                                          fwk$X_smp[[paste0(subdomains)]],
                                          fwk$X_smp[[paste0(domains)]]))
   colnames(sub_domains_direct) <- c("outcome", "sub_domains", "domains")
-  #colnames(sub_domains_direct) <- c("outcome", "domains")
   sub_domains_direct$outcome <- as.numeric(sub_domains_direct$outcome)
-  
 
   # Domains
-  domains_direct <- data.frame(cbind(fwk$Y_smp[,2],
+  domains_direct <- data.frame(cbind(fwk$Y_smp,
                                      fwk$smp_weights,
                                      fwk$X_smp[[paste0(domains)]]))
   colnames(domains_direct) <- c("outcome", "wts", "domains")
@@ -229,13 +225,12 @@ xgb <- function(fixed,
   sub_pred <- data.frame(
     cbind(
       fwk$X_pop[[paste0(domains)]],
-      #fwk$X_pop[[paste0(subdomains)]],
+      fwk$X_pop[[paste0(subdomains)]],
       fwk$pop_weights,
       predict(xgb_fit, as.matrix(X_pop_xgb))
     )
   )
-#  colnames(sub_pred) <- c("domains", "sub_domains", "wts", "hat")
-  colnames(sub_pred) <- c("domains", "wts", "hat")
+  colnames(sub_pred) <- c("domains", "sub_domains", "wts", "hat")
   sub_pred$hat <- as.numeric(sub_pred$hat)
   sub_pred$wts <- as.numeric(sub_pred$wts)
 
@@ -265,12 +260,8 @@ xgb <- function(fixed,
 
   # Bootstrap
   #_____________________________________________________________________________
+  B_results <- matrix(data = NA, nrow = B, ncol = nrow(domains_pred))
 
-  
-
-
-    if (bootstrap==TRUE) {
-      B_results <- matrix(data = NA, nrow = B, ncol = nrow(domains_pred))
   for (j in 1:B){
 
     B_sub <- sub_pred
@@ -292,7 +283,6 @@ xgb <- function(fixed,
     B_results[j,] <- purrr::as_vector(B_domains$hat)
   }
 
-  
   # Prepare results
   #_____________________________________________________________________________
   sorted_results <- domains_pred[order(domains_pred$domains), ]
@@ -309,6 +299,8 @@ xgb <- function(fixed,
     if (transformation=="arcsin"){
       temp <- ifelse(temp>asin(1), asin(1), temp)
       temp <- ifelse(temp<asin(0), asin(0), temp)
+    }
+    if (transformation=="arcsin"){
       temp <- sin(temp)^2
     }
     if (transformation=="log"){
@@ -319,23 +311,10 @@ xgb <- function(fixed,
     results$lower[l] <- quantile(temp, probs = (1-conf_level)/2)
     results$upper[l] <- quantile(temp, probs = 1-(1-conf_level)/2)
     results$sd[l] <- sd(temp)
-    colnames(results) <- c("Domain", "Mean", "Lower", "Upper", "SD")
   }
-    }  
-    
-  if (bootstrap==F) {
-    temp <- domains_pred[,"hat"]
-    if (transformation=="arcsin"){
-      temp <- ifelse(temp>asin(1), asin(1), temp)
-      temp <- ifelse(temp<asin(0), asin(0), temp)
-      temp <- sin(temp)^2
-    }
-    if (transformation=="log"){
-      temp <- sin(exp(temp))^2
-    }
-    results <- data.frame("Domain"=domains_pred[,"domains"],"Mean"=temp,"SD"=NA,"Lower"=NA,"Upper"=NA)
-  }  
-    
+  colnames(results) <- c("Domain", "Mean", "Lower", "Upper", "SD")
+
+
   result <- list(
     ind = data.frame(cbind(Domains = results["Domain"], Mean = results["Mean"])),
     MSE = data.frame(cbind(Domains = results["Domain"], Mean = results$SD)),

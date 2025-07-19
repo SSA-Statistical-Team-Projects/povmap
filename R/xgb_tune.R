@@ -106,19 +106,21 @@ xgb_tune <- function(fixed,
   #split <- strsplit(as.character(fixed), "~", fixed = TRUE)
   #outcome <- trimws(split[[1]][1])
   #covariates <- trimws(strsplit(trimws(split[[1]][2]), "\\+")[[1]])
-  X_smp <- smp_data[, c(domains,covariates)]
-  #Y_smp <- data.frame(smp_data[,outcome])
-  Y_smp <- smp_data[, c(domains,outcome)]
+  X_smp <- smp_data[,covariates]
+  Y_smp <- data.frame(smp_data[,outcome])
 
   if(is.null(smp_weights)==FALSE){
     smp_weights <- smp_data[,smp_weights]
   } else {
+    smp_weights <- NULL
+  }
+  if (is.null(smp_weights)==TRUE){
     smp_weights <- rep(1, length = nrow(Y_smp))
   }
   if (cluster=="domains"){
     cluster <- paste0(domains)
   }
-  colnames(Y_smp) <- c("domains","labels")
+  colnames(Y_smp) <- "labels"
 
   # Check
   #_____________________________________________________________________________
@@ -180,9 +182,9 @@ xgb_tune <- function(fixed,
 
     for (row in 1:nrow(tunegrid)){
 
-      xgb_fit <-  xgboost::xgboost(
+      xgb_fit <-  xgboost(
         data               = data.matrix(X_final[cluster_col$fold!=fold,]),
-        label              = Y_smp[cluster_col$fold!=fold,"labels"],
+        label              = Y_smp[cluster_col$fold!=fold,],
         weight             = smp_weights[cluster_col$fold!=fold],
         nrounds            = tunegrid$nround[row],
         max_depth          = tunegrid$max_depth[row],
@@ -204,7 +206,7 @@ xgb_tune <- function(fixed,
       # Predictions (only for those out of sample)
       domains_hat <- data.frame(predict(xgb_fit, data.matrix(X_final[cluster_col$fold==fold,])))
       domains_hat[[paste0(domains)]] <- X_smp[cluster_col$fold==fold,][[paste0(domains)]]
-      domains_hat[[colnames(Y_smp)[[2]]]] <- Y_smp[cluster_col$fold==fold,"labels"]
+      domains_hat[[colnames(Y_smp)]] <- Y_smp[cluster_col$fold==fold,]
       colnames(domains_hat) <- c("hat", "domains", "labels")
       grouped_domains <- split(domains_hat, domains_hat$domains)
       mean_hat <- sapply(grouped_domains, function(group) mean(group$hat))
