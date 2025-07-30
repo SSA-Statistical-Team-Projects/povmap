@@ -237,10 +237,10 @@ pop_data[[pop_subdomains]] <- factor(pop_data[[pop_subdomains]],
     },
     Quantiles = function(y, pop_weights, threshold) {
       if(length(unique(pop_weights)) == 1 & 1 %in% unique(pop_weights)){
-        t(quantile(x = y, probs = c(.10, .25, .5, .75, .9)))
+        t(quantile(x = y, probs = c(0, .10, .25, .5, .75, .9, 1)))
       }else{
         t(wtd.quantile(x = y, weights = pop_weights,
-                       probs = c(.10, .25, .5, .75, .9)))
+                       probs = c(0,.10, .25, .5, .75, .9, 1)))
       }
     }
   )
