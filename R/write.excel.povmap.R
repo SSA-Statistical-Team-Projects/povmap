@@ -31,8 +31,11 @@
 #' to different sheets in the Excel file. In \code{write.ods} \code{TRUE} will
 #' result in different files for point estimates and their precisions.
 #' Defaults to \code{FALSE}.
-#' @param model logical if \code{FALSE}, the estimation model is not exported.
-#' #' Defaults to \code{TRUE}.
+#' @param model logical if \code{FALSE}, the estimation model is not exported 
+#'Defaults to \code{TRUE}.
+#' @param gammas logical if \code{TRUE}, estimated gamma parameters are output
+#' in a separate worksheet. Defaults to \code{FALSE}.
+#' 
 #' @return An Excel file is created in your working directory, or at the given
 #' path. Alternatively multiple ODS files are created at the given path.
 #' @details These functions create an Excel file via the package
@@ -102,7 +105,8 @@ write.excel <- function(object,
                         MSE = FALSE,
                         CV = FALSE,
                         split = FALSE,
-                        model = TRUE) {
+                        model = TRUE,
+                        gammas = FALSE) {
 
 
   if (is.null(file) == TRUE) {
@@ -190,6 +194,12 @@ write.excel <- function(object,
     )
   }
 
+  if (gammas) {
+    wb <- add_gammas(object=object,
+                     wb=wb)
+  }
+  
+  
   saveWorkbook(wb, file, overwrite = TRUE)
 
 }
@@ -1020,5 +1030,34 @@ add_model <- function(object,  wb) {
   )
   return(wb)
 }
+
+add_gammas <- function(object,  wb) {
+   gammas <- data.frame("Domain" = unique(object$framework$smp_domains_vec),"Gamma" = object$model_par$gamma)
+   addWorksheet(wb, sheetName = "Gammas", gridLines = FALSE)
+   headlines_cs <- createStyle(
+     fontColour = "#ffffff",
+     halign = "center",
+     valign = "center",
+     fgFill = NULL,
+     textDecoration = "Bold",
+     border = "Bottom",
+     borderStyle = "medium"
+   )
+   writeDataTable(
+     x = gammas,
+     sheet = "Gammas",
+     wb = wb,
+     startRow = 1,
+     startCol = 1,
+     rowNames = FALSE,
+     headerStyle = headlines_cs,
+     tableStyle = "TableStyleMedium2",
+     withFilter = FALSE
+   )
+  return(wb)
+}
+
+
+
 
 

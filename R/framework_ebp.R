@@ -235,6 +235,12 @@ pop_data[[pop_subdomains]] <- factor(pop_data[[pop_subdomains]],
       t((sum(pop_weights[iq4] * y[iq4]) / sum(pop_weights[iq4])) /
            (sum(pop_weights[iq1] * y[iq1]) / sum(pop_weights[iq1])))
     },
+    Minimum = function(y, pop_weights, threshold) {
+      t(min(y))
+    },
+    Maximum = function(y, pop_weights, threshold) {
+      t(max(y))
+    },
     Quantiles = function(y, pop_weights, threshold) {
       if(length(unique(pop_weights)) == 1 & 1 %in% unique(pop_weights)){
         t(quantile(x = y, probs = c(0, 0.05,.10, .25, .5, .75, .9, 0.95,1)))
@@ -270,10 +276,10 @@ pop_data[[pop_subdomains]] <- factor(pop_data[[pop_subdomains]],
     indicator_list[["Quantiles"]] <-
       function(y, pop_weights, threshold) {
         if(length(unique(pop_weights)) == 1 & 1 %in% unique(pop_weights)){
-          quantile(x = y, probs = c(0,0.05,.10, .25, .5, .75, .9,0.95,1))
+          quantile(x = y, probs = c(0.05,.10, .25, .5, .75, .9,0.95))
         }else{
           wtd.quantile(x = y, weights = pop_weights,
-                         probs = c(0,0.05,.10, .25, .5, .75, .9,0.95,1))
+                         probs = c(0.05,.10, .25, .5, .75, .9,0.95))
         }
       }
       
@@ -289,14 +295,15 @@ pop_data[[pop_subdomains]] <- factor(pop_data[[pop_subdomains]],
     "Gini",
     "Quintile_Share",
     "Minimum",
+    "Maximum",
+    "Quantile", 
     "Quantile_5",
     "Quantile_10",
     "Quantile_25",
     "Median",
     "Quantile_75",
     "Quantile_90",
-    "Quantile_95",
-    "Maximum"
+    "Quantile_95"
   )
 
   function_names <- c(
@@ -306,6 +313,8 @@ pop_data[[pop_subdomains]] <- factor(pop_data[[pop_subdomains]],
     "Poverty_Severity",
     "Gini",
     "Quintile_Share",
+    "Minimum",
+    "Maximum",
     "Quantiles"
   )
   
@@ -314,8 +323,8 @@ pop_data[[pop_subdomains]] <- factor(pop_data[[pop_subdomains]],
   if (!is.null(indicators)) {
     keepthese <- which(function_names %in% indicators)
     indicator_list <- indicator_list[keepthese]
-    if (7 %in% keepthese) {
-      keepthese <- c(keepthese,8,9,10,11,12,13,14,15)
+    if (9 %in% keepthese) {
+      keepthese <- c(keepthese,10,11,12,14,14,15,16)
     }
     indicator_names <- indicator_names[keepthese]
   }
