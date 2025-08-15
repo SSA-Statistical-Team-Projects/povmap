@@ -106,7 +106,7 @@ xgb_tune <- function(fixed,
   #split <- strsplit(as.character(fixed), "~", fixed = TRUE)
   #outcome <- trimws(split[[1]][1])
   #covariates <- trimws(strsplit(trimws(split[[1]][2]), "\\+")[[1]])
-  X_smp <- smp_data[,covariates]
+  X_smp <- smp_data[,c(covariates,domains)]
   Y_smp <- data.frame(smp_data[,outcome])
 
   if(is.null(smp_weights)==FALSE){
@@ -182,7 +182,7 @@ xgb_tune <- function(fixed,
 
     for (row in 1:nrow(tunegrid)){
 
-      xgb_fit <-  xgboost(
+      xgb_fit <-  xgboost::xgboost(
         data               = data.matrix(X_final[cluster_col$fold!=fold,]),
         label              = Y_smp[cluster_col$fold!=fold,],
         weight             = smp_weights[cluster_col$fold!=fold],

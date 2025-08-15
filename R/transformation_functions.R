@@ -521,9 +521,7 @@ logit_transform <- function(y,shift=NULL) {
     return(list(y=y, shift=shift))
 }
 
-logit_transform_back <- function(y,shift=NULL)
+logit_transform_back <- function(y,shift=NULL) {
   y <- exp(y)/(1+exp(y))
   return(y = y)
-
-# The logistic transformation 
-
+}
