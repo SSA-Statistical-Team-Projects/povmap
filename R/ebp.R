@@ -95,7 +95,7 @@
 #' a weighted version of the ebp will be used. The variable has to be numeric.
 #' Defaults to \code{NULL}.
 #' @param pop_weights a character string containing the name of a variable that
-#' indicates population weights in the populatation data. If a character string
+#' indicates population weights in the population data. If a character string
 #' is provided weighted indicators are estimated using population weights.
 #' The variable has to be numeric. Defaults to \code{NULL}.
 #' @param aggregate_to a character string containing the name of a variable from
@@ -105,9 +105,9 @@
 #' @param weights_type a character string. Two different methods for survey
 #' weights are available (i) EBP under informative sampling from
 #' \cite{Guadarrama et al. (2018)} ("Guadarrama"); (ii) considering survey
-#' weights by using the weighting options of \code{\link{nlme}} from
+#' weights by using the weighting options of \code{\link[nlme]{lme}} from
 #' \cite{Pinheiro and Bates (2023)} ("nlme"); (iii) considering survey
-#' weights by using the weighting options of \code{\link{nlme}} and use these
+#' weights by using the weighting options of \pkg{nlme} and use these
 #' weights also to determine the optimal transformation parameter lambda
 #' ("nlme_lambda"). Defaults to \code{"Guadarrama"}.
 #' @param benchmark The input depends on the type of benchmarking to be
@@ -138,27 +138,28 @@
 #' with weights differing from the survey weights (Default for weighting for
 #' internal benchmarking).
 #' @param nlme_maxiter an integer indicating the maximum number of iterations
-#' the \code{lme} function from package \code{\link{nlme}} will run for
-#' parameter convergence. Defaults to 1000. 
+#' the \code{\link[nlme:lme]{lme}} function will run for parameter convergence.
+#' Defaults to 1000.
 #' @param nlme_tolerance a real number indicating the tolerance criterion for the
-#' the \code{lme} function from package \code{\link{nlme}}. Defaults to 1e^-6. 
+#' the \code{\link[nlme:lme]{lme}} function. Defaults to 1e^-6.
 #' @param nlme_msmaxiter an integer indicating the maximum number of iterations
-#' for the optimization step of the \code{lme} function from package \code{\link{nlme}} 
-#' will run for parameter convergence. Defaults to 1000. 
+#' for the optimization step of the \code{\link[nlme:lme]{lme}} function
+#' will run for parameter convergence. Defaults to 1000.
 #' @param nlme_mstol a real number indicating the tolerance criterion for the
-#' the optimization step of the \code{lme} function from package \code{\link{nlme}}. 
-#' Defaults to 1e^-7. 
-#' @param nlme_method a string indicating the method to be used by the \code{lme}
-#' function from package \code{\link{nlme}}, either "REML" (the default) or "ML".
-#' @param nlme_opt a string indicating the optimizer to be used by the \code{lme}
-#' function from package \code{\link{nlme}}, either "nlminb" (the default) or "optim".
-#' @param nlme_optimmethod a string indicating the optimization method to be used 
-#' with the optim optimizer the \code{lme} function from packages \code{\link{nlme}} and  
-#' \code{\link{optim}} Defaults to "BFGS".   
-#' @param nlme_returnobject a logical indicating whether the fitted object should 
-#' be returned with a warning (instead of an error via stop()) when the maximum 
-#' number of iterations is reached without convergence of the algorithm. Defaults 
-#' to FALSE 
+#' the optimization step of the \code{\link[nlme:lme]{lme}} function.
+#' Defaults to 1e^-7.
+#' @param nlme_method a string indicating the method to be used by the
+#' \code{\link[nlme:lme]{lme}} function, either "REML"
+#' (the default) or "ML".
+#' @param nlme_opt a string indicating the optimizer to be used by the
+#' \code{\link[nlme:lme]{lme}} function, either "nlminb" (the default) or "optim".
+#' @param nlme_optimmethod a string indicating the optimization method to be used
+#' with the optim optimizer, see \code{\link{optim}} and the
+#' \code{\link[nlme:lme]{lme}} function. Defaults to "BFGS".
+#' @param nlme_returnobject a logical indicating whether the fitted object should
+#' be returned with a warning (instead of an error via stop()) when the maximum
+#' number of iterations is reached without convergence of the algorithm. Defaults
+#' to FALSE
 #' @param rescale_weights a logical indicating if the sample weights are scaled.
 #' If \code{FALSE} (default), the sample weights do not change. When \code{TRUE}
 #' , the sample weights are rescaled such that the average weight is 1
@@ -210,9 +211,12 @@
 #' You, Y., Rao, J.N.K. (2002).  A pseudo-empirical best linear unbiased
 #' prediction approach to small area estimation using survey weights. The
 #' Canadian Journal of Statistics. Vol. 30, No. 3, 431–439.
-#' @seealso \code{\link{emdiObject}}, \code{\link[nlme]{lme}},
-#' \code{\link{estimators.emdi}},  \code{\link{plot.emdi}},
+#' @seealso
+#' \code{\link{emdiObject}},
+#' \code{\link{estimators.emdi}},
+#' \code{\link{plot.emdi}},
 #' \code{\link{emdi_summaries}}
+#' \code{\link[nlme:lme]{lme}},
 #' @examples
 #' \donttest{
 #' # Loading data - population and sample data
@@ -248,7 +252,7 @@
 #'       my_min = function(y) {
 #'         min(y)
 #'       }
-#'     ), na.rm = TRUE, cpus = 1, nlme_opt="optim" 
+#'     ), na.rm = TRUE, cpus = 1, nlme_opt="optim"
 #' )
 #'
 #' # Example 3: With default setting but na.rm=TRUE under informative sampling.
@@ -324,11 +328,11 @@ ebp <- function(fixed,
                 nlme_maxiter = 1000,
                 nlme_tolerance = 0.000001,
                 nlme_opt = "nlminb",
-                nlme_optimmethod = "BFGS", 
+                nlme_optimmethod = "BFGS",
                 nlme_method = "REML",
                 nlme_mstol = 0.0000001,
-                nlme_msmaxiter = 1000, 
-                nlme_returnobject = FALSE, 
+                nlme_msmaxiter = 1000,
+                nlme_returnobject = FALSE,
                 rescale_weights = FALSE,
                 Ydump = NULL
                 ) {
@@ -388,11 +392,11 @@ ebp <- function(fixed,
     nlme_maxiter = nlme_maxiter,
     nlme_tolerance = nlme_tolerance,
     nlme_opt = nlme_opt,
-    nlme_optimmethod = nlme_optimmethod, 
-    nlme_method = nlme_method, 
-    nlme_mstol=nlme_mstol, 
-    nlme_msmaxiter = nlme_msmaxiter, 
-    nlme_returnobject = nlme_returnobject, 
+    nlme_optimmethod = nlme_optimmethod,
+    nlme_method = nlme_method,
+    nlme_mstol=nlme_mstol,
+    nlme_msmaxiter = nlme_msmaxiter,
+    nlme_returnobject = nlme_returnobject,
     rescale_weights = rescale_weights
   )
 
@@ -428,7 +432,7 @@ ebp <- function(fixed,
         benchmark_type = benchmark_type,
         benchmark_level = benchmark_level)
     }
-    
+
     if (any(names(point_estim$ind) %in% c("Mean_bench"))) {
       if (any(is.na(point_estim$ind$Mean_bench))) {
         message(strwrap(prefix = " ", initial = "",
@@ -436,7 +440,7 @@ ebp <- function(fixed,
                           Mean contain missing values. Please check source data"))
       }
     }
-    
+
     if (any(names(point_estim$ind) %in% c("Head_Count_bench"))) {
       if (any(is.na(point_estim$ind$Head_Count_bench))) {
         message(strwrap(prefix = " ", initial = "",
