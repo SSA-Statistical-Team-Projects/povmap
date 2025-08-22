@@ -142,7 +142,7 @@ a weighted version of the ebp will be used. The variable has to be numeric.
 Defaults to \code{NULL}.}
 
 \item{pop_weights}{a character string containing the name of a variable that
-indicates population weights in the populatation data. If a character string
+indicates population weights in the population data. If a character string
 is provided weighted indicators are estimated using population weights.
 The variable has to be numeric. Defaults to \code{NULL}.}
 
@@ -154,9 +154,9 @@ Defaults to \code{NULL}.}
 \item{weights_type}{a character string. Two different methods for survey
 weights are available (i) EBP under informative sampling from
 \cite{Guadarrama et al. (2018)} ("Guadarrama"); (ii) considering survey
-weights by using the weighting options of \code{\link{nlme}} from
+weights by using the weighting options of \code{\link[nlme]{lme}} from
 \cite{Pinheiro and Bates (2023)} ("nlme"); (iii) considering survey
-weights by using the weighting options of \code{\link{nlme}} and use these
+weights by using the weighting options of \pkg{nlme} and use these
 weights also to determine the optimal transformation parameter lambda
 ("nlme_lambda"). Defaults to \code{"Guadarrama"}.}
 
@@ -192,33 +192,34 @@ with weights differing from the survey weights (Default for weighting for
 internal benchmarking).}
 
 \item{nlme_maxiter}{an integer indicating the maximum number of iterations
-the \code{lme} function from package \code{\link{nlme}} will run for
-parameter convergence. Defaults to 1000.}
+the \code{\link[nlme:lme]{lme}} function will run for parameter convergence.
+Defaults to 1000.}
 
 \item{nlme_tolerance}{a real number indicating the tolerance criterion for the
-the \code{lme} function from package \code{\link{nlme}}. Defaults to 1e^-6.}
+the \code{\link[nlme:lme]{lme}} function. Defaults to 1e^-6.}
 
-\item{nlme_opt}{a string indicating the optimizer to be used by the \code{lme}
-function from package \code{\link{nlme}}, either "nlminb" (the default) or "optim".}
+\item{nlme_opt}{a string indicating the optimizer to be used by the
+\code{\link[nlme:lme]{lme}} function, either "nlminb" (the default) or "optim".}
 
-\item{nlme_optimmethod}{a string indicating the optimization method to be used 
-with the optim optimizer the \code{lme} function from packages \code{\link{nlme}} and  
-\code{\link{optim}} Defaults to "BFGS".}
+\item{nlme_optimmethod}{a string indicating the optimization method to be used
+with the optim optimizer, see \code{\link{optim}} and the
+\code{\link[nlme:lme]{lme}} function. Defaults to "BFGS".}
 
-\item{nlme_method}{a string indicating the method to be used by the \code{lme}
-function from package \code{\link{nlme}}, either "REML" (the default) or "ML".}
+\item{nlme_method}{a string indicating the method to be used by the
+\code{\link[nlme:lme]{lme}} function, either "REML"
+(the default) or "ML".}
 
 \item{nlme_mstol}{a real number indicating the tolerance criterion for the
-the optimization step of the \code{lme} function from package \code{\link{nlme}}. 
+the optimization step of the \code{\link[nlme:lme]{lme}} function.
 Defaults to 1e^-7.}
 
 \item{nlme_msmaxiter}{an integer indicating the maximum number of iterations
-for the optimization step of the \code{lme} function from package \code{\link{nlme}} 
+for the optimization step of the \code{\link[nlme:lme]{lme}} function
 will run for parameter convergence. Defaults to 1000.}
 
-\item{nlme_returnobject}{a logical indicating whether the fitted object should 
-be returned with a warning (instead of an error via stop()) when the maximum 
-number of iterations is reached without convergence of the algorithm. Defaults 
+\item{nlme_returnobject}{a logical indicating whether the fitted object should
+be returned with a warning (instead of an error via stop()) when the maximum
+number of iterations is reached without convergence of the algorithm. Defaults
 to FALSE}
 
 \item{rescale_weights}{a logical indicating if the sample weights are scaled.
@@ -302,7 +303,7 @@ emdi_model <- ebp(
       my_min = function(y) {
         min(y)
       }
-    ), na.rm = TRUE, cpus = 1, nlme_opt="optim" 
+    ), na.rm = TRUE, cpus = 1, nlme_opt="optim"
 )
 
 # Example 3: With default setting but na.rm=TRUE under informative sampling.
@@ -368,7 +369,9 @@ prediction approach to small area estimation using survey weights. The
 Canadian Journal of Statistics. Vol. 30, No. 3, 431–439.
 }
 \seealso{
-\code{\link{emdiObject}}, \code{\link[nlme]{lme}},
-\code{\link{estimators.emdi}},  \code{\link{plot.emdi}},
+\code{\link{emdiObject}},
+\code{\link{estimators.emdi}},
+\code{\link{plot.emdi}},
 \code{\link{emdi_summaries}}
+\code{\link[nlme:lme]{lme}},
 }
