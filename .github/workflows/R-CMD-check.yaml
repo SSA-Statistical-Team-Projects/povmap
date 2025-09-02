@@ -2,9 +2,9 @@
 # Need help debugging build failures? Start at https://github.com/r-lib/actions#where-to-find-help
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, cran-fix, Development, Yuting, david2, david3, fix-readme, package_check, remote-missing-prep, remove-sp-dependencies, soumojit]
   pull_request:
-    branches: [main, master]
+    branches: [main, master, cran-fix, Development, Yuting, david2, david3, fix-readme, package_check, remote-missing-prep, remove-sp-dependencies, soumojit]
 
 name: R-CMD-check
 
