@@ -313,12 +313,6 @@ tidy_xgb_tune <- function(fixed,
   yvar_chr <- all.vars(fixed[[2]])
   xvar_list <- all.vars(fixed[[3]])
 
-  ## quickly update formula for later
-  fixed <-
-    paste(fixed,
-          paste(domains, smp_weights, sep = " + "),
-          sep = " + ") |>
-    as.formula()
 
   # Create outcome and predictor objects
   xsmp <- smp_data[, xvar_list, drop = FALSE]
@@ -327,32 +321,32 @@ tidy_xgb_tune <- function(fixed,
 
   # Handle weights
   if (!is.null(smp_weights)) {
-    smp_weights <- smp_data[[smp_weights]]
+    smp_data[["smp_weights"]] <- smp_data[[smp_weights]]
   } else {
-    smp_weights <- rep(1, nrow(ysmp))
+    smp_data[["smp_weights"]] <- rep(1, nrow(ysmp))
   }
 
-  # Ensure domain column is preserved
-  domains <- smp_data[[domains]]
+  smp_data[["domains"]] <- smp_data[[domains]]
+  smp_data[["cluster"]] <- smp_data[[cluster]]
 
-  # # run quick standard data check
-  # xgb_check2(transformation = transformation,
-  #            Y_smp = ysmp,
-  #            X_smp = xsmp,
-  #            smp_weights = smp_weights,
-  #            domains = domains,
-  #            cluster = cluster)
+  ### drop the weights and domain variable
+  smp_data[[domains]] <- NULL
+  smp_data[[smp_weights]] <- NULL
+  smp_data[[cluster]] <- NULL
+
+  ## quickly update formula for later
+  fixed <-
+    paste(fixed,
+          paste("smp_weights + domains"),
+          sep = " + ") |>
+    as.formula()
 
 
-  # # Handle cluster
-  # cluster_col <- if (cluster == "domains") domains else cluster
-
-  ## ---- transformation ---- ##
   sample_tbl <-
     smp_data |>
-    as_tibble() |>
-    mutate(smp_weights = smp_weights,
-           domains = !!sym(domains))
+    as_tibble()
+
+  ## ---- transformation ---- ##
 
   if (transformation == "arcsin") {
 
@@ -371,18 +365,19 @@ tidy_xgb_tune <- function(fixed,
 
   ## ---- preprocessing and data preparation ---- ##
   preprocess_recipe_obj <-
-    recipe(fixed, data = sample_tbl) |>
+    sample_tbl |>
+    recipe(fixed) |>
+    update_role(smp_weights, new_role = "case_weight") |>
+    update_role(domains, new_role = "id variable") |>
     step_string2factor(all_nominal_predictors()) |>
     step_other(all_nominal_predictors(), threshold = 0.01) |>
-    update_role(smp_weights, new_role = "case_weight") |>
-    update_role(all_of(domains), new_role = "id") |>
     prep() |>
     bake(new_data = NULL)
 
   ## ---- create folds ---- ##
   cvfold_obj <-
     rsample::group_vfold_cv(preprocess_recipe_obj,
-                            group = !!sym(cluster),
+                            group = cluster,
                             v = folds)
 
   ## ---- dynamic XGBoost model specification ---- ##
