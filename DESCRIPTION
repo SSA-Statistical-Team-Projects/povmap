@@ -43,7 +43,11 @@ Imports:
     spdep,
     bestNormalize,
     survey,
-    sf
+    sf,
+    xgboost,
+    dplyr,
+    magrittr,
+    purrr
 Suggests:
     testthat,
     R.rsp,
