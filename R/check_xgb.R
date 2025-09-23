@@ -84,9 +84,9 @@ xgb_check2 <- function(transformation,
 
   if (length(which(colnames(X_smp)==paste0(domains)))==0) stop("The domain variable is not in the sample data.")
 
-  if (length(smp_weights)!=nrow(Y_smp)) stop("The length of the weight variable does not equal the number of observations in the outcome variable.")
+  if (nrow(smp_weights)!=nrow(Y_smp)) stop("The length of the weight variable does not equal the number of observations in the outcome variable.")
 
-  if (is.null(smp_weights)==FALSE & length(smp_weights)!=nrow(X_smp)){
+  if (is.null(smp_weights)==FALSE & nrow(smp_weights)!=nrow(X_smp)){
     stop("The length of weight variable does not equal the the number of rows in the sample data.")
   }
 
