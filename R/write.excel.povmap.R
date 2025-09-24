@@ -1,4 +1,4 @@
-#' Exports an povmapObject to an Excel File or OpenDocument Spreadsheet
+#' Exports a povmapObject to an Excel File or OpenDocument Spreadsheet
 #'
 #' Function \code{write.excel} enables the user to export point and MSE
 #' estimates as well as diagnostics from the \code{summary} to an Excel file.
@@ -155,6 +155,11 @@ write.excel <- function(object,
       )
   } else if(inherits(object, "hdp")){
     wb <- add_summary_hdp(
+      object = object, wb = wb,
+      headlines_cs = headlines_cs
+    )
+  } else if (inherits(object,"xgb")) {
+    wb <- add_summary_xgb(
       object = object, wb = wb,
       headlines_cs = headlines_cs
     )
@@ -591,6 +596,103 @@ add_summary_hdp <- function(object, wb, headlines_cs) {
   )
   return(wb)
 }
+
+add_summary_xgb <- function(object, wb, headlines_cs) {
+  su <- summary(object)
+  
+  title_cs <- createStyle(
+    fontSize = 14,
+    border = "Bottom",
+    halign = "left",
+    borderStyle = "thick",
+    textDecoration = "bold"
+  )
+  
+  df_nobs <- data.frame(Count = c(
+    su$out_of_smp,
+    su$in_smp, su$size_pop,
+    su$size_smp
+  ))
+  rownames(df_nobs) <- c(
+    "out of sample domains",
+    "in sample domains",
+    "out of sample observations",
+    "in sample observations"
+  )
+  df_size_dom <- as.data.frame(su$size_dom)
+  
+  addWorksheet(wb, sheetName = "summary", gridLines = FALSE)
+  
+  writeData(
+    wb = wb, sheet = "summary",
+    x = "Extreme Gradient Boosting", colNames = FALSE
+  )
+  addStyle(
+    wb = wb, sheet = "summary", cols = 1, rows = 1,
+    style = title_cs, stack = TRUE
+  )
+  
+  starting_row <- 5
+  writeDataTable(
+    x = df_nobs,
+    withFilter = FALSE,
+    wb = wb,
+    sheet = "summary",
+    startRow = starting_row,
+    startCol = 3,
+    rowNames = TRUE,
+    headerStyle = headlines_cs,
+    colNames = TRUE,
+    tableStyle = "TableStyleMedium2"
+  )
+  
+  starting_row <- starting_row + 2 + nrow(df_nobs)
+  
+  writeDataTable(
+    x = df_size_dom,
+    wb = wb,
+    withFilter = FALSE,
+    sheet = "summary",
+    startRow = starting_row,
+    startCol = 3,
+    rowNames = TRUE,
+    headerStyle = headlines_cs,
+    colNames = TRUE,
+    tableStyle = "TableStyleMedium2"
+  )
+  
+  starting_row <- starting_row + 2 + nrow(df_size_dom)
+  
+  
+  if (!is.null(su$transform)) {
+    writeDataTable(
+      x = su$transform,
+      wb = wb,
+      withFilter = FALSE,
+      sheet = "summary",
+      startRow = starting_row,
+      startCol = 3,
+      rowNames = FALSE,
+      headerStyle = headlines_cs,
+      colNames = TRUE,
+      tableStyle = "TableStyleMedium2"
+    )
+    
+    starting_row <- starting_row + 2 + nrow(su$transform)
+  }
+  
+  setColWidths(
+    wb = wb,
+    sheet = "summary",
+    cols = 3:9,
+    widths = "auto"
+  )
+  return(wb)
+}
+
+
+
+
 
 add_summary_fh <- function(object, wb, headlines_cs) {
   su <- summary(object)

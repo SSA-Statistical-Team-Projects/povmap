@@ -28,8 +28,8 @@ framework_xgb <-function(fixed,
                  "XGB does not work with missing values. Set na.rm = TRUE in
                  function xgb."))
   }
-  
-  
+
+
   # Handling sample and population weights
   if (!is.null(smp_weights)) {
     smp_weights <- smp_data[, smp_weights]

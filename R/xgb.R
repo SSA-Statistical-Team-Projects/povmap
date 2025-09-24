@@ -1,10 +1,11 @@
 #' Extreme gradient boosting for domain-level averages
 #'
-#' The function \code{xgb} employs the extreme gradient boosting methodology introduced
-#' by \cite{Merfeld and Newhouse (2023)} to estimate domain-level averages, particularly
-#' for small area estimation (SAE) applications. Moreover, to estimate the mean squared
+#' The function \code{xgb} employs extreme gradient boosting to estimate domain-level averages, particularly
+#' for small area estimation (SAE) applications. The model is specified 
+#' at the sub-area level (any geopgraphic level more disaggregated than the target areas), 
+#' as implemented by \cite{Merfeld, Dang, and Newhouse (2025)} To estimate the mean squared
 #' error (MSE), a nonparametric residual bootstrap approach is utilized, as described
-#' in \cite{Krennmair and Schmid (2022)} and \cite{Merfeld and Newhouse (2023)}.
+#' in \cite{Krennmair and Schmid (2022)} and \cite{Merfeld, Dang, and Newhouse (2025)}.
 #'
 #' @param fixed a two-sided linear formula object describing the
 #' fixed-effects part of the model with the dependent variable on the left
@@ -84,14 +85,15 @@
 #' Krennmair, P., & Schmid, T. (2022). Flexible Domain Prediction Using Mixed Effects
 #' Random Forests. Journal of Royal Statistical Society: Series C (Applied Statistics),
 #' Vol.71, No. 5, 1865–1894.\cr \cr
-#' Merfeld, J. D., & Newhouse, D. (2023). Improving Estimates of Mean Welfare and Uncertainty
+#' Merfeld, J. D., Dang, H., & Newhouse, D. (2025). Improving Estimates of Mean Welfare and Uncertainty
 #' in Developing Countries (No. 10348). The World Bank.
 #' @export
-#' @importFrom xgboost xgboost
+#' @importFrom xgboost xgboost xgb.DMatrix
 #' @importFrom dplyr select left_join arrange
 #' @importFrom magrittr %>%
 #' @importFrom purrr as_vector
 #' @importFrom stats weighted.mean
+#' @importFrom Matrix sparse.model.matrix
 #' @examples
 #' \donttest{
 #' # Loading data - population and sample data
@@ -150,6 +152,8 @@ xgb <- function(fixed,
                 lambda = 1,
                 alpha = 0,
                 na.rm = FALSE,
+                seed = 123,
+                ydump = NULL,
                 ...){
 
   out_call <- match.call()
@@ -171,8 +175,8 @@ xgb <- function(fixed,
   #_____________________________________________________________________________
   # Subdomains
   sub_domains_direct <- data.frame(cbind(fwk$Y_smp,
-                                         fwk$X_smp[[paste0(sub_domains)]],
-                                         fwk$X_smp[[paste0(domains)]]))
+                                         fwk$X_smp[[sub_domains]],
+                                         fwk$X_smp[[domains]]))
   colnames(sub_domains_direct) <- c("outcome", "sub_domains", "domains")
   sub_domains_direct$outcome <- as.numeric(sub_domains_direct$outcome)
 
@@ -195,14 +199,25 @@ xgb <- function(fixed,
 
   # XGBoost
   #_____________________________________________________________________________
-  X_smp_xgb <- fwk$X_smp %>%
-    dplyr::select(-c(paste0(domains), paste0(sub_domains)))
-  X_pop_xgb <- fwk$X_pop %>%
-    dplyr::select(-c(paste0(domains), paste0(sub_domains)))
+  X_smp_xgb <-
+    fwk$X_smp %>%
+      dplyr::select(-c(paste0(domains), paste0(sub_domains))) %>%
+      Matrix::sparse.model.matrix(~ ., data = .) %>%
+      .[, -1] %>%
+      xgboost::xgb.DMatrix(data = ., label = sub_domains_direct$outcome)
+
+  X_pop_xgb <-
+    fwk$X_pop %>%
+    dplyr::select(-c(paste0(domains), paste0(sub_domains))) %>%
+    Matrix::sparse.model.matrix(~ ., data = .) %>%
+    .[, -1] %>%
+    xgboost::xgb.DMatrix(data = .)
+
+
+  ### convert to xgbmatrix object
 
   xgb_fit <- xgboost::xgboost(
-    data = as.matrix(X_smp_xgb),
-    label = sub_domains_direct$outcome,
+    data = X_smp_xgb,
     weight = (fwk$smp_weights/mean(fwk$smp_weights)),
     nrounds = nround,
     max_depth = max_depth,
@@ -220,15 +235,16 @@ xgb <- function(fixed,
     ...
   )
 
+
   # Predictions
   #_____________________________________________________________________________
   sub_pred <- data.frame(
-    cbind(
-      fwk$X_pop[[paste0(domains)]],
-      fwk$X_pop[[paste0(sub_domains)]],
+    #cbind(
+      fwk$X_pop[,domains],
+      fwk$X_pop[,sub_domains],
       fwk$pop_weights,
-      predict(xgb_fit, as.matrix(X_pop_xgb))
-    )
+      predict(xgb_fit, X_pop_xgb)
+    #)
   )
   colnames(sub_pred) <- c("domains", "sub_domains", "wts", "hat")
   sub_pred$hat <- as.numeric(sub_pred$hat)
@@ -239,11 +255,19 @@ xgb <- function(fixed,
     sub_pred$hat <- ifelse(sub_pred$hat<asin(0), asin(0), sub_pred$hat)
   }
 
+  ### write predictions to file if needed
+  if (!is.null(ydump)) {
+
+    saveRDS(sub_pred, ydump)
+
+  }
+
+
   # Residuals
   #_____________________________________________________________________________
   # Subdomains
-  sub_domains_direct <- sub_domains_direct %>%
-    #dplyr::left_join(sub_pred, by = c("sub_domains", "domains"))
+  sub_domains_direct <-
+    sub_domains_direct %>%
     dplyr::inner_join(sub_pred, by = c("sub_domains", "domains"))
   resid_sub_domains <- as.numeric(sub_domains_direct$outcome) - as.numeric(sub_domains_direct$hat)
   grouped_domains2 <- split(sub_pred$hat, sub_pred$domains)
@@ -266,10 +290,15 @@ xgb <- function(fixed,
   for (j in 1:B){
 
     B_sub <- sub_pred
-    B_sub$hat <- as.numeric(B_sub$hat) + as.numeric(resid_sub_domains[sample(1:length(resid_sub_domains), nrow(B_sub), replace = TRUE)])
+
+    set.seed(123)
+
+    B_sub$hat <- as.numeric(B_sub$hat) + as.numeric(resid_sub_domains[sample(1:length(resid_sub_domains),
+                                                                             nrow(B_sub), replace = TRUE)])
     grouped_domains3 <- split(B_sub$hat, B_sub$domains)
     weighted_means3 <- sapply(grouped_domains3, function(group) {
-      stats::weighted.mean(as.numeric(group), wts = as.numeric(B_sub$wts[B_sub$domains == names(group)]))
+      stats::weighted.mean(as.numeric(group),
+                           wts = as.numeric(B_sub$wts[B_sub$domains == names(group)]))
     })
     B_domains <- data.frame(
       domains = names(weighted_means3),
@@ -277,7 +306,9 @@ xgb <- function(fixed,
       row.names = NULL
     )
 
-    B_domains$hat <- as.numeric(B_domains$hat) + as.numeric(resid_domains[sample(1:length(resid_domains), nrow(B_domains), replace = TRUE)])
+    B_domains$hat <- as.numeric(B_domains$hat) + as.numeric(resid_domains[sample(1:length(resid_domains),
+                                                                                 nrow(B_domains),
+                                                                                 replace = TRUE)])
     B_domains <- B_domains %>%
       dplyr::arrange(domains)
 
@@ -322,14 +353,13 @@ xgb <- function(fixed,
     CI  = data.frame(cbind(Domains = results["Domain"],
                            LowerCI = results["Lower"],
                            UpperCI = results["Upper"])),
-    xgbModel = c(xgb_fit, call = out_call, smp_data = list(smp_data), transformation = transformation,
+    xgbModel = c(xgb_fit,
+                 call = out_call,
+                 smp_data = list(smp_data),
+                 transformation = transformation,
                  fwk$saeinfo)
   )
-  class(result) <- c("xgb","emdi")
+  class(result) <- c("xgb","povmap")
   return(result)
 
 }
-
-
-
-

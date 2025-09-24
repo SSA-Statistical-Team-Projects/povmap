@@ -102,7 +102,7 @@ xgb_tune <- function(fixed,
   #_____________________________________________________________________________
   outcome <- all.vars(fixed[[2]])
   covariates <- all.vars(fixed[[3]])
-  
+
   #split <- strsplit(as.character(fixed), "~", fixed = TRUE)
   #outcome <- trimws(split[[1]][1])
   #covariates <- trimws(strsplit(trimws(split[[1]][2]), "\\+")[[1]])
@@ -185,7 +185,7 @@ xgb_tune <- function(fixed,
       xgb_fit <-  xgboost::xgboost(
         data               = data.matrix(X_final[cluster_col$fold!=fold,]),
         label              = Y_smp[cluster_col$fold!=fold,],
-        weight             = smp_weights[cluster_col$fold!=fold],
+        weight             = as.matrix(smp_weights[cluster_col$fold!=fold,]),
         nrounds            = tunegrid$nround[row],
         max_depth          = tunegrid$max_depth[row],
         colsample_bytree   = tunegrid$colsample_bytree[row],
@@ -250,5 +250,410 @@ xgb_tune <- function(fixed,
   class(final_output) <- c("xgb","emdi")
   return(final_output)
 }
+
+
+
+#' Tuning extreme gradient boosting models for domain-level averages
+#'
+#' The funtion \code{xgb_tune} fine-tunes the hyperparameters for extreme gradient boosting models, following \cite{Merfeld and Newhouse (2023)}.
+#' It offers the flexibility to allocate \code{domains} to folds and utilizes estimated
+#' means at the domain-level for cross-validation. Users can specify the number of
+#' folds, including an option for leave-one-out cross-validation.
+#'
+#' @param fixed a two-sided linear formula object describing the
+#' fixed-effects part of the model with the dependent variable on the left
+#' of a ~ operator and the explanatory variables on the right, separated
+#' by + operators. All variables (except for \code{domains} and \code{cluster})
+#' must be numeric.
+#' @param smp_data a data frame that needs to comprise all variables including
+#' \code{domains} and \code{cluster}.
+#' @param smp_weights a character string containing the name of the variable that
+#' indicates weights in \code{smp_data}. The variable has to be numeric.
+#' Defaults to \code{NULL}.
+#' @param domains a character string containing the name of a variable
+#' that indicates domains in \code{smp_data}. The variable can be
+#' numeric or a factor.
+#' @param cluster a character string containing the name of a variable
+#' that indicates clusters in \code{smp_data}. The variable can be
+#' numeric or a factor. Defaults to \code{"domains"}.
+#' @param transformation a character string. Two different transformation
+#' types for the dependent variable can be chosen (i) no transformation ("no");
+#' (ii) log transformation ("log"); (iii) Arcsin transformation ("arcsin").
+#' Defaults to \code{"no"}.
+#'
+#' @import tidymodels dplyr rlang recipes doFuture
+
+
+tidy_xgb_tune <- function(fixed,
+                          smp_data,
+                          smp_weights = NULL,
+                          domains,
+                          cluster = "domains",
+                          transformation = "no",
+                          folds = 10,
+                          tune_params = list("trees" = c(1L, 2000L),
+                                             "mtry" = NULL,
+                                             "min_n" = c(2L, 40L),
+                                             "tree_depth" = c(1L, 15L),
+                                             "learn_rate" = c(-10, -1),
+                                             "loss_reduction" = c(-10, 1.5),
+                                             "sample_size" = c(0.1, 1),
+                                             "stop_iter" = NULL,
+                                             "alpha" = c(-10, 1),
+                                             "lambda" = c(-10 ,1),
+                                             "colsample_bytree" = c(0.5, 1),
+                                             "colsample_bylevel" = c(0.5, 1),
+                                             "colsample_bynode" = c(0.5, 1),
+                                             "max_delta_step" = c(0, 10)),
+                          tune_size = NULL,
+                          verbose = TRUE,
+                          parallel_over = NULL) {
+
+  ## ---- data preparation ---- ##
+  yvar_chr <- all.vars(fixed[[2]])
+  xvar_list <- all.vars(fixed[[3]])
+
+
+  # Create outcome and predictor objects
+  xsmp <- smp_data[, xvar_list, drop = FALSE]
+  ysmp <- smp_data[, yvar_chr, drop = FALSE]
+  colnames(ysmp) <- "labels"
+
+  # Handle weights
+  if (!is.null(smp_weights)) {
+    smp_data[["smp_weights"]] <- smp_data[[smp_weights]]
+  } else {
+    smp_data[["smp_weights"]] <- rep(1, nrow(ysmp))
+  }
+
+  smp_data[["domains"]] <- smp_data[[domains]]
+  smp_data[["cluster"]] <- smp_data[[cluster]]
+
+  ### drop the weights and domain variable
+  smp_data[[domains]] <- NULL
+  smp_data[[smp_weights]] <- NULL
+  smp_data[[cluster]] <- NULL
+
+  ## quickly update formula for later
+  fixed <-
+    paste(fixed,
+          paste("smp_weights + domains"),
+          sep = " + ") |>
+    as.formula()
+
+
+  sample_tbl <-
+    smp_data |>
+    as_tibble()
+
+  ## ---- transformation ---- ##
+
+  if (transformation == "arcsin") {
+
+    sample_tbl <-
+      sample_tbl |>
+      mutate(!!yvar_chr := asin(sqrt(!!sym(yvar_chr))))
+
+  } else if (transformation == "log") {
+
+    sample_tbl <-
+      sample_tbl |>
+      mutate(!!yvar_chr := log(!!sym(yvar_chr)))
+
+  }
+
+
+  ## ---- preprocessing and data preparation ---- ##
+  preprocess_recipe_obj <-
+    sample_tbl |>
+    recipe(fixed) |>
+    update_role(smp_weights, new_role = "case_weight") |>
+    update_role(domains, new_role = "id variable") |>
+    step_string2factor(all_nominal_predictors()) |>
+    step_other(all_nominal_predictors(), threshold = 0.01) |>
+    prep() |>
+    bake(new_data = NULL)
+
+  ## ---- create folds ---- ##
+  cvfold_obj <-
+    rsample::group_vfold_cv(preprocess_recipe_obj,
+                            group = cluster,
+                            v = folds)
+
+  ## ---- dynamic XGBoost model specification ---- ##
+  # Helper function to set tune() or fixed
+  # param_or_tune <- function(param) {
+  #   if (param %in% names(tune_params)) tune() else if (!is.null(tune_params[[param]])) tune_params[[param]][1] else NULL
+  # }
+
+  xgboost_model <-
+    boost_tree(mode = "regression",
+               trees = define_param("trees", tune_params),
+               mtry = define_param("mtry", tune_params),
+               min_n = define_param("min_n", tune_params),
+               tree_depth = define_param("tree_depth", tune_params),
+               learn_rate = define_param("learn_rate", tune_params),
+               loss_reduction = define_param("loss_reduction", tune_params),
+               sample_size = define_param("sample_size", tune_params),
+               stop_iter = define_param("stop_iter", tune_params)) %>%
+    set_engine("xgboost",
+               objective = "reg:squarederror",
+               alpha = define_param("alpha", tune_params),
+               lambda = define_param("lambda", tune_params),
+               colsample_bytree = define_param("colsample_bytree", tune_params),
+               colsample_bylevel = define_param("colsample_bylevel", tune_params),
+               colsample_bynode = define_param("colsample_bynode", tune_params),
+               max_delta_step = define_param("max_delta_step", tune_params),
+               weight = smp_weights,
+               counts = FALSE)
+
+  ### boost_tree uses tidy eval to enquo() its arguments, eval_enquo_xgbargs() has
+  ### been created to evaluate boost_tree arguments by force and then enquo() the
+  ### results of the evaluation.
+  xgboost_model$args <- eval_enquo_xgbargs(xgboost_model$args) ## for the boost_tree args
+
+  xgboost_model$eng_args <- eval_enquo_xgbargs(xgboost_model$eng_args) ## for set_engine args
+
+  ## ---- dynamic parameter object ---- ##
+
+  ## ---- create tuning grid ---- ##
+  ### compute the appropriate grid size
+
+  if (is.null(tune_size)){
+
+    tune_size <- estimate_grid_size(tune_params = tune_params)
+
+  }
+
+  # Compute which parameters are actually set to tune()
+  tuneable_params <- names(Filter(function(x) length(x) > 1, tune_params))
+
+  # Only build param set for these
+  xgb_param_list <- build_xgb_param_set(tune_params[tuneable_params])
+
+  # Now create the grid
+  xgboost_grid <- grid_space_filling(x = xgb_param_list, size = tune_size)
+
+  ## ---- workflow ---- ##
+  xgboost_wf <-
+    workflows::workflow() |>
+    workflows::add_model(xgboost_model) |>
+    workflows::add_formula(fixed) |>
+    workflows::add_case_weights(where(~smp_weights))
+
+  ## quickly define the new metric i.e. domain specified rmse's computed with
+  ## domain_rmse_vec() function
+  domain_rmse <- yardstick::new_numeric_metric(
+    domain_rmse_vec,
+    direction = "minimize"
+  )
+
+
+  ## ---- tuning ---- ##
+  if (!is.null(parallel_over)){
+
+    # Detect number of available cores
+    n_cores <- parallel::detectCores()
+
+    # Set up parallel plan with multisession (safe for Windows)
+    future::plan(multisession, workers = n_cores - 1)  # use all but one core
+
+
+    ## tuning operation
+    xgboost_tuned <-
+      tune_grid(xgboost_wf,
+                resamples = cvfold_obj,
+                grid = xgboost_grid,
+                metrics = metric_set(rmse, domain_rmse),
+                control = control_grid(verbose = TRUE,
+                                       save_pred = TRUE,
+                                       parallel_over = parallel_over))
+
+    # close the cores by enforcing 1 core
+    future::plan(sequential)
+
+
+
+  } else {
+
+    xgboost_tuned <-
+      tune_grid(xgboost_wf,
+                resamples = cvfold_obj,
+                grid = xgboost_grid,
+                metrics = metric_set(rmse, domain_rmse),
+                control = control_grid(verbose = TRUE))
+
+  }
+
+  ## ---- select best parameters ---- ##
+  xgboost_best_params <-
+    xgboost_tuned |>
+    select_best(metric = "domain_rmse")
+
+
+  return_obj <- list("xgb_tune_fullresults" = xgboost_tuned,
+                     "xgb_best_params" = xgboost_best_params)
+
+  class(return_obj) <- "xgb_tune_list"
+
+
+  return(return_obj)
+
+}
+
+
+
+#' Determine a recommended tuning grid size
+#' @param tune_params list of tuning parameters
+#' @return An integer: recommended grid size
+#'
+estimate_grid_size <- function(tune_params) {
+  # param_list should be a list of parameters (with NULLs if not tuned)
+  p <- length(Filter(Negate(is.null), tune_params))  # count non-NULL params
+
+  if (p <= 7) {
+    size <- 2^p
+  } else {
+    size <- 17 * p
+  }
+
+  return(size)
+}
+
+
+
+
+
+build_xgb_param_set <- function(tune_params) {
+
+  param_objs <- imap(tune_params, ~{
+    param <- .y
+    val   <- .x
+
+    # skip NULLs
+    if (is.null(val)) return(NULL)
+
+    # fixed value (not tunable)
+    if (length(val) == 1) return(val)
+
+    # helper for generic numeric params
+    new_quant_param_wrap <- function() {
+      dials::new_quant_param(
+        type = "double",
+        range = val,
+        inclusive = c(TRUE, TRUE)
+      )
+    }
+
+      # tunable ranges
+      switch(param,
+             # built-in dials parameters
+             trees             = trees(range = val),
+             min_n             = min_n(range = val),
+             tree_depth        = tree_depth(range = val),
+             learn_rate        = learn_rate(range = val, trans = log10_trans()),
+             loss_reduction    = loss_reduction(range = val),
+             sample_size       = sample_prop(range = val),
+             stop_iter         = stop_iter(range = val),
+             alpha             = penalty(range = val, trans = log10_trans()),
+             lambda            = penalty(range = val, trans = log10_trans()),
+
+             # xgboost engine-specific params
+             colsample_bytree  = new_quant_param_wrap(),
+             colsample_bylevel = new_quant_param_wrap(),
+             colsample_bynode  = new_quant_param_wrap(),
+             max_delta_step    = new_quant_param_wrap(),
+
+             # fallback (any other numeric)
+             new_quant_param_wrap())
+
+  })
+
+  # drop NULLs and keep only "param" objects
+  param_objs <- compact(param_objs)
+  param_objs <- keep(param_objs, ~inherits(.x, "param"))
+
+  # combine into a compact params object
+  param_objs <- dials::parameters(x = param_objs)
+
+  return(param_objs)
+
+}
+
+
+define_param <- function(param, tune_params) {
+  # If the parameter exists in the tune_params list AND has a vector (length>1) → tune()
+  if (!is.null(tune_params[[param]]) && length(tune_params[[param]]) > 1) {
+    return(tune())
+  }
+
+  # If the parameter exists in tune_params AND has a single value → fixed
+  if (!is.null(tune_params[[param]]) && length(tune_params[[param]]) == 1) {
+    return(tune_params[[param]][1])
+  }
+
+  # If the parameter is missing from tune_params → use default (NA)
+  return(NULL)
+}
+
+
+eval_enquo_xgbargs <- function(args_list){
+
+  xgbargs_list <-
+  lapply(args_list,
+         function(arg) {
+
+           val <- eval_tidy(arg)              # evaluate the quosure expression
+           env <- quo_get_env(arg)            # extract original environment
+           result <- new_quosure(val, env = env)        # rewrap with preserved env
+
+           return(result)
+         })
+
+  return(xgbargs_list)
+
+}
+
+
+domain_rmse_vec <- function(truth,
+                            estimate,
+                            na_rm = TRUE,
+                            case_weights = NULL,
+                            domains = NULL,
+                            ...) {
+  # if no weights provided, default to 1
+  w <- case_weights %||% rep(1, length(truth))
+
+  df_tbl <- tibble(truth = truth,
+                   estimate = estimate,
+                   domains = domains,
+                   w = w)
+
+  summary_tbl <- df_tbl %>%
+    group_by(domains) %>%
+    summarize(
+      mean_truth = weighted.mean(truth, w = w, na.rm = na_rm),
+      mean_est   = weighted.mean(estimate, w = w, na.rm = na_rm),
+      sumw       = sum(w, na.rm = na_rm),
+      .groups    = "drop"
+    ) %>%
+    summarize(rmse = sqrt(weighted.mean((mean_est - mean_truth)^2,
+                                        w = sumw,
+                                        na.rm = na_rm)))
+
+  return(summary_tbl$rmse)
+}
+
+
+
+
+
+
+
+
+
+
+
+
 
 
