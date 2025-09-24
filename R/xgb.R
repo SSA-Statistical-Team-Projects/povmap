@@ -1,10 +1,11 @@
 #' Extreme gradient boosting for domain-level averages
 #'
-#' The function \code{xgb} employs the extreme gradient boosting methodology introduced
-#' by \cite{Merfeld and Newhouse (2023)} to estimate domain-level averages, particularly
-#' for small area estimation (SAE) applications. Moreover, to estimate the mean squared
+#' The function \code{xgb} employs extreme gradient boosting to estimate domain-level averages, particularly
+#' for small area estimation (SAE) applications. The model is specified 
+#' at the sub-area level (any geopgraphic level more disaggregated than the target areas), 
+#' as implemented by \cite{Merfeld, Dang, and Newhouse (2025)} To estimate the mean squared
 #' error (MSE), a nonparametric residual bootstrap approach is utilized, as described
-#' in \cite{Krennmair and Schmid (2022)} and \cite{Merfeld and Newhouse (2023)}.
+#' in \cite{Krennmair and Schmid (2022)} and \cite{Merfeld, Dang, and Newhouse (2025)}.
 #'
 #' @param fixed a two-sided linear formula object describing the
 #' fixed-effects part of the model with the dependent variable on the left
@@ -84,7 +85,7 @@
 #' Krennmair, P., & Schmid, T. (2022). Flexible Domain Prediction Using Mixed Effects
 #' Random Forests. Journal of Royal Statistical Society: Series C (Applied Statistics),
 #' Vol.71, No. 5, 1865–1894.\cr \cr
-#' Merfeld, J. D., & Newhouse, D. (2023). Improving Estimates of Mean Welfare and Uncertainty
+#' Merfeld, J. D., Dang, H., & Newhouse, D. (2025). Improving Estimates of Mean Welfare and Uncertainty
 #' in Developing Countries (No. 10348). The World Bank.
 #' @export
 #' @importFrom xgboost xgboost xgb.DMatrix
@@ -174,8 +175,8 @@ xgb <- function(fixed,
   #_____________________________________________________________________________
   # Subdomains
   sub_domains_direct <- data.frame(cbind(fwk$Y_smp,
-                                         fwk$X_smp[[paste0(sub_domains)]],
-                                         fwk$X_smp[[paste0(domains)]]))
+                                         fwk$X_smp[[sub_domains]],
+                                         fwk$X_smp[[domains]]))
   colnames(sub_domains_direct) <- c("outcome", "sub_domains", "domains")
   sub_domains_direct$outcome <- as.numeric(sub_domains_direct$outcome)
 
@@ -238,12 +239,12 @@ xgb <- function(fixed,
   # Predictions
   #_____________________________________________________________________________
   sub_pred <- data.frame(
-    cbind(
-      fwk$X_pop[[paste0(domains)]],
-      fwk$X_pop[[paste0(sub_domains)]],
+    #cbind(
+      fwk$X_pop[,domains],
+      fwk$X_pop[,sub_domains],
       fwk$pop_weights,
       predict(xgb_fit, X_pop_xgb)
-    )
+    #)
   )
   colnames(sub_pred) <- c("domains", "sub_domains", "wts", "hat")
   sub_pred$hat <- as.numeric(sub_pred$hat)
