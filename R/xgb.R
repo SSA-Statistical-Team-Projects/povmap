@@ -75,6 +75,8 @@
 #' @param na.rm if \code{TRUE}, observations with \code{NA} values are deleted
 #' from the population and sample data. For the XGB procedure complete
 #' observations are required. Defaults to \code{FALSE}.
+#' @param seed an integer to set the seed for the random number generator, see Details.
+#' #' Defaults to 123
 #' @param ... additional parameters to be passed to \code{xgboost}.
 #'
 #' @return An object of class \code{xgb}, \code{emdi}, which encompasses point estimates,
@@ -157,7 +159,8 @@ xgb <- function(fixed,
                 ...){
 
   out_call <- match.call()
-
+  set.seed(seed)
+  
   # Framework for xgb
   #_____________________________________________________________________________
   fwk <- framework_xgb(fixed = fixed,
@@ -290,8 +293,6 @@ xgb <- function(fixed,
   for (j in 1:B){
 
     B_sub <- sub_pred
-
-    set.seed(123)
 
     B_sub$hat <- as.numeric(B_sub$hat) + as.numeric(resid_sub_domains[sample(1:length(resid_sub_domains),
                                                                              nrow(B_sub), replace = TRUE)])
