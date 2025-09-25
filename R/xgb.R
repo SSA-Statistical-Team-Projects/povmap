@@ -350,7 +350,7 @@ xgb <- function(fixed,
 
   result <- list(
     ind = data.frame(cbind(Domains = results["Domain"], Mean = results["Mean"])),
-    MSE = data.frame(cbind(Domains = results["Domain"], Mean = results$SD)),
+    var = data.frame(cbind(Domains = results["Domain"], Mean = results$SD)),
     CI  = data.frame(cbind(Domains = results["Domain"],
                            LowerCI = results["Lower"],
                            UpperCI = results["Upper"])),
