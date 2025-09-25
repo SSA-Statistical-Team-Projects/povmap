@@ -30,7 +30,7 @@ xgb_check1 <- function(transformation,
 
   if(conf_level<=0 | conf_level>=1) stop("Please specify a confidence level between 0 and 1 (e.g. 0.95).")
 
-  if (nrow(Y_smp)!=nrow(X_smp)) stop("The number of rows in the outcome variable and independent variables are different.")
+  if (nrow(as.data.frame(Y_smp))!=nrow(X_smp)) stop("The number of rows in the outcome variable and independent variables are different.")
 
   if (length(which(colnames(X_smp)==paste0(domains)))==0) stop("The domain variable is not in the sample data.")
 
@@ -40,7 +40,7 @@ xgb_check1 <- function(transformation,
 
   if (!is.character(sub_domains)) stop("The subdomain name must be a character value.")
 
-  if (nrow(smp_weights)!=nrow(X_smp)) stop("The number of rows in the sample weight column does not equal the number for the independent variables.")
+  if (nrow(as.data.frame(smp_weights))!=nrow(X_smp)) stop("The number of rows in the sample weight column does not equal the number for the independent variables.")
 
   #if (is.null(smp_weights)==FALSE & length(smp_weights)!=nrow(X_smp)){
   #  stop("The length of weight variable does not equal the the number of rows in the sample data.")
