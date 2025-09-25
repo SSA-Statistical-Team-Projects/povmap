@@ -278,6 +278,11 @@ xgb <- function(fixed,
     sub_domains_direct %>%
     dplyr::inner_join(sub_pred, by = c("sub_domains", "domains"))
   resid_sub_domains <- as.numeric(sub_domains_direct$outcome) - as.numeric(sub_domains_direct$hat)
+
+  # demean subarea residuals - doesn't seem to affect results  
+  #resid_sub_domains_mean <- ave(x=resid_sub_domains*sub_domains_direct$wts,sub_domains_direct$domains,FUN=sum)/ave(as.numeric(sub_domains_direct$wts),sub_domains_direct$domains,FUN=sum)
+  #resid_sub_domains <- resid_sub_domains-resid_sub_domains_mean 
+  
   grouped_domains2 <- split(sub_pred$hat, sub_pred$domains)
   weighted_means2 <- sapply(grouped_domains2, function(group) {
     weighted.mean(group, wts = as.numeric(sub_pred$wts[sub_pred$domains == names(group)]))
