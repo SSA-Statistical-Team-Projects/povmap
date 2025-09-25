@@ -34,7 +34,7 @@
 #' Defaults to \code{"no"}.
 #' @param B a number determining the number of bootstrap populations in the
 #' nonparametric residual bootstrap approach used in the MSE estimation. The
-#' number must be greater than 1. Defaults to 100. For practical applications,
+#' number must be greater than 1. Defaults to 1000. For practical applications,
 #' values larger than 200 are recommended.
 #' @param conf_level confidence level for the confidence interval. Defaults to 0.95.
 #' @param nround maximum number of boosting iterations. Defaults to 100.
@@ -77,6 +77,10 @@
 #' observations are required. Defaults to \code{FALSE}.
 #' @param seed an integer to set the seed for the random number generator, see Details.
 #' #' Defaults to 123
+#' @param ydump if not null, specifies a file name to save XGboost predictions. Defaults to NULL. 
+#' @param weightedBS. If TRUE and smp_weights is specified, gives each area and subarea weight proportional to 
+#' their sample weight when implementing the cluster residual bootstrap. If FALSE, gives each area and subarea 
+#' equal weight. Defaults to TRUE.   
 #' @param ... additional parameters to be passed to \code{xgboost}.
 #'
 #' @return An object of class \code{xgb}, \code{emdi}, which encompasses point estimates,
@@ -139,7 +143,7 @@ xgb <- function(fixed,
                 domains,
                 sub_domains,
                 transformation = "no",
-                B = 100,
+                B = 1000,
                 conf_level = 0.95,
                 nround = 100,
                 max_depth = 4,
@@ -156,6 +160,7 @@ xgb <- function(fixed,
                 na.rm = FALSE,
                 seed = 123,
                 ydump = NULL,
+                weightedBS = T, 
                 ...){
 
   out_call <- match.call()
@@ -192,7 +197,7 @@ xgb <- function(fixed,
   domains_direct$wts <- as.numeric(domains_direct$wts)
   grouped_domains1 <- split(domains_direct$outcome, domains_direct$domains)
   weighted_means1 <- sapply(grouped_domains1, function(group) {
-    stats::weighted.mean(group, wts = domains_direct$wts[domains_direct$domains == names(group)])
+    weighted.mean(group, wts = domains_direct$wts[domains_direct$domains == names(group)])
   })
   domains_direct <- data.frame(
     domains = names(weighted_means1),
@@ -275,7 +280,7 @@ xgb <- function(fixed,
   resid_sub_domains <- as.numeric(sub_domains_direct$outcome) - as.numeric(sub_domains_direct$hat)
   grouped_domains2 <- split(sub_pred$hat, sub_pred$domains)
   weighted_means2 <- sapply(grouped_domains2, function(group) {
-    stats::weighted.mean(group, wts = as.numeric(sub_pred$wts[sub_pred$domains == names(group)]))
+    weighted.mean(group, wts = as.numeric(sub_pred$wts[sub_pred$domains == names(group)]))
   })
   domains_pred <- data.frame(
     domains = names(weighted_means2),
@@ -289,13 +294,27 @@ xgb <- function(fixed,
   # Bootstrap
   #_____________________________________________________________________________
   B_results <- matrix(data = NA, nrow = B, ncol = nrow(domains_pred))
-
+  
+  
+  # Sample with probability proportional to sample weight if weightsBS = TRUE
+  if (weightedBS==T & !i.null(smp_weights)) {
+    pop_subarea_d <- sub_domains_direct$wts/sum(sub_domains_direct$wts)  
+    domain_wts <- aggregate(sub_domains_direct$wts,by=list(sub_domains_direct$domains),FUN=sum)$x
+    pop_area_d <- domain_wts/sum(domain_wts)
+  }
+  # Otherwise sample each subarea and area with fixed proobability 
+  else {
+    pop_subarea_d <- rep(1/length(resid_sub_domains),length(resid_sub_domains))
+    pop_area_d <- rep(1/length(resid_domains),length(resid_domains))
+  }
+  
   for (j in 1:B){
 
     B_sub <- sub_pred
 
     B_sub$hat <- as.numeric(B_sub$hat) + as.numeric(resid_sub_domains[sample(1:length(resid_sub_domains),
-                                                                             nrow(B_sub), replace = TRUE)])
+                                                                             nrow(B_sub), prob=pop_subarea_d, 
+                                                                             replace = TRUE)])
     grouped_domains3 <- split(B_sub$hat, B_sub$domains)
     weighted_means3 <- sapply(grouped_domains3, function(group) {
       stats::weighted.mean(as.numeric(group),
@@ -308,7 +327,7 @@ xgb <- function(fixed,
     )
 
     B_domains$hat <- as.numeric(B_domains$hat) + as.numeric(resid_domains[sample(1:length(resid_domains),
-                                                                                 nrow(B_domains),
+                                                                                 nrow(B_domains), prob=pop_area_d, 
                                                                                  replace = TRUE)])
     B_domains <- B_domains %>%
       dplyr::arrange(domains)
@@ -323,7 +342,7 @@ xgb <- function(fixed,
 
   results$lower <- NA
   results$upper <- NA
-  results$sd <- NA
+  results$var <- NA
 
   for (l in 1:nrow(results)){
 
@@ -343,14 +362,14 @@ xgb <- function(fixed,
     results$hat[l] <- mean(temp)
     results$lower[l] <- quantile(temp, probs = (1-conf_level)/2)
     results$upper[l] <- quantile(temp, probs = 1-(1-conf_level)/2)
-    results$sd[l] <- sd(temp)
+    results$var[l] <- var(temp)
   }
-  colnames(results) <- c("Domain", "Mean", "Lower", "Upper", "SD")
+  colnames(results) <- c("Domain", "Mean", "Lower", "Upper", "var")
 
 
   result <- list(
     ind = data.frame(cbind(Domains = results["Domain"], Mean = results["Mean"])),
-    var = data.frame(cbind(Domains = results["Domain"], Mean = results$SD)),
+    var = data.frame(cbind(Domains = results["Domain"], Mean = results$var)),
     CI  = data.frame(cbind(Domains = results["Domain"],
                            LowerCI = results["Lower"],
                            UpperCI = results["Upper"])),
