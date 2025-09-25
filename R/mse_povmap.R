@@ -1,5 +1,5 @@
 mse_povmap <- function(object, indicator = "all", CV = FALSE) {
-  if (inherits(object, "ell")) {
+  if (inherits(object, "ell") | (inherits(object, "xgb"))) {
      object$MSE <- object$var
    }
   
