@@ -81,8 +81,7 @@
 #' values larger than 200 are recommended (see also
 #' \cite{Molina, I. and Rao, J.N.K. (2010)}).
 #' @param seed an integer to set the seed for the random number generator. For
-#' the usage of random number generation, see Details. If seed is set to
-#' \code{NULL}, seed is chosen randomly. Defaults to \code{123}.
+#' the usage of random number generation, see Details. Defaults to \code{123}.
 #' @param boot_type character string to choose between different MSE estimation
 #' procedures,currently a \code{"parametric"} and a semi-parametric
 #' \code{"wild"} bootstrap are possible. Defaults to \code{"parametric"}.
