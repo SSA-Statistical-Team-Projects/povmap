@@ -297,7 +297,7 @@ xgb <- function(fixed,
   
   
   # Sample with probability proportional to sample weight if weightsBS = TRUE
-  if (weightedBS==T & !i.null(smp_weights)) {
+  if (weightedBS==T & !is.null(smp_weights)) {
     pop_subarea_d <- sub_domains_direct$wts/sum(sub_domains_direct$wts)  
     domain_wts <- aggregate(sub_domains_direct$wts,by=list(sub_domains_direct$domains),FUN=sum)$x
     pop_area_d <- domain_wts/sum(domain_wts)
