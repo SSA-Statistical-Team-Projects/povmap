@@ -183,15 +183,15 @@ xgb <- function(fixed,
   #_____________________________________________________________________________
   # Subdomains
   sub_domains_direct <- data.frame(cbind(fwk$Y_smp,
-                                         fwk$X_smp[[sub_domains]],
-                                         fwk$X_smp[[domains]]))
+                                         fwk$X_smp[sub_domains],
+                                         fwk$X_smp[domains]))
   colnames(sub_domains_direct) <- c("outcome", "sub_domains", "domains")
   sub_domains_direct$outcome <- as.numeric(sub_domains_direct$outcome)
 
   # Domains
   domains_direct <- data.frame(cbind(fwk$Y_smp,
                                      fwk$smp_weights,
-                                     fwk$X_smp[[paste0(domains)]]))
+                                     fwk$X_smp[paste0(domains)]))
   colnames(domains_direct) <- c("outcome", "wts", "domains")
   domains_direct$outcome <- as.numeric(domains_direct$outcome)
   domains_direct$wts <- as.numeric(domains_direct$wts)

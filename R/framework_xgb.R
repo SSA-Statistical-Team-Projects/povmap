@@ -15,6 +15,22 @@ framework_xgb <-function(fixed,
   outcome <- trimws(split[[1]][1])
   covariates <- trimws(strsplit(trimws(split[[2]]), "\\+")[[1]])
 
+  #checks 
+  if (!all(covariates %in% colnames(pop_data))) {
+    missing_vars <- covariates[(!covariates %in% colnames(pop_data))]
+    stop(paste("Variables",missing_vars,"not present in population dataframe"))
+  }
+  if (!domains %in% colnames(pop_data)) {
+    stop(paste("Domain identifier",domains,"not present in population dataframe"))
+  }
+  if (!sub_domains %in% colnames(pop_data)) {
+    stop(paste("Subdomain identifier",sub_domains,"not present in population dataframe"))
+  }
+  if (!outcome %in% colnames(smp_data)) {
+    stop(paste("Outcome",outcome,"not present in sample dataframe"))
+  }
+  
+  
   # Extracting relevant subsets of data
   X_smp <- smp_data[, c(covariates,domains,sub_domains)]
   Y_smp <- smp_data[, outcome]
@@ -43,6 +59,8 @@ framework_xgb <-function(fixed,
     pop_weights <- rep(1, length = nrow(pop_data))
   }
 
+
+  
   X_pop <- pop_data[, c(covariates,domains,sub_domains)]
 
   # Determining domains in sample and population
