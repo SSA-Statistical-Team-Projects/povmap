@@ -83,7 +83,7 @@
 #' equal weight. Defaults to TRUE.   
 #' @param ... additional parameters to be passed to \code{xgboost}.
 #'
-#' @return An object of class \code{xgb}, \code{emdi}, which encompasses point estimates,
+#' @return An object of class \code{xgb}, \code{emdi}, which includes point estimates,
 #' uncertainty, and confidence intervals at the domain level, along with details regarding
 #' the \code{xgb} model. Various generic functions such as \code{summary}, \code{estimators}
 #' and \code{map_plot} are applicable to a model of the class \code{xgb}.
@@ -370,19 +370,20 @@ xgb <- function(fixed,
     results$var[l] <- var(temp)
   }
   colnames(results) <- c("Domain", "Mean", "Lower", "Upper", "var")
-
-
+  #sub_domains_direct <- sub_domains_direct[order(sub_domains_direct$sub_domains),]
+  
   result <- list(
     ind = data.frame(cbind(Domains = results["Domain"], Mean = results["Mean"])),
     var = data.frame(cbind(Domains = results["Domain"], Mean = results$var)),
     CI  = data.frame(cbind(Domains = results["Domain"],
                            LowerCI = results["Lower"],
                            UpperCI = results["Upper"])),
-    xgbModel = c(xgb_fit,
-                 call = out_call,
-                 smp_data = list(smp_data),
-                 transformation = transformation,
-                 fwk$saeinfo)
+    yhat=data.frame(sub_domains_direct[,c("sub_domains","hat")]),
+    model = xgb_fit, 
+    smp_data =  smp_data, 
+    out_call = out_call, 
+    transformation = transformation, 
+    saeinfo = fwk$saeinfo
   )
   class(result) <- c("xgb","povmap")
   return(result)

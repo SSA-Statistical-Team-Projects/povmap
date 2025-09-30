@@ -42,34 +42,54 @@
 
 summary.xgb <- function(object, ...) {
 
-  call_xgb <- object$xgbModel$call
+  call_xgb <- object$out_call
 
-  total_dom <- object$xgbModel$domains_total
-  in_dom <- object$xgbModel$domains_in
-  oos_dom <- object$xgbModel$domains_out
+  total_dom <- object$saeinfo$domains_total
+  in_dom <- object$saeinfo$domains_in
+  oos_dom <- object$saeinfo$domains_out
 
   dom_info <- data.frame(in_dom, oos_dom, total_dom)
   rownames(dom_info) <- c("")
   colnames(dom_info) <- c("In-sample", "Out-of-sample", "Total")
 
-  smp_size <- object$xgbModel$N_smp
-  pop_size <- object$xgbModel$N_pop
+  smp_size <- object$saeinfo$N_smp
+  pop_size <- object$saeinfo$N_pop
 
-  smp_size_dom <- summary(as.data.frame(object$xgbModel$ni_smp)[, "Freq"])
-  pop_size_dom <- summary(as.data.frame(object$xgbModel$ni_pop)[, "Freq"])
+  smp_size_dom <- summary(as.data.frame(object$saeinfo$ni_smp)[, "Freq"])
+  pop_size_dom <- summary(as.data.frame(object$saeinfo$ni_pop)[, "Freq"])
 
   sizedom_smp_pop <- rbind(
     Sample_domains = smp_size_dom,
     Population_domains = pop_size_dom
   )
 
-
+  #R-squared 
+  y <- object$smp_data[,object$saeinfo$outcome]
+  r_squared <- cor(object$yhat$hat,y)^2
+  domains <- object$smp_data[,object$saeinfo$domains]
+  smp_weight <- object$smp_data[,object$saeinfo$smp_weights]
+  if (!is.null(object$saeinfo$smp_weights)) {
+  y_area <- aggregate_weighted_mean(df=y,by=list(domains),w=smp_weight)
+  }
+  else {
+    y_area <- aggregate(x=y,by=list(domains),FUN=mean)
+  }
+  
+  y_area <- merge(x = y_area, y = object$ind, by = "Domain", all.x = TRUE)
+  area_r_squared <- cor(y_area$Mean,y_area$V1)^2
+  
+  coeff_det <- data.frame(
+    R2    = r_squared,
+    Area_R2 = area_r_squared,
+    row.names      = ""
+  )
+  
   # information on xgb:
   xgb_info <- data.frame(c(
-    object$xgbModel$transformation,
-    object$xgbModel$niter,
-    object$xgbModel$params$max_depth,
-    object$xgbModel$nfeatures)
+    object$transformation,
+    object$model$niter,
+    object$model$params$max_depth,
+    object$model$nfeatures)
   )
 
   colnames(xgb_info) <- NULL
@@ -78,6 +98,8 @@ summary.xgb <- function(object, ...) {
     "Number of independent variables:"
   )
 
+  
+  
 
   sum_xgb <- list(
     call_xgb = call_xgb,
@@ -85,6 +107,7 @@ summary.xgb <- function(object, ...) {
     smp_size = smp_size,
     pop_size = pop_size,
     sizedom_smp_pop = sizedom_smp_pop,
+    coeff_determ = coeff_det,
     xgb_info = xgb_info
   )
 
@@ -114,6 +137,8 @@ print.summary.xgb <- function(x, ...) {
   }
   cat("\n")
   print(x$sizedom_smp_pop)
+  cat("\n")
+  print(x$coeff_determ)
   cat("\n")
   cat("Boosting component: \n")
   cat("________________________________________________________________\n")

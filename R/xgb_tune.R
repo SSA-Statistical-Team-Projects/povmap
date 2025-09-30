@@ -185,7 +185,7 @@ xgb_tune <- function(fixed,
       xgb_fit <-  xgboost::xgboost(
         data               = data.matrix(X_final[cluster_col$fold!=fold,]),
         label              = Y_smp[cluster_col$fold!=fold,],
-        weight             = as.matrix(smp_weights[cluster_col$fold!=fold,]),
+        weight             = as.matrix(smp_weights)[cluster_col$fold!=fold,],
         nrounds            = tunegrid$nround[row],
         max_depth          = tunegrid$max_depth[row],
         colsample_bytree   = tunegrid$colsample_bytree[row],

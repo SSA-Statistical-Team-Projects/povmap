@@ -23,7 +23,7 @@
 #' one of the groups. If the \code{model} argument is of type "fh",
 #' indicator can be set to "all", "Direct", FH", or "FH_Bench" (if povmap
 #' object is overwritten by function benchmark). Defaults to "all".
-#' @param MSE logical. If \code{TRUE}, the MSE of the povmapObject is exported.
+#' @param MSE logical. If \code{TRUE}, the MSE or Variance of the povmapObject is exported.
 #' Defaults to \code{FALSE}.
 #' @param CV logical. If \code{TRUE}, the CV of the povmapObject is exported.
 #' Defaults to \code{FALSE}.
@@ -194,9 +194,14 @@ write.excel <- function(object,
   }
 
   if (model) {
+    if (inherits(object,"xgb")) {
+    wb <- add_model_xgb(object=object,wb=wb)  
+    }
+    else {
     wb <- add_model(object=object,
                     wb=wb
     )
+    } 
   }
 
   if (gammas) {
@@ -609,9 +614,10 @@ add_summary_xgb <- function(object, wb, headlines_cs) {
   )
   
   df_nobs <- data.frame(Count = c(
-    su$out_of_smp,
-    su$in_smp, su$size_pop,
-    su$size_smp
+    su$dom_info$"Out-of-sample",
+    su$dom_info$"In-sample", 
+    su$pop_size,
+    su$smp_size
   ))
   rownames(df_nobs) <- c(
     "out of sample domains",
@@ -619,7 +625,7 @@ add_summary_xgb <- function(object, wb, headlines_cs) {
     "out of sample observations",
     "in sample observations"
   )
-  df_size_dom <- as.data.frame(su$size_dom)
+  df_size_dom <- as.data.frame(su$sizedom_smp_pop)
   
   addWorksheet(wb, sheetName = "summary", gridLines = FALSE)
   
@@ -633,6 +639,8 @@ add_summary_xgb <- function(object, wb, headlines_cs) {
   )
   
   starting_row <- 5
+  df_nobs <- cbind(rownames(df_nobs),df_nobs)
+  colnames(df_nobs)[1] <- " " 
   writeDataTable(
     x = df_nobs,
     withFilter = FALSE,
@@ -640,14 +648,17 @@ add_summary_xgb <- function(object, wb, headlines_cs) {
     sheet = "summary",
     startRow = starting_row,
     startCol = 3,
-    rowNames = TRUE,
+    rowNames = F,
     headerStyle = headlines_cs,
     colNames = TRUE,
     tableStyle = "TableStyleMedium2"
   )
+
   
+    
   starting_row <- starting_row + 2 + nrow(df_nobs)
-  
+  df_size_dom <- cbind(rownames(df_size_dom),df_size_dom)
+  colnames(df_size_dom)[1] <- " "
   writeDataTable(
     x = df_size_dom,
     wb = wb,
@@ -680,6 +691,22 @@ add_summary_xgb <- function(object, wb, headlines_cs) {
     
     starting_row <- starting_row + 2 + nrow(su$transform)
   }
+  
+  writeDataTable(
+    x = su$coeff_determ,
+    wb = wb,
+    withFilter = FALSE,
+    sheet = "summary",
+    startRow = starting_row,
+    startCol = 4,
+    rowNames = FALSE,
+    headerStyle = headlines_cs,
+    colNames = TRUE,
+    tableStyle = "TableStyleMedium2"
+  )
+  
+  
+  
   
   setColWidths(
     wb = wb,
@@ -1105,6 +1132,7 @@ add_estims <- function(object, indicator, wb, headlines_cs, MSE, CV) {
   return(wb)
 }
 
+# write model coefficients to model worksheet 
 add_model <- function(object,  wb) {
 
   model <- ebp_reportcoef_table(object,decimals=3)
@@ -1132,6 +1160,41 @@ add_model <- function(object,  wb) {
   )
   return(wb)
 }
+
+#Write feature names to model worksheet 
+add_model_xgb <- function(object,  wb) {
+model <- as.data.frame(object$model$feature_names)
+colnames(model) <- "Features"
+addWorksheet(wb, sheetName = "Model", gridLines = FALSE)
+headlines_cs <- createStyle(
+  fontColour = "#ffffff",
+  halign = "center",
+  valign = "center",
+  fgFill = NULL,
+  textDecoration = "Bold",
+  border = "Bottom",
+  borderStyle = "medium"
+)
+
+writeDataTable(
+  x = model,
+  sheet = "Model",
+  wb = wb,
+  startRow = 1,
+  startCol = 1,
+  rowNames = FALSE,
+  headerStyle = headlines_cs,
+  tableStyle = "TableStyleMedium2",
+  withFilter = FALSE
+)
+return(wb)
+}
+
+
+
+
+
+
 
 add_gammas <- function(object,  wb) {
    gammas <- data.frame("Domain" = unique(object$framework$smp_domains_vec),"Gamma" = object$model_par$gamma)

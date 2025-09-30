@@ -48,6 +48,7 @@ framework_xgb <-function(fixed,
 
   # Handling sample and population weights
   if (!is.null(smp_weights)) {
+    smp_weights_name <- smp_weights 
     smp_weights <- smp_data[, smp_weights]
   } else {
     smp_weights <- rep(1, length = length(Y_smp))
@@ -77,7 +78,10 @@ framework_xgb <-function(fixed,
     domains_total = length(total_dom),
     ni_smp = table(smp_data[[domains]]),
     ni_pop = table(pop_data[[domains]]),
-    domains = domains
+    domains = domains,
+    sub_domains = sub_domains, 
+    outcome = outcome,
+    smp_weights = smp_weights_name 
   )
 
   # Check

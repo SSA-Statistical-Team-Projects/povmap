@@ -129,18 +129,19 @@ estimators.povmap <- function(object, indicator = "all", MSE = FALSE, var= FALSE
       CV = TRUE
     )
     
-    if (inherits(object, "ell")) {
+    if (inherits(object, "ell") | (inherits(object, "xgb"))) {
       suffix <- "_Var"
     }
     else {
        suffix <- "_MSE"
     }
-    
+    colnames(all_precisions$ind_cv) <- colnames(all_precisions$ind)
     colnames(all_precisions$ind) <- paste0(colnames(all_precisions$ind), suffix)
     colnames(all_precisions$ind_cv) <- paste0(
       colnames(all_precisions$ind_cv),
       "_CV"
     )
+
     combined <- data.frame(
       all_ind$ind, all_precisions$ind,
       all_precisions$ind_cv
