@@ -64,15 +64,17 @@ summary.xgb <- function(object, ...) {
   )
 
   #R-squared 
-  y <- object$smp_data[,object$saeinfo$outcome]
-  r_squared <- cor(object$yhat$hat,y)^2
-  domains <- object$smp_data[,object$saeinfo$domains]
-  smp_weight <- object$smp_data[,object$saeinfo$smp_weights]
+  y <- object$smp_data[,c(object$saeinfo$outcome,object$saeinfo$sub_domains,object$saeinfo$domains,object$saeinfo$smp_weights)]
+  colnames(y)[2] <- "sub_domains"
+  y <- na.omit(merge(x=y,y=object$yhat,all.x=T,by="sub_domains"))
+  r_squared <- cor(y[,object$saeinfo$outcome],y$hat)^2
+  domains <- y[,object$saeinfo$domains]
+  smp_weight <- y[,object$saeinfo$smp_weights]
   if (!is.null(object$saeinfo$smp_weights)) {
-  y_area <- aggregate_weighted_mean(df=y,by=list(domains),w=smp_weight)
+  y_area <- aggregate_weighted_mean(df=y[,"hat"],by=list(domains),w=smp_weight)
   }
   else {
-    y_area <- aggregate(x=y,by=list(domains),FUN=mean)
+    y_area <- aggregate(x=y[,"hat"],by=list(domains),FUN=mean)
   }
   
   y_area <- merge(x = y_area, y = object$ind, by = "Domain", all.x = TRUE)

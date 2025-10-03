@@ -8,7 +8,10 @@ xgb_check1 <- function(transformation,
                        domains,
                        sub_domains){
 
-  if (!("dplyr" %in% .packages())) stop("dplyr package is required, please use library(dplyr) if installed")
+  #if (!("dplyr" %in% .packages())) stop("dplyr package is required, please use library(dplyr) if installed")
+  require(dplyr)
+  require(xgboost)
+  require(stats)
   
   if(!(transformation %in% c("no", "arcsin", "log"))) stop("For transformation, please choose no, arcsin, or log.")
 

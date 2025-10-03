@@ -30,10 +30,6 @@ framework_xgb <-function(fixed,
     stop(paste("Outcome",outcome,"not present in sample dataframe"))
   }
   
-  
-  # Extracting relevant subsets of data
-  X_smp <- smp_data[, c(covariates,domains,sub_domains)]
-  Y_smp <- smp_data[, outcome]
 
   # Deletion of NA
   if (na.rm == TRUE) {
@@ -45,7 +41,10 @@ framework_xgb <-function(fixed,
                  function xgb."))
   }
 
-
+  # Extracting relevant subsets of data
+  X_smp <- smp_data[, c(covariates,domains,sub_domains)]
+  Y_smp <- smp_data[, outcome]
+  
   # Handling sample and population weights
   if (!is.null(smp_weights)) {
     smp_weights_name <- smp_weights 

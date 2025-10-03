@@ -484,12 +484,12 @@ gen_model <- function(fixed,
                   mu = mu, mu_fixed = mu_fixed,rand_eff=rand_eff,gamma=gamma,gamma_sub=gamma_sub,e0=e0,e1=e1,e2=e2))
 } # End gen_model
 
-
-#calculate weighted mean using R's aggregate function 
+#calculate weighted mean by group using R's aggregate function/ Weights are normalized to sum to 1.  
 aggregate_weighted_mean  <-function(df,by,w) {
   wdf <- cbind(df*w,w)  
   wdf_sum <- aggregate(wdf,by=by, FUN=sum)
   aggregate_weighted_mean <- cbind(Domain = wdf_sum[,1],wdf_sum[,-1]/wdf_sum$w)
+  #aggregate_weighted_mean <- cbind(Domain = unique(unlist(by)),wdf_sum[,-1]/wdf_sum$w)
   aggregate_weighted_mean <-within(aggregate_weighted_mean,rm(w))
   return(aggregate_weighted_mean)
 }
