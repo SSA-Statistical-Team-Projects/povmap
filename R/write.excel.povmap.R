@@ -1161,10 +1161,20 @@ add_model <- function(object,  wb) {
   return(wb)
 }
 
-#Write feature names to model worksheet 
+#Write feature names and shapley score values to model worksheet 
 add_model_xgb <- function(object,  wb) {
-model <- as.data.frame(object$model$feature_names)
-colnames(model) <- "Features"
+
+Xvars <- object$model$feature_names
+Yvar <- object$saeinfo$outcome
+smp_data <- as.matrix(object$smp_data[,Xvars])  
+abs_shap_values <- as.data.frame(abs(predict(object$model, smp_data, predcontrib = T)))
+abs_shap_values <- abs_shap_values[,-ncol(abs_shap_values)]  
+weights <- estimates$smp_data[,estimates$saeinfo$smp_weights]
+
+weighted_mean_shap_values <- as.matrix(apply(abs_shap_values, 2, function(x) weighted.mean(x, w = weights)))
+weighted_mean_shap_values <- weighted_mean_shap_values[order(weighted_mean_shap_values[,1],decreasing=T),]
+weighted_mean_shap_values <- data.frame(Variable = names(weighted_mean_shap_values),Shapley_score = weighted_mean_shap_values/sum(weighted_mean_shap_values))
+  
 addWorksheet(wb, sheetName = "Model", gridLines = FALSE)
 headlines_cs <- createStyle(
   fontColour = "#ffffff",
@@ -1177,7 +1187,7 @@ headlines_cs <- createStyle(
 )
 
 writeDataTable(
-  x = model,
+  x = weighted_mean_shap_values,
   sheet = "Model",
   wb = wb,
   startRow = 1,
