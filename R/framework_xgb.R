@@ -69,19 +69,18 @@ framework_xgb <-function(fixed,
   out_smp <- !total_dom %in% in_smp
 
   # Storing summary information
-  saeinfo <- list(
-    N_smp = length(smp_data[[domains]]),
-    N_pop = length(pop_data[[domains]]),
-    domains_out = sum(out_smp),
-    domains_in = length(in_smp),
-    domains_total = length(total_dom),
-    ni_smp = table(smp_data[[domains]]),
-    ni_pop = table(pop_data[[domains]]),
-    domains = domains,
-    sub_domains = sub_domains, 
-    outcome = outcome,
-    smp_weights = smp_weights_name 
-  )
+    N_smp = length(smp_data[[domains]])
+    N_pop = length(pop_data[[domains]])
+    domains_out = sum(out_smp)
+    domains_in = length(in_smp)
+    domains_total = length(total_dom)
+    ni_smp = table(smp_data[[domains]])
+    ni_pop = table(pop_data[[domains]])
+    domains = domains
+    sub_domains = sub_domains
+    outcome = outcome
+    smp_weights_name = smp_weights_name 
+  
 
   # Check
   xgb_check1(
@@ -106,10 +105,22 @@ framework_xgb <-function(fixed,
     }
   }
 
-  return(list(saeinfo = saeinfo,
-              Y_smp = Y_smp,
+  return(list(Y_smp = Y_smp,
               X_smp = X_smp,
               X_pop = X_pop,
               smp_weights = smp_weights,
-              pop_weights = pop_weights))
+              pop_weights = pop_weights,
+              N_smp = N_smp, 
+              N_pop = N_pop, 
+              domains_out = domains_out, 
+              domains_in = domains_in, 
+              domains_total = domains_total, 
+              ni_smp = ni_smp, 
+              ni_pop = ni_pop, 
+              domains = domains, 
+              sub_domains = sub_domains,
+              outcome=outcome, 
+              smp_weights = smp_weights,
+              smp_weights_var = smp_weights_name
+              ))
 }

@@ -45,7 +45,7 @@ xgb_check1 <- function(transformation,
 
   if (!is.character(sub_domains)) stop("The subdomain name must be a character value.")
 
-  if (nrow(as.data.frame(smp_weights))!=nrow(X_smp)) stop("The number of rows in the sample weight column does not equal the number for the independent variables.")
+  #if (nrow(as.data.frame(smp_weights))!=nrow(X_smp)) stop("The number of rows in the sample weight column does not equal the number for the independent variables.")
 
   #if (is.null(smp_weights)==FALSE & length(smp_weights)!=nrow(X_smp)){
   #  stop("The length of weight variable does not equal the the number of rows in the sample data.")

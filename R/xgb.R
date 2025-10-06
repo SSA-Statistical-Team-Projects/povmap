@@ -187,28 +187,19 @@ xgb <- function(fixed,
   # Direct estimates
   #_____________________________________________________________________________
   # Subdomains
-  sub_domains_direct <- as.data.frame(cbind(fwk$Y_smp,
+  sub_domains_direct <- data.frame(fwk$Y_smp,
                                          fwk$X_smp[sub_domains],
-                                         (fwk$X_smp[domains])))
+                                         (fwk$X_smp[domains]))
   colnames(sub_domains_direct) <- c("outcome", "sub_domains", "domains")
-  sub_domains_direct$domains <- as.character(sub_domains_direct$domains)
-  sub_domains_direct$sub_domains <- as.character(sub_domains_direct$sub_domains)
+  #sub_domains_direct$domains <- as.character(sub_domains_direct$domains)
+  #sub_domains_direct$sub_domains <- as.character(sub_domains_direct$sub_domains)
   
-  # Domains
-  domains_direct <- data.frame(cbind(fwk$Y_smp,
-                                     fwk$smp_weights,
-                                     fwk$X_smp[paste0(domains)]))
-  colnames(domains_direct) <- c("outcome", "wts", "domains")
-  domains_direct <- aggregate_weighted_mean(df=domains_direct$outcome,by=list(domains_direct$domains),w=domains_direct$wts)
-  colnames(domains_direct) <- c("domains","outcome")
-  
-  
-  
+
   
   # Estimate XGBoost
   
 
-  X_smp_xgb <- as.data.frame(fwk$X_smp)
+  X_smp_xgb <- fwk$X_smp
   X_smp_xgb[,c(paste0(domains),paste0(sub_domains))] <- list(NULL)
   X_pop_xgb <- fwk$X_pop
   X_pop_xgb[,c(paste0(domains),paste0(sub_domains))] <- list(NULL)
@@ -234,18 +225,15 @@ xgb <- function(fixed,
   
   #Generate predictions at sub-area level (assumed to be each observation)
   
-  sub_pred <- as.data.frame(cbind(
-      as.character(fwk$X_pop[,domains]),
-      as.character(fwk$X_pop[,sub_domains]),
+  sub_pred <- data.frame(
+      fwk$X_pop[,domains],
+      fwk$X_pop[,sub_domains],
       fwk$X_pop[,pop_weights],
       predict(xgb_fit, as.matrix(X_pop_xgb))
-    ))
+    )
 
   colnames(sub_pred) <- c("domains", "sub_domains", "wts", "hat")
-  sub_pred$hat <- as.numeric(sub_pred$hat)
-  sub_pred$wts <- as.numeric(sub_pred$wts)
 
-  
   if (transformation=="arcsin"){
     sub_pred$hat <- ifelse(sub_pred$hat>asin(1), asin(1), sub_pred$hat)
     sub_pred$hat <- ifelse(sub_pred$hat<asin(0), asin(0), sub_pred$hat)
@@ -269,22 +257,28 @@ xgb <- function(fixed,
   
   resid_sub_domains <- sub_domains_direct$outcome - as.numeric(sub_domains_direct$hat)
 
-  sub_domains_direct <- sub_domains_direct[order(sub_domains_direct$sub_domains),]
+  #sub_domains_direct <- sub_domains_direct[order(sub_domains_direct$sub_domains),]
    
   domains_pred <- aggregate_weighted_mean(df=sub_pred$hat,by=list(sub_pred$domains),w=sub_pred$wts) 
   # add sum of weights to domain-level predictions df
   wts <- aggregate(x=sub_pred$wts,by=list(sub_pred$domains),FUN = sum)
   wts[,1] <- unique(sub_pred$domains)
-  domains_pred <- cbind(domains_pred,wts$x)
-  domains_direct$domains <- as.character(domains_direct$domains) 
+  domains_pred <- data.frame(domains_pred,wts$x)
   colnames(domains_pred) <- c("domains","hat","weight")
-  domains_pred$domains <- as.character(domains_pred$domains) 
+  
+  # Domains
+  domains_direct <- data.frame(fwk$Y_smp,
+                               fwk$smp_weights,
+                               fwk$X_smp[paste0(domains)])
+  colnames(domains_direct) <- c("outcome", "wts", "domains")
+  domains_direct <- aggregate_weighted_mean(df=domains_direct$outcome,by=list(domains_direct$domains),w=domains_direct$wts)
+  colnames(domains_direct) <- c("domains","outcome")
+  
+  
+  
   
   # merge direct estimates at area level with predictions while maintaining sort order
-  domains_direct$order <- 1:nrow(domains_direct)
   domains_direct <- merge(x=domains_direct,y=domains_pred,by="domains",all.x=T)
-  domains_direct <- domains_direct[order(domains_direct$order),]
-  domains_direct$order <- NULL 
     
   # calculate domain residuals 
     resid_domains <- domains_direct$outcome - domains_direct$hat
@@ -411,7 +405,7 @@ cat("Beginning bootstrap \n")
     smp_data =  smp_data, 
     out_call = out_call, 
     transformation = transformation, 
-    saeinfo = fwk$saeinfo
+    framework = fwk
   )
   class(result) <- c("xgb","povmap")
   return(result)

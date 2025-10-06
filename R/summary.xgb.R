@@ -44,39 +44,41 @@ summary.xgb <- function(object, ...) {
 
   call_xgb <- object$out_call
 
-  total_dom <- object$saeinfo$domains_total
-  in_dom <- object$saeinfo$domains_in
-  oos_dom <- object$saeinfo$domains_out
+  total_dom <- object$framework$domains_total
+  in_dom <- object$framework$domains_in
+  oos_dom <- object$framework$domains_out
 
   dom_info <- data.frame(in_dom, oos_dom, total_dom)
   rownames(dom_info) <- c("")
   colnames(dom_info) <- c("In-sample", "Out-of-sample", "Total")
 
-  smp_size <- object$saeinfo$N_smp
-  pop_size <- object$saeinfo$N_pop
+  smp_size <- object$framework$N_smp
+  pop_size <- object$framework$N_pop
 
-  smp_size_dom <- summary(as.data.frame(object$saeinfo$ni_smp)[, "Freq"])
-  pop_size_dom <- summary(as.data.frame(object$saeinfo$ni_pop)[, "Freq"])
+  smp_size_dom <- summary(as.data.frame(object$framework$ni_smp)[, "Freq"])
+  pop_size_dom <- summary(as.data.frame(object$framework$ni_pop)[, "Freq"])
 
   sizedom_smp_pop <- rbind(
     Sample_domains = smp_size_dom,
     Population_domains = pop_size_dom
   )
 
-  #R-squared 
-  y <- object$smp_data[,c(object$saeinfo$outcome,object$saeinfo$sub_domains,object$saeinfo$domains,object$saeinfo$smp_weights)]
+
+  
+  
+  
+  y <- object$smp_data[,c(object$framework$outcome,object$framework$sub_domains,object$framework$domains,object$framework$smp_weights_var)]
   colnames(y)[2] <- "sub_domains"
   y <- na.omit(merge(x=y,y=object$yhat,all.x=T,by="sub_domains"))
-  r_squared <- cor(y[,object$saeinfo$outcome],y$hat)^2
-  domains <- y[,object$saeinfo$domains]
-  smp_weight <- y[,object$saeinfo$smp_weights]
-  if (!is.null(object$saeinfo$smp_weights)) {
-  y_area <- aggregate_weighted_mean(df=y[,"hat"],by=list(domains),w=smp_weight)
+  r_squared <- cor(y[,object$framework$outcome],y$hat)^2
+  domains <- y[,object$framework$domains]
+  smp_weight <- y[,object$framework$smp_weights_var]
+  if (!is.null(object$framework$smp_weights)) {
+  y_area <- aggregate_weighted_mean(df=y[,object$framework$outcome],by=list(domains),w=smp_weight)
   }
   else {
-    y_area <- aggregate(x=y[,"hat"],by=list(domains),FUN=mean)
+    y_area <- aggregate(x=y[,object$framework$outcome],by=list(domains),FUN=mean)
   }
-  
   y_area <- merge(x = y_area, y = object$ind, by = "Domain", all.x = TRUE)
   area_r_squared <- cor(y_area$Mean,y_area$V1)^2
   

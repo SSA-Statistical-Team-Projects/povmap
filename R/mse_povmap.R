@@ -55,15 +55,15 @@ mse_povmap <- function(object, indicator = "all", CV = FALSE) {
 
   if (any(indicator == "all") || any(indicator == "All")) {
     ind <- object$MSE
-    ind_cv <- cbind(Domain = object$MSE[, 1], all_cv)
+    ind_cv <- data.frame(Domain = object$MSE[, 1], all_cv)
     ind_name <- "All indicators"
   } else if (any(indicator == "fh") || any(indicator == "FH")) {
     ind <- object$MSE[, c("Domain", "FH")]
-    ind_cv <- cbind(Domain = object$MSE[, 1], all_cv)
+    ind_cv <- data.frame(Domain = object$MSE[, 1], all_cv)
     ind_name <- "Fay-Herriot estimates"
   } else if (any(indicator == "Direct") || any(indicator == "direct")) {
     ind <- object$MSE[, c("Domain", "Direct")]
-    ind_cv <- cbind(Domain = object$MSE[, 1], all_cv)
+    ind_cv <- data.frame(Domain = object$MSE[, 1], all_cv)
     ind_name <- "Direct estimates used in Fay-Herriot approach"
   } else {
     selection <- colnames(object$MSE[-1]) %in% indicator

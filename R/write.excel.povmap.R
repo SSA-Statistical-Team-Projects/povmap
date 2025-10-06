@@ -35,6 +35,8 @@
 #'Defaults to \code{TRUE}.
 #' @param gammas logical if \code{TRUE}, estimated gamma parameters are output
 #' in a separate worksheet. Defaults to \code{FALSE}.
+#' @param domain_names vector specifies optional vector of domain names to output 
+#' with estimates. Defaults to \code{NULL}
 #' 
 #' @return An Excel file is created in your working directory, or at the given
 #' path. Alternatively multiple ODS files are created at the given path.
@@ -106,7 +108,8 @@ write.excel <- function(object,
                         CV = FALSE,
                         split = FALSE,
                         model = TRUE,
-                        gammas = FALSE) {
+                        gammas = FALSE,
+                        domain_names = NULL) {
 
 
   if (is.null(file) == TRUE) {
@@ -172,14 +175,16 @@ write.excel <- function(object,
       wb = wb,
       headlines_cs = headlines_cs,
       MSE = MSE,
-      CV = CV
+      CV = CV,
+      domain_names = domain_names 
     )
   } else {
     wb <- add_pointests(
       wb = wb,
       object = object,
       indicator = indicator,
-      headlines_cs = headlines_cs
+      headlines_cs = headlines_cs,
+      domain_names = domain_names 
     )
     if (MSE || CV) {
       wb <- add_precisions(
@@ -188,7 +193,8 @@ write.excel <- function(object,
         MSE = MSE,
         wb = wb,
         headlines_cs = headlines_cs,
-        CV = CV
+        CV = CV,
+        domain_names = domain_names 
       )
     }
   }
@@ -986,7 +992,7 @@ add_summary_direct <- function(object, wb, headlines_cs) {
 }
 
 
-add_pointests <- function(object, indicator, wb, headlines_cs) {
+add_pointests <- function(object, indicator, wb, headlines_cs,domain_names=domain_names) {
   addWorksheet(wb, sheetName = "Point Estimators", gridLines = FALSE)
 
   if (is.null(indicator) || !all(indicator == "all" |
@@ -1008,6 +1014,10 @@ add_pointests <- function(object, indicator, wb, headlines_cs) {
 
   data <- point_povmap(object = object, indicator = indicator)$ind
 
+  if (!is.null(domain_names)) {
+    data <- data.frame("Domain_Name" = domain_names,data)
+  }
+  
   writeDataTable(
     x = data,
     sheet = "Point Estimators",
@@ -1097,13 +1107,17 @@ add_precisions <- function(object, indicator, MSE, wb, headlines_cs, CV) {
   return(wb)
 }
 
-add_estims <- function(object, indicator, wb, headlines_cs, MSE, CV) {
+add_estims <- function(object, indicator, wb, headlines_cs, MSE, CV,domain_names) {
   addWorksheet(wb, sheetName = "Estimates", gridLines = FALSE)
   data <- estimators(
     object = object, indicator = indicator,
     MSE = MSE, CV = CV
   )$ind
 
+  if (!is.null(domain_names)) {
+    data <- data.frame("Domain_Name" = domain_names,data)
+  }
+  
   writeDataTable(
     x = data,
     sheet = "Estimates",
@@ -1165,11 +1179,11 @@ add_model <- function(object,  wb) {
 add_model_xgb <- function(object,  wb) {
 
 Xvars <- object$model$feature_names
-Yvar <- object$saeinfo$outcome
+Yvar <- object$framework$outcome
 smp_data <- as.matrix(object$smp_data[,Xvars])  
 abs_shap_values <- as.data.frame(abs(predict(object$model, smp_data, predcontrib = T)))
 abs_shap_values <- abs_shap_values[,-ncol(abs_shap_values)]  
-weights <- estimates$smp_data[,estimates$saeinfo$smp_weights]
+weights <- object$framework$smp_weights 
 
 weighted_mean_shap_values <- as.matrix(apply(abs_shap_values, 2, function(x) weighted.mean(x, w = weights)))
 weighted_mean_shap_values <- weighted_mean_shap_values[order(weighted_mean_shap_values[,1],decreasing=T),]

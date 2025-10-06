@@ -488,8 +488,8 @@ gen_model <- function(fixed,
 aggregate_weighted_mean  <-function(df,by,w) {
   wdf <- cbind(df*w,w)  
   wdf_sum <- aggregate(wdf,by=by, FUN=sum)
-  aggregate_weighted_mean <- cbind(Domain = wdf_sum[,1],wdf_sum[,-1]/wdf_sum$w)
-  #aggregate_weighted_mean <- cbind(Domain = unique(unlist(by)),wdf_sum[,-1]/wdf_sum$w)
+  aggregate_weighted_mean <- data.frame(Domain = wdf_sum[,1],wdf_sum[,-1]/wdf_sum$w)
+  #aggregate_weighted_mean <- data.frame(Domain = unique(sort(unlist(by))),wdf_sum[,-1]/wdf_sum$w)
   aggregate_weighted_mean <-within(aggregate_weighted_mean,rm(w))
   return(aggregate_weighted_mean)
 }
