@@ -22,7 +22,7 @@ direct_variance <- function(direct_estimator,
 
   # Specification for y, is different to the calculation of value
   y <- smp_data[, y]
-  y <- as.numeric(as.integer(y))
+  y <- as.numeric(y)
   n <- length(y)
 
   # needs to be specified here again due to the different specification of y and
@@ -129,7 +129,7 @@ direct_variance <- function(direct_estimator,
       var <- var/(sumwbydomain^2)
     }
     else {
-      var <- rep(NA,length(unique(smp_data$Domain)))
+      var <- rep(NA,length(rs))
     }
     varByDomain <- data.frame(Domain = rs, var = var)
     indicator$varMethod <- paste0("HT_",HTmethod)

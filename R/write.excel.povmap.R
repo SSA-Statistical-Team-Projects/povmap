@@ -193,8 +193,7 @@ write.excel <- function(object,
         MSE = MSE,
         wb = wb,
         headlines_cs = headlines_cs,
-        CV = CV,
-        domain_names = domain_names 
+        CV = CV
       )
     }
   }
@@ -1015,7 +1014,7 @@ add_pointests <- function(object, indicator, wb, headlines_cs,domain_names=domai
   data <- point_povmap(object = object, indicator = indicator)$ind
 
   if (!is.null(domain_names)) {
-    data <- data.frame("Domain_Name" = domain_names,data)
+    data <- data.frame(domain_names,data)
   }
   
   writeDataTable(
@@ -1115,7 +1114,7 @@ add_estims <- function(object, indicator, wb, headlines_cs, MSE, CV,domain_names
   )$ind
 
   if (!is.null(domain_names)) {
-    data <- data.frame("Domain_Name" = domain_names,data)
+    data <- data.frame(domain_names,data)
   }
   
   writeDataTable(

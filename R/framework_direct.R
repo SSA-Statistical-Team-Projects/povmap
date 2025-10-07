@@ -9,7 +9,7 @@ framework_dir <- function(y, smp_data, smp_domains, weights,
     if (!is.null(weights)) {
       indices <- indices & !is.na(smp_data[weights])
     }
-    smp_data <- smp_data[indices, ]
+    smp_data <- smp_data[as.vector(indices), ]
   } else if (any(is.na(smp_data[y]))) {
     warning(strwrap(prefix = " ", initial = "",
                     "There are NA-Values in the target variable and na.rm is
