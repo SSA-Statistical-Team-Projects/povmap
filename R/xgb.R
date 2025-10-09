@@ -32,6 +32,8 @@
 #' types for the dependent variable can be chosen (i) no transformation ("no");
 #' (ii) log transformation ("log"); (iii) Arcsin transformation ("arcsin").
 #' Defaults to \code{"no"}.
+#' @param bootstrap If TRUE, implements bootstrap procedure to estimate variance. 
+#' Defaults to TRUE. 
 #' @param B a number determining the number of bootstrap populations in the
 #' nonparametric residual bootstrap approach used in the MSE estimation. The
 #' number must be greater than 1. Defaults to 1000. For practical applications,
@@ -142,6 +144,7 @@ xgb <- function(fixed,
                 domains,
                 sub_domains,
                 transformation = "no",
+                bootstrap = T, 
                 B = 1000,
                 conf_level = 0.95,
                 # use MORE CONSERVATIVE XGBoost defaults (https://xgboost.readthedocs.io/en/stable/parameter.html)
@@ -202,7 +205,7 @@ xgb <- function(fixed,
   X_smp_xgb <- fwk$X_smp
   X_smp_xgb[,c(paste0(domains),paste0(sub_domains))] <- list(NULL)
   X_pop_xgb <- fwk$X_pop
-  X_pop_xgb[,c(paste0(domains),paste0(sub_domains))] <- list(NULL)
+  X_pop_xgb[,c(paste0(domains),paste0(sub_domains),paste0(pop_weights))] <- list(NULL)
 
 
     
@@ -308,8 +311,10 @@ xgb <- function(fixed,
 
   B_sub <- sub_pred  
   B_sub <- B_sub[order(B_sub$sub_domains), ]
+  results <- domains_pred[, c("domains", "hat")]
   
   
+if (bootstrap==T) {  
 cat("Beginning bootstrap \n")
   for (j in 1:B){
     if (j %% 100==0) {
@@ -355,7 +360,7 @@ cat("Beginning bootstrap \n")
   #_____________________________________________________________________________
   #sorted_results <- domains_pred[order(domains_pred$domains), ]
   #results <- sorted_results[, c("domains", "hat")]
-  results <- domains_pred[, c("domains", "hat")]
+
   
   
   results$lower <- NA
@@ -391,15 +396,17 @@ cat("Beginning bootstrap \n")
     
     
   }
+
+
+    
   colnames(results) <- c("Domain", "Mean", "Lower", "Upper", "var")
-  #sub_domains_direct <- sub_domains_direct[order(sub_domains_direct$sub_domains),]
   
   result <- list(
-    ind = data.frame(cbind(Domains = results["Domain"], Mean = results["Mean"])),
-    var = data.frame(cbind(Domains = results["Domain"], Mean = results$var)),
-    CI  = data.frame(cbind(Domains = results["Domain"],
-                           LowerCI = results["Lower"],
-                           UpperCI = results["Upper"])),
+    ind = data.frame(Domain = results[Domain], Mean = results["Mean"]),
+    var = data.frame(Domain = results[Domain], var = results["var"]),
+    CI  = data.frame(Domain = results[Domain],
+                           LowerCI = results[Lower],
+                           UpperCI = results[Upper]),
     yhat=data.frame(sub_domains_direct[,c("sub_domains","hat")]),
     model = xgb_fit, 
     smp_data =  smp_data, 
@@ -407,6 +414,23 @@ cat("Beginning bootstrap \n")
     transformation = transformation, 
     framework = fwk
   )
+  }
+  else {
+    # Bootstrap not selected 
+    result <- list(
+    ind = data.frame(Domain = domains_pred[,"domains"], Mean = domains_pred[,"hat"]),
+    yhat=data.frame(sub_domains_direct[,c("sub_domains","hat")]),
+    model = xgb_fit, 
+    smp_data =  smp_data, 
+    out_call = out_call, 
+    transformation = transformation, 
+    framework = fwk
+    ) 
+  }
+    
+  
+  
+  
   class(result) <- c("xgb","povmap")
   return(result)
 
