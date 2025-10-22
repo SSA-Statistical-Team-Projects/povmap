@@ -97,10 +97,10 @@
 #' Vol.71, No. 5, 1865–1894.\cr \cr
 #' Merfeld, J. D., Dang, H., & Newhouse, D. (2025). Improving Estimates of Mean Welfare and Uncertainty
 #' in Developing Countries (No. 10348). The World Bank.
-#' @export
 #' @importFrom xgboost xgboost 
 #' @importFrom purrr as_vector
 #' @importFrom collapse fmean 
+#' @export
 #' @examples
 #' \donttest{
 #' # Loading data - population and sample data
