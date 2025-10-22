@@ -401,11 +401,11 @@ cat("Beginning bootstrap \n")
   colnames(results) <- c("Domain", "Mean", "Lower", "Upper", "var")
   
   result <- list(
-    ind = data.frame(Domain = results[Domain], Mean = results["Mean"]),
-    var = data.frame(Domain = results[Domain], var = results["var"]),
-    CI  = data.frame(Domain = results[Domain],
-                           LowerCI = results[Lower],
-                           UpperCI = results[Upper]),
+    ind = data.frame(Domain = results["Domain"], Mean = results["Mean"]),
+    var = data.frame(Domain = results["Domain"], var = results["var"]),
+    CI  = data.frame(Domain = results["Domain"],
+                           LowerCI = results["Lower"],
+                           UpperCI = results["Upper"]),
     yhat=data.frame(sub_domains_direct[,c("sub_domains","hat")]),
     model = xgb_fit, 
     smp_data =  smp_data, 
