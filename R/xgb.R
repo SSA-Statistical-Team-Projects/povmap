@@ -210,7 +210,7 @@ xgb <- function(fixed,
 
     
   set.seed(seed)
-  xgb_fit <- xgboost:::xgboost(
+  xgb_fit <- xgboost::xgboost(
     data = as.matrix(X_smp_xgb),
     label = sub_domains_direct$outcome,
     weight = (fwk$smp_weights/mean(fwk$smp_weights)),
