@@ -72,9 +72,15 @@ summary.xgb <- function(object, ...) {
   y <- na.omit(merge(x=y,y=object$yhat,all.x=T,by="sub_domains"))
   r_squared <- cor(y[,object$framework$outcome],y$hat)^2
   domains <- y[,object$framework$domains]
+  if (is.character(domains)==T) {
+    domains <- strsplit(domains," ")
+  }
+  else {
+    domains <- list(domains)
+  }
   smp_weight <- y[,object$framework$smp_weights_var]
   if (!is.null(object$framework$smp_weights)) {
-  y_area <- aggregate_weighted_mean(df=y[,object$framework$outcome],by=list(domains),w=smp_weight)
+  y_area <- aggregate_weighted_mean(df=y[,object$framework$outcome],by=domains,w=smp_weight)
   }
   else {
     y_area <- aggregate(x=y[,object$framework$outcome],by=list(domains),FUN=mean)
