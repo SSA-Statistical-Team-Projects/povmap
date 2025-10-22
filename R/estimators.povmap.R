@@ -130,36 +130,25 @@ estimators.povmap <- function(object, indicator = "all", MSE = FALSE, var= FALSE
     )
     
     if (inherits(object, "ell") | (inherits(object, "xgb"))) {
-      suffix <- "_Var"
+    suffix <- "_Var"
     }
     else {
-       suffix <- "_MSE"
-    }
-    colnames(all_precisions$ind_cv) <- colnames(all_precisions$ind)
-    colnames(all_precisions$ind) <- paste0(colnames(all_precisions$ind), suffix)
-    colnames(all_precisions$ind_cv) <- paste0(
-      colnames(all_precisions$ind_cv),
-      "_CV"
-    )
-
-    combined <- data.frame(
-      all_ind$ind, all_precisions$ind,
-      all_precisions$ind_cv
-    )
-    endings <- c("", suffix, "_CV")[c(TRUE, (MSE | var), CV)]
-
-    combined <- combined[, c("Domain", paste0(rep(selected,
-      each =
-        length(endings)
-    ), endings))]
+        suffix <- "_MSE"
+     }
+    colnames(all_precisions$ind_cv) <- c("Domain",paste0(selected,"CV"))
+    colnames(all_precisions$ind_cv) <- c("Domain",paste0(selected,"_CV"))
+    colnames(all_precisions$ind) <- c("Domain",paste0(selected,suffix))
+    
+    combined <- data.frame(all_ind$ind, all_precisions$ind[,-1], 
+                           all_precisions$ind_cv[,-1])
+    colnames(combined) <- c(colnames(all_ind$ind),colnames(all_precisions$ind)[-1],
+                            colnames(all_precisions$ind_cv)[-1])
   } else {
     combined <- all_ind$ind
   }
 
   estimators_povmap <- list(ind = combined, ind_name = all_ind$ind_name)
-
   class(estimators_povmap) <- "estimators.povmap"
-
   return(estimators_povmap)
 }
 
