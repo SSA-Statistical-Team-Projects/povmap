@@ -51,7 +51,7 @@ Imports:
     UPSvarApprox,
     pracma,
     lmeInfo,
-	xgboost,
+    xgboost,
     viridis
 Suggests:
     testthat,

@@ -97,7 +97,6 @@
 #' Vol.71, No. 5, 1865–1894.\cr \cr
 #' Merfeld, J. D., Dang, H., & Newhouse, D. (2025). Improving Estimates of Mean Welfare and Uncertainty
 #' in Developing Countries (No. 10348). The World Bank.
-#' @importFrom xgboost xgboost xgb.train
 #' @importFrom purrr as_vector
 #' @importFrom collapse fmean 
 #' @export
@@ -210,7 +209,7 @@ xgb <- function(fixed,
 
     
   set.seed(seed)
-  xgb_fit <- xgboost(
+  xgb_fit <- xgboost::xgboost(
     data = as.matrix(X_smp_xgb),
     label = sub_domains_direct$outcome,
     weight = (fwk$smp_weights/mean(fwk$smp_weights)),
