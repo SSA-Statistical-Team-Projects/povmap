@@ -1,4 +1,4 @@
-Package: povmap
+﻿Package: povmap
 Title: Extension to the 'emdi' Package
 Version: 1.0.0
 Date: 2023-08-21
@@ -51,7 +51,8 @@ Imports:
     UPSvarApprox,
     pracma,
     lmeInfo,
-    viridis
+    viridis,
+    xgboost	
 Suggests:
     testthat,
     R.rsp,
