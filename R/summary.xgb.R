@@ -83,7 +83,7 @@ summary.xgb <- function(object, ...) {
   y_area <- aggregate_weighted_mean(df=y[,object$framework$outcome],by=domains,w=smp_weight)
   }
   else {
-    y_area <- aggregate(x=y[,object$framework$outcome],by=list(domains),FUN=mean)
+    y_area <- aggregate(x=y[,object$framework$outcome],by=domains,FUN=mean)
   }
   y_area <- merge(x = y_area, y = object$ind, by = "Domain", all.x = TRUE)
   area_r_squared <- cor(y_area$Mean,y_area$V1)^2
