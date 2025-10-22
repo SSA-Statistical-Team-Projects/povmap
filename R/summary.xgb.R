@@ -79,7 +79,7 @@ summary.xgb <- function(object, ...) {
     domains <- list(domains)
   }
   smp_weight <- y[,object$framework$smp_weights_var]
-  if (!is.null(object$framework$smp_weights)) {
+  if (!is.null(object$framework$smp_weights_var)) {
   y_area <- aggregate_weighted_mean(df=y[,object$framework$outcome],by=domains,w=smp_weight)
   }
   else {
