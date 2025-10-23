@@ -5,7 +5,7 @@
 
 cap program drop Rpovmap
 program define Rpovmap 
-syntax namelist, smp_data(string) pop_data(string) smp_domains(string) pop_domains(string) [pop_subdomains(string) smp_subdomains(string) weights(string) WEIGHTS_Type(string) pop_weights(string) mse_pop_weights(string) threshold(string)  l(int 50) b(int 100) mse(string) transformation(string) interval(string) na_rm(string) cpus(int 1) seed(int 123) savexls(string) saveobject(string) interval(string) benchmark(string) aggregate_to(string) weights_type(string) benchmark_level(string) benchmark_type(string) benchmark_weights(string) rescale_weights(string) nlme_maxiter(int 1000) nlme_tolerance(real 1e-06) nlme_opt(string) boot_type(string) ydump(string) model_parameters(string) data_table(string) indicators(string)] 
+syntax namelist, smp_data(string) pop_data(string) smp_domains(string) pop_domains(string) [pop_subdomains(string) smp_subdomains(string) weights(string) WEIGHTS_Type(string) pop_weights(string) mse_pop_weights(string) threshold(string)  l(int 50) b(int 100) mse(string) transformation(string) interval(string) na_rm(string) cpus(int 1) seed(int 123) savexls(string) saveobject(string) interval(string) benchmark(string) aggregate_to(string) weights_type(string) benchmark_level(string) benchmark_type(string) benchmark_weights(string) rescale_weights(string) nlme_maxiter(int 1000) nlme_tolerance(real 1e-06) nlme_opt(string) boot_type(string) ydump(string) model_parameters(string) data_table(string) indicators(string) rpath(passthru)] 
 
 
 
@@ -238,7 +238,7 @@ file write Rscript `"save(ebp_results,file="`saveobject'")"' _n
 file write Rscript `"write.excel(ebp_results, file = "`savexls'", indicator = "all", MSE = `mse', CV = `mse', split = FALSE,model=TRUE)"' _n          
 file close Rscript 
 
-rscript using povmap.R, require(povmap haven)
+rscript using povmap.R, require(povmap haven) `rpath'
 
 end 
  

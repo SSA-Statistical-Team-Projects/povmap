@@ -52,6 +52,9 @@
 {synopt:{opt rescale_weights(string)}}  A logical indicating if the weights in the sample data are scaled. If FALSE (default), the sample weights do not change. When TRUE, the sample weights are rescaled such that the average weight is 1 within each target domain. {p_end}
 {synopt:{opt saveobject(string)}}  A string specifying the file name in which to save the emdi object created by the povmap ebp function. {p_end}
 {synopt:{opt savexls(string)}}  A string indicating the file name in which to save the small area estimates. Either savexls or saveobject must be specified by the user {p_end}
+{synopt:{opt rpath(string)}}  specifies the location of the R executable.  If not specified, the rscript command will search for the R executable on its own.
+ {p_end}
+
 
 
 {title:Description}
