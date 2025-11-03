@@ -167,8 +167,7 @@ xgb <- function(fixed,
                 ...){
 
   out_call <- match.call()
-  set.seed(seed)
-
+  
 
   
   
@@ -191,8 +190,9 @@ xgb <- function(fixed,
   # Subdomains
   sub_domains_direct <- data.frame(fwk$Y_smp,
                                          fwk$X_smp[sub_domains],
-                                         (fwk$X_smp[domains]))
-  colnames(sub_domains_direct) <- c("outcome", "sub_domains", "domains")
+                                         fwk$X_smp[domains],
+                                         fwk$smp_weights)
+  colnames(sub_domains_direct) <- c("outcome", "sub_domains", "domains","smp_weights")
   #sub_domains_direct$domains <- as.character(sub_domains_direct$domains)
   #sub_domains_direct$sub_domains <- as.character(sub_domains_direct$sub_domains)
   
@@ -203,11 +203,9 @@ xgb <- function(fixed,
 
   X_smp_xgb <- fwk$X_smp
   X_smp_xgb[,c(paste0(domains),paste0(sub_domains))] <- list(NULL)
-  X_pop_xgb <- fwk$X_pop
-  X_pop_xgb[,c(paste0(domains),paste0(sub_domains),paste0(pop_weights))] <- list(NULL)
-
-
-    
+  #We only want the predictors 
+  X_pop_xgb <- fwk$X_pop[,fwk$covariates]
+  
   set.seed(seed)
   xgb_fit <- xgboost::xgboost(
     data = as.matrix(X_smp_xgb),
@@ -260,7 +258,7 @@ xgb <- function(fixed,
   resid_sub_domains <- sub_domains_direct$outcome - as.numeric(sub_domains_direct$hat)
 
   #sub_domains_direct <- sub_domains_direct[order(sub_domains_direct$sub_domains),]
-   
+
   domains_pred <- aggregate_weighted_mean(df=sub_pred$hat,by=list(sub_pred$domains),w=sub_pred$wts) 
   # add sum of weights to domain-level predictions df
   wts <- aggregate(x=sub_pred$wts,by=list(sub_pred$domains),FUN = sum)
@@ -298,8 +296,8 @@ xgb <- function(fixed,
   
   # Sample with probability proportional to sample weight if weightsBS = TRUE
   if (weightedBS==T & !is.null(smp_weights)) {
-    pop_subarea_d <- sub_domains_direct$wts/sum(sub_domains_direct$wts)  
-    domain_wts <- aggregate(sub_domains_direct$wts,by=list(sub_domains_direct$domains),FUN=sum)$x
+    pop_subarea_d <- sub_domains_direct$smp_weights/sum(sub_domains_direct$smp_weights)  
+    domain_wts <- aggregate(sub_domains_direct$smp_weights,by=list(sub_domains_direct$domains),FUN=sum)$x
     pop_area_d <- domain_wts/sum(domain_wts)
   }
   # Otherwise sample each subarea and area with fixed proobability 

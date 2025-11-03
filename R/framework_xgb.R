@@ -44,7 +44,12 @@ framework_xgb <-function(fixed,
   # Extracting relevant subsets of data
   X_smp <- smp_data[, c(covariates,domains,sub_domains)]
   Y_smp <- smp_data[, outcome]
-  X_pop <- pop_data[, c(covariates,domains,sub_domains,pop_weights)]
+  #X_pop <- pop_data[, c(covariates,domains,sub_domains,pop_weights)]
+  X_pop <- pop_data[, c(covariates,domains,sub_domains)]
+  # add pop weights if they are not already in thecovariates 
+  if (!pop_weights %in% covariates) {
+    X_pop <- data.frame(X_pop,pop_weights)
+  }
   
   # Handling sample and population weights
     smp_weights_name <- smp_weights 
@@ -122,6 +127,7 @@ framework_xgb <-function(fixed,
               sub_domains = sub_domains,
               outcome=outcome, 
               smp_weights = smp_weights,
-              smp_weights_var = smp_weights_name
+              smp_weights_var = smp_weights_name,
+              covariates = covariates 
               ))
 }
