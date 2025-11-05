@@ -5,7 +5,6 @@
 # between in-sample and out-of-sample
 # see Molina and Rao (2003) p.370-371
 
-
 framework_ebp <- function(fixed, pop_data, pop_domains, pop_subdomains, smp_data, smp_domains,
                           smp_subdomains, threshold, custom_indicator = NULL, na.rm,
                           aggregate_to = NULL, weights, pop_weights, 

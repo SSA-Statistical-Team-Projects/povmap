@@ -7,6 +7,8 @@ framework_xgb <-function(fixed,
                          transformation,
                          conf_level,
                          sub_domains,
+                         benchmark_level, 
+                         benchmark_weights, 
                          na.rm) {
 
   # Data preparation
@@ -43,6 +45,18 @@ framework_xgb <-function(fixed,
 
   # Extracting relevant subsets of data
   X_smp <- smp_data[, c(covariates,domains,sub_domains)]
+  
+  if (!is.null(smp_weights) && benchmark_weights==smp_weights) {
+     X_smp <- cbind(X_smp,smp_data[,benchmark_level])
+  }
+  else {
+     X_smp <- cbind(X_smp,smp_data[,c(benchmark_level,benchmark_weights)])
+  }
+    
+  
+  
+  
+  
   Y_smp <- smp_data[, outcome]
   #X_pop <- pop_data[, c(covariates,domains,sub_domains,pop_weights)]
   X_pop <- pop_data[, c(covariates,domains,sub_domains)]
@@ -86,7 +100,7 @@ framework_xgb <-function(fixed,
     sub_domains = sub_domains
     outcome = outcome
     smp_weights_name = smp_weights_name 
-  
+    pop_domains_vec <- pop_data[[domains]]
 
   # Check
   xgb_check1(
@@ -114,8 +128,10 @@ framework_xgb <-function(fixed,
   return(list(Y_smp = Y_smp,
               X_smp = X_smp,
               X_pop = X_pop,
-              smp_weights = smp_weights,
-              pop_weights = pop_weights,
+              smp_data = smp_data, 
+              pop_data = pop_data, 
+              smp_weights_vec = smp_weights,
+              pop_weights_vec = pop_weights,
               N_smp = N_smp, 
               N_pop = N_pop, 
               domains_out = domains_out, 
@@ -126,8 +142,11 @@ framework_xgb <-function(fixed,
               domains = domains, 
               sub_domains = sub_domains,
               outcome=outcome, 
-              smp_weights = smp_weights,
-              smp_weights_var = smp_weights_name,
-              covariates = covariates 
+              smp_weights = smp_weights_name,
+              pop_weights = pop_weights_name, 
+              covariates = covariates,
+              benchmark_weights = benchmark_weights, 
+              smp_domains = domains, 
+              pop_domains_vec = pop_domains_vec 
               ))
 }

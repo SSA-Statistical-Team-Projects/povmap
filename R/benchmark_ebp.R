@@ -85,7 +85,7 @@ benchmark_ebp_national <- function (point_estim, framework, fixed, benchmark,
       phi <- share / estim[[i]]
       EBP_bench[[i]] <- estim[[i]] + (1 / (sum(share^2 / phi))) *
         (benchmark[[i]] - sum(share * estim[[i]])) * (share / phi)
-    } else if (benchmark_type == "ratio_complement" && i == "Head_Count") {
+    } else if (benchmark_type == "ratio_complement") {
       estim_complement[[i]] <- 1-estim[[i]]
       benchmark_complement[[i]] <-1-benchmark[[i]]
       EBP_bench_complement[[i]] <- estim[[i]] + (1 / (sum(share^2 / phi))) *
@@ -113,12 +113,15 @@ benchmark_ebp_national <- function (point_estim, framework, fixed, benchmark,
 benchmark_ebp_level <- function (point_estim, framework, fixed, benchmark,
                                  benchmark_type, benchmark_level) {
 
+  
+  benchmark_ <- data.frame(unique(framework$pop_data[[benchmark_level]]),
+                           as.data.frame(matrix(nrow=length(unique(framework$pop_data[[benchmark_level]])),ncol=length(benchmark))))
+  
+  names(benchmark_) <- c(benchmark_level, benchmark)
+  
+  
   if (!(is.numeric(benchmark) || is.data.frame(benchmark))) {
-    benchmark_ <- data.frame(unique(framework$pop_data[[benchmark_level]]),
-                             as.data.frame(matrix(nrow=length(unique(framework$pop_data[[benchmark_level]])),ncol=length(benchmark))))
-
-    names(benchmark_) <- c(benchmark_level, benchmark)
-
+    
     if (is.list(point_estim)) {# for point_estimation.R
 
       estim <- as.list(point_estim$ind[benchmark])
@@ -151,6 +154,7 @@ benchmark_ebp_level <- function (point_estim, framework, fixed, benchmark,
 
     } else {# for mse_estimation.R
       estim <- as.list(as.data.frame(point_estim)[benchmark])
+      
       for (i in benchmark) {# MSE - no weights in bootstrap sample
         for (j in benchmark_[[benchmark_level]]) {
           if (i == "Mean") {
@@ -240,7 +244,7 @@ benchmark_ebp_level <- function (point_estim, framework, fixed, benchmark,
         EBP_bench[[i]][estim_levels_num] <- estim[[i]][estim_levels_num]*
           (benchmark[[i]][benchmark[[benchmark_level]] == j]/
              sum(share * estim[[i]][estim_levels_num]))
-      } else if (benchmark_type == "ratio_complement" && i == "Head_Count") {
+      } else if (benchmark_type == "ratio_complement") {
         EBP_bench[[i]][estim_levels_num] <- 1-((1-estim[[i]][estim_levels_num])*
           (1-benchmark[[i]][benchmark[[benchmark_level]] == j])/
              sum(share * (1-estim[[i]][estim_levels_num])))

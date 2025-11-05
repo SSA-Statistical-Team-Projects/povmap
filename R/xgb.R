@@ -80,6 +80,33 @@
 #' @param seed an integer to set the seed for the random number generator, see Details.
 #' #' Defaults to 123
 #' @param ydump if not null, specifies a file name to save XGboost predictions. Defaults to NULL. 
+#' @param benchmark The input depends on the type of benchmarking to be 
+#' performed.
+#' (i) Benchmarking with a fixed value:
+#' (a) with one value for each indicator: a named vector containing the numeric
+#' benchmark value(s). The names of the vector matchs to the chosen indicators.
+#' Benchmarking is available for \code{"Mean"} and \code{"Head_Count"}.
+#' (b) with values for the sub-level specified in the argument
+#' @param benchmark_level: a data.frame composed of a variable of class
+#' character containing the domain names at which the benchmarking is
+#' performed and variable(s) with benchmark value(s) of class numeric.
+#' Benchmarking is supplied for the Mean and the Head_Count ratio. Therefore,
+#' the names of the data.frame must match for the first variable the
+#' benchmark_level and for the other(s) to Mean and Head_Count.
+#' (ii) Benchmarking with the survey data: a vector containing the names of the
+#' chosen indicators. In this case, survey weights (\code{weights}) are needed.
+#' Benchmarking is available for \code{"Mean"} and \code{"Head_Count"}.
+#' @param benchmark_type a character indicating the type of benchmarking. Types
+#' that can be chosen (i) Raking ("\code{raking}"), (ii) Ratio adjustment
+#' ("\code{ratio}"), and ratio adjustment of the complement
+#' ("\code{ratio_complement}". Defaults to "\code{ratio}"
+#' @param benchmark_level a character indicating the level at which the
+#' benchmarking is performed. This name must be represented in the sample and
+#' population data as a variable name.
+#' @param benchmark_weights the name of variable containing benchmark weights.
+#' This is only possible for internal benchmarking and enable users to benchmark
+#' with weights differing from the survey weights (Default for weighting for
+#' internal benchmarking).
 #' @param weightedBS. If TRUE and smp_weights is specified, gives each area and subarea weight proportional to 
 #' their sample weight when implementing the cluster residual bootstrap. If FALSE, gives each area and subarea 
 #' equal weight. Defaults to TRUE.
@@ -161,6 +188,10 @@ xgb <- function(fixed,
                 alpha = 0,
                 na.rm = FALSE,
                 seed = 123,
+                benchmark = NULL,
+                benchmark_type = "ratio",
+                benchmark_level = NULL,
+                benchmark_weights = NULL,
                 ydump = NULL,
                 weightedBS = T, 
                 center_residuals = F, 
@@ -168,7 +199,9 @@ xgb <- function(fixed,
 
   out_call <- match.call()
   
-
+  if (is.null(benchmark_weights) & !is.null(smp_weights)) {
+    benchmark_weights <- smp_weights
+  }
   
   
   
@@ -183,7 +216,9 @@ xgb <- function(fixed,
                        transformation = transformation,
                        conf_level = conf_level,
                        sub_domains = sub_domains,
-                       na.rm = na.rm)
+                       na.rm = na.rm,
+                       benchmark_level = benchmark_level,
+                       benchmark_weights = benchmark_weights)
 
   # Direct estimates
   #_____________________________________________________________________________
@@ -191,7 +226,7 @@ xgb <- function(fixed,
   sub_domains_direct <- data.frame(fwk$Y_smp,
                                          fwk$X_smp[sub_domains],
                                          fwk$X_smp[domains],
-                                         fwk$smp_weights)
+                                         fwk$smp_weights_vec)
   colnames(sub_domains_direct) <- c("outcome", "sub_domains", "domains","smp_weights")
   #sub_domains_direct$domains <- as.character(sub_domains_direct$domains)
   #sub_domains_direct$sub_domains <- as.character(sub_domains_direct$sub_domains)
@@ -201,8 +236,9 @@ xgb <- function(fixed,
   # Estimate XGBoost
   
 
-  X_smp_xgb <- fwk$X_smp
-  X_smp_xgb[,c(paste0(domains),paste0(sub_domains))] <- list(NULL)
+  X_smp_xgb <- fwk$X_smp[c(fwk$covariates)]
+  #X_smp_xgb[,c(paste0(domains),paste0(sub_domains))] <- list(NULL)
+  
   #We only want the predictors 
   X_pop_xgb <- fwk$X_pop[,fwk$covariates]
   
@@ -210,7 +246,7 @@ xgb <- function(fixed,
   xgb_fit <- xgboost::xgboost(
     data = as.matrix(X_smp_xgb),
     label = sub_domains_direct$outcome,
-    weight = (fwk$smp_weights/mean(fwk$smp_weights)),
+    weight = (fwk$smp_weights_vec/mean(fwk$smp_weights_vec)),
     nrounds = nrounds,
     max_depth = max_depth, 
     colsample_bytree = colsample_bytree, colsample_bylevel = colsample_bylevel, 
@@ -246,6 +282,10 @@ xgb <- function(fixed,
 
   
   
+  
+  
+  
+  
 
   # Residuals
   #_____________________________________________________________________________
@@ -255,7 +295,7 @@ xgb <- function(fixed,
   sub_domains_direct <- sub_domains_direct[order(sub_domains_direct$sub_domains),]
   
   
-  resid_sub_domains <- sub_domains_direct$outcome - as.numeric(sub_domains_direct$hat)
+  
 
   #sub_domains_direct <- sub_domains_direct[order(sub_domains_direct$sub_domains),]
 
@@ -266,22 +306,51 @@ xgb <- function(fixed,
   domains_pred <- data.frame(domains_pred,wts$x)
   colnames(domains_pred) <- c("domains","hat","weight")
   
-  # Domains
+  # Get direct estimates at domain level 
   domains_direct <- data.frame(fwk$Y_smp,
-                               fwk$smp_weights,
+                               fwk$smp_weights_vec,
                                fwk$X_smp[paste0(domains)])
   colnames(domains_direct) <- c("outcome", "wts", "domains")
   domains_direct <- aggregate_weighted_mean(df=domains_direct$outcome,by=list(domains_direct$domains),w=domains_direct$wts)
   colnames(domains_direct) <- c("domains","outcome")
   
-  
+  # benchmarking exercise to obtain modified residuals for bootstrap (benchmarking of points estimates occurs at end of function below)
+  #domains_pred$hat_bench <- domains_pred$hat 
+  #sub_domains_direct$hat_bench <- sub_domains_direct$hat 
+  # if (!is.null(benchmark)) {
+  #   point_estim <- NULL
+  #   point_estim$ind <- data.frame(Mean = domains_pred$hat)
+  #   if (is.null(benchmark_level)) {
+  #     point_estim$ind <- benchmark_ebp_national(
+  #       point_estim = point_estim,
+  #       framework = fwk,
+  #       fixed = fixed,
+  #       benchmark = benchmark,
+  #       benchmark_type = benchmark_type)
+  #   } else {
+  #     point_estim$ind <- benchmark_ebp_level(
+  #       point_estim = point_estim,
+  #       framework = fwk,
+  #       fixed = fixed,
+  #       benchmark = benchmark,
+  #       benchmark_type = benchmark_type,
+  #       benchmark_level = benchmark_level)
+  #   }
+  #   domains_pred$hat_bench <- point_estim$ind$Mean_bench
+  #   }
+  # adjust sample sub_domain predictions according to benchmark ratios  
+  #benchmark_factors <- data.frame(domains = domains_pred$domains,benchmark_factor = domains_pred$hat_bench/domains_pred$hat)
+  # benchmark_factor is a vector of ones when benchmarking not selected 
+  #sub_domains_direct <- merge(sub_domains_direct,benchmark_factors,by="domains",all.X=T )
+  resid_sub_domains <- (sub_domains_direct$outcome - as.numeric(sub_domains_direct$hat)) 
   
   
   # merge direct estimates at area level with predictions while maintaining sort order
   domains_direct <- merge(x=domains_direct,y=domains_pred,by="domains",all.x=T)
-    
+  #domains_direct <- merge(x=domains_direct,y=benchmark_factors,by="domains",all.x=T)
+
   # calculate domain residuals 
-    resid_domains <- domains_direct$outcome - domains_direct$hat
+    resid_domains <- (domains_direct$outcome - domains_direct$hat) 
 
 
   
@@ -292,6 +361,7 @@ xgb <- function(fixed,
   # Bootstrap
   #_____________________________________________________________________________
   B_results <- matrix(data = NA, nrow = B, ncol = nrow(domains_pred))
+  B_results_bench <- matrix(data = NA, nrow = B, ncol = nrow(domains_pred))
   colnames(B_results) <- unique(sub_pred$domains)
   
   # Sample with probability proportional to sample weight if weightsBS = TRUE
@@ -299,13 +369,11 @@ xgb <- function(fixed,
     pop_subarea_d <- sub_domains_direct$smp_weights/sum(sub_domains_direct$smp_weights)  
     domain_wts <- aggregate(sub_domains_direct$smp_weights,by=list(sub_domains_direct$domains),FUN=sum)$x
     pop_area_d <- domain_wts/sum(domain_wts)
-  }
-  # Otherwise sample each subarea and area with fixed proobability 
-  else {
+  } else {
+    # Otherwise sample each subarea and area with fixed proobability 
     pop_subarea_d <- rep(1/length(resid_sub_domains),length(resid_sub_domains))
     pop_area_d <- rep(1/length(resid_domains),length(resid_domains))
   }
-
   B_sub <- sub_pred  
   B_sub <- B_sub[order(B_sub$sub_domains), ]
   results <- domains_pred[, c("domains", "hat")]
@@ -331,42 +399,65 @@ cat("Beginning bootstrap \n")
     B_domains <- collapse:::fmean(x=B_sub$sim,g=B_sub$domains,w=B_sub$wts)
     B_domains <- data.frame("domains" = names(B_domains),"sim" = B_domains)
                  
-    
+    area_draws <- data.frame(domains=B_domains$domains,area_draw=resid_domains[sample(1:length(resid_domains),
+                                                                                      nrow(B_domains), prob=pop_area_d, 
+                                                                                      replace = TRUE)]
+    )
     # randomly sample residuals USING THE WEIGHTS CALCULATED ABOVE if weighted_BS==TRUE
-    B_domains$sim <- B_domains$sim + resid_domains[sample(1:length(resid_domains),
-                                                                                 nrow(B_domains), prob=pop_area_d, 
-                                                                                 replace = TRUE)]
+    B_domains$sim <- B_domains$sim +area_draws$area_draw     
     
-    #grouped_domains3 <- split(B_sub$hat, B_sub$domains)
-    #weighted_means3 <- sapply(grouped_domains3, function(group) {
-    #  stats::weighted.mean(as.numeric(group),
-    #                       wts = as.numeric(B_sub$wts[B_sub$domains == names(group)]))
-    #})
-    #B_domains <- data.frame(
-    #  domains = names(weighted_means3),
-    #  hat = weighted_means3,
-    #  row.names = NULL
-    #)
-    #B_domains <- B_domains %>%
-      #dplyr::arrange(domains)
-
+    
+    if (!is.null(benchmark)) {
+      B_sub[,sub_domains] <- B_sub$sub_domains
+    B_sample <- merge(smp_data,B_sub,by=sub_domains,all.x=T)[,c(sub_domains,"sim","domains",benchmark_level,benchmark_weights,fwk$smp_weights)]
+    B_sample_d <- collapse:::fmean(B_sample$sim,g=B_sample$domains,w=B_sample$wts)
+    B_sample_d <- data.frame("domains" = names(B_sample_d),"sim" = B_sample_d)
+    B_sample_d <- data.frame(B_sample_d, collapse:::ffirst(B_sample[,benchmark_level],g=B_sample$domains))
+    colnames(B_sample_d)[3] <- benchmark_level 
+    
+    # join with area_draws 
+    B_sample_d <- merge(B_sample_d, area_draws,by="domains",all.X=T)
+    B_sample_d$sim=B_sample_d$sim+B_sample_d$area_draw
+    
+    bm <- collapse:::fmean(B_sample_d$sim,g=B_sample_d[,benchmark_level],w=B_sample_d$fwk$smp_weights)
+    bm <- data.frame("state_" = names(bm),"Mean" = bm)
+    point_estim <- NULL
+    point_estim$ind <- data.frame("Mean" = B_domains$sim)
+    if (is.null(benchmark_level)) {
+          point_estim$ind <- benchmark_ebp_national(
+            point_estim = point_estim,
+            framework = fwk,
+            fixed = fixed,
+            benchmark = "Mean",
+            benchmark_type = benchmark_type)
+        } else {
+          point_estim$ind <- benchmark_ebp_level(
+            point_estim = point_estim,
+            framework = fwk,
+            fixed = fixed,
+            benchmark = bm,
+            benchmark_type = benchmark_type,
+            benchmark_level = "state_")
+        }
+    B_results_bench[j,] <- purrr::as_vector(point_estim$ind$Mean_bench)
+    } # close benchmarking loop for bootstrap 
+    
+    
+    
     B_results[j,] <- purrr::as_vector(B_domains$sim)
-  }
-
+} # close bootstrap loop 
   # Prepare results
   #_____________________________________________________________________________
-  #sorted_results <- domains_pred[order(domains_pred$domains), ]
-  #results <- sorted_results[, c("domains", "hat")]
 
-  
-  
   results$lower <- NA
   results$upper <- NA
   results$var <- NA
-
+  results$var_bench <- NULL 
+  
   for (l in 1:nrow(results)){
 
     temp <- B_results[,l]
+   
     if (center_residuals==T) {
             temp <- temp + domains_pred$hat[l] - mean(temp) 
     }
@@ -381,26 +472,27 @@ cat("Beginning bootstrap \n")
     if (transformation=="log"){
       temp <- exp(temp)
     }
-
-
-    
-    
-    
+        
     results$hat[l] <- mean(temp)
     results$lower[l] <- quantile(temp, probs = (1-conf_level)/2)
     results$upper[l] <- quantile(temp, probs = 1-(1-conf_level)/2)
     results$var[l] <- var(temp)
-    
+    if (!is.null(benchmark)) {
+      temp_bench <- B_results_bench[,l]
+      results$var_bench[l] <- var(temp_bench)
+    }
     
   }
 
-
-    
   colnames(results) <- c("Domain", "Mean", "Lower", "Upper", "var")
+  if (!is.null(benchmark)) {
+  colnames(results)[6] <- c("var_bench")
+    }
   
+
   result <- list(
     ind = data.frame(Domain = results["Domain"], Mean = results["Mean"]),
-    var = data.frame(Domain = results["Domain"], var = results["var"]),
+    var = data.frame(Domain = results["Domain"], Mean = results["var"]),
     CI  = data.frame(Domain = results["Domain"],
                            LowerCI = results["Lower"],
                            UpperCI = results["Upper"]),
@@ -411,8 +503,8 @@ cat("Beginning bootstrap \n")
     transformation = transformation, 
     framework = fwk
   )
-  }
-  else {
+  colnames(result$var)[2]="Mean"
+  } else {
     # Bootstrap not selected 
     result <- list(
     ind = data.frame(Domain = domains_pred[,"domains"], Mean = domains_pred[,"hat"]),
@@ -424,11 +516,33 @@ cat("Beginning bootstrap \n")
     framework = fwk
     ) 
   }
-    
-  
-  
+
+  if (!is.null(benchmark)) {
+    #browser()
+    point_estim <- NULL
+    point_estim$ind <- data.frame(Mean = result$ind$Mean)
+    if (is.null(benchmark_level)) {
+      point_estim$ind <- benchmark_ebp_national(
+        point_estim = point_estim,
+        framework = fwk,
+        fixed = fixed,
+        benchmark = benchmark,
+        benchmark_type = benchmark_type)
+    } else {
+      point_estim$ind <- benchmark_ebp_level(
+        point_estim = point_estim,
+        framework = fwk,
+        fixed = fixed,
+        benchmark = benchmark,
+        benchmark_type = benchmark_type,
+        benchmark_level = benchmark_level)
+    }
+    result$ind$Mean_bench <- point_estim$ind$Mean_bench
+    colnames(result$ind)[ncol(result$ind)] <- "Mean_bench"
+    result$var$Mean_bench <- results$var_bench
+    colnames(result$var)[ncol(result$var)] <- "Mean_bench"
+  }
   
   class(result) <- c("xgb","povmap")
   return(result)
-
 }

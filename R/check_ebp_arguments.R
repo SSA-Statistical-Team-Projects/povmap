@@ -400,10 +400,12 @@ ebp_check2 <- function(threshold, transformation, interval, MSE, boot_type, B,
                    'raking', 'ratio', and 'ratio_complement'."))
   }
   
-  if (benchmark_type == "ratio_complement" && (names(benchmark)[-1] %in% "Head_Count") && max(benchmark[["Head_Count"]])>1) {
+  if (benchmark_type == "ratio_complement" && is.data.frame(benchmark))  {
+    if (max(benchmark[["Head_Count"]])>1 | max(benchmark[["Mean"]])>1) {
     stop(strwrap(prefix = " ", initial = "",
-                 "When benchmarking the headcount rate with ratio_complement, the target values must lie between 0 and 1."))
-  }
+                 "When benchmarking with ratio_complement, the target values must lie between 0 and 1."))
+    }
+} 
   
   
     if (is.null(benchmark) && benchmark_type != "ratio") {
