@@ -382,7 +382,8 @@ xgb <- function(fixed,
 if (bootstrap==T) {  
 cat("Beginning bootstrap \n")
   for (j in 1:B){
-    if (j %% 100==0) {
+    displayevery = round(B/10,0)
+    if (j %% displayevery==0) {
       cat(paste0("replication ",j," of ",B,"\n"))
     }
 
@@ -408,18 +409,25 @@ cat("Beginning bootstrap \n")
     
     
     if (!is.null(benchmark)) {
+      #browser()
       B_sub[,sub_domains] <- B_sub$sub_domains
-    B_sample <- merge(smp_data,B_sub,by=sub_domains,all.x=T)[,c(sub_domains,"sim","domains",benchmark_level,benchmark_weights,fwk$smp_weights)]
-    B_sample_d <- collapse:::fmean(B_sample$sim,g=B_sample$domains,w=B_sample$wts)
+    B_sample <- merge(smp_data,B_sub,by=sub_domains,all.x=T)[,c(sub_domains,"sim","domains",benchmark_level,benchmark_weights)]
+    B_sample_d <- collapse:::fmean(B_sample$sim,g=B_sample$domains,w=B_sample[,benchmark_weights])
     B_sample_d <- data.frame("domains" = names(B_sample_d),"sim" = B_sample_d)
     B_sample_d <- data.frame(B_sample_d, collapse:::ffirst(B_sample[,benchmark_level],g=B_sample$domains))
-    colnames(B_sample_d)[3] <- benchmark_level 
+    B_sample_d <- data.frame(B_sample_d, collapse:::fsum(B_sample[,benchmark_weights],g=B_sample$domains))
+    colnames(B_sample_d)[3:4] <- c(benchmark_level,benchmark_weights) 
     
-    # join with area_draws 
-    B_sample_d <- merge(B_sample_d, area_draws,by="domains",all.X=T)
-    B_sample_d$sim=B_sample_d$sim+B_sample_d$area_draw
+    # create new area draws 
+    B_sample_d <- merge(B_sample_d,area_draws,by="domains",all.X=T)
+    B_sample_d$sim <- B_sample_d$sim+B_sample_d$area_draw
     
-    bm <- collapse:::fmean(B_sample_d$sim,g=B_sample_d[,benchmark_level],w=B_sample_d$fwk$smp_weights)
+#    area_draws2 <- data.frame(domains=B_sample_d$domains,area_draw=resid_domains[sample(1:length(resid_domains),
+#                                                                                      nrow(B_sample_d), prob=pop_area_d, 
+#                                                                                      replace = TRUE)])
+ #   B_sample_d$sim <- B_sample_d$sim+area_draws2$area_draw
+    
+    bm <- collapse:::fmean(B_sample_d$sim,g=B_sample_d[,benchmark_level],w=B_sample_d[,benchmark_weights])
     bm <- data.frame("state_" = names(bm),"Mean" = bm)
     point_estim <- NULL
     point_estim$ind <- data.frame("Mean" = B_domains$sim)

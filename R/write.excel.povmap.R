@@ -1182,7 +1182,7 @@ Yvar <- object$framework$outcome
 smp_data <- as.matrix(object$smp_data[,Xvars])  
 abs_shap_values <- as.data.frame(abs(predict(object$model, smp_data, predcontrib = T)))
 abs_shap_values <- abs_shap_values[,-ncol(abs_shap_values)]  
-weights <- object$framework$smp_weights 
+weights <- object$framework$smp_weights_vec 
 
 weighted_mean_shap_values <- as.matrix(apply(abs_shap_values, 2, function(x) weighted.mean(x, w = weights)))
 weighted_mean_shap_values <- weighted_mean_shap_values[order(weighted_mean_shap_values[,1],decreasing=T),]
