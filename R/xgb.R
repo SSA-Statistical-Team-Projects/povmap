@@ -98,8 +98,11 @@
 #' Benchmarking is available for \code{"Mean"} and \code{"Head_Count"}.
 #' @param benchmark_type a character indicating the type of benchmarking. Types
 #' that can be chosen (i) Raking ("\code{raking}"), (ii) Ratio adjustment
-#' ("\code{ratio}"), and ratio adjustment of the complement
-#' ("\code{ratio_complement}". Defaults to "\code{ratio}"
+#' ("\code{ratio}"), (iii) ratio adjustment of the complement
+#' ("\code{ratio_complement}" and (iv) ratio adjustment when the maximum 
+#' benchmarked estimate in a benchmark level <=1 and ratio adjustment of the 
+#' complement when the maximum benchmarked estimate >1 ("\code{ratio_bound}. 
+#' Defaults to "\code{ratio}"
 #' @param benchmark_level a character indicating the level at which the
 #' benchmarking is performed. This name must be represented in the sample and
 #' population data as a variable name.
@@ -382,7 +385,8 @@ xgb <- function(fixed,
 if (bootstrap==T) {  
 cat("Beginning bootstrap \n")
   for (j in 1:B){
-    displayevery = round(B/10,0)
+    displayevery = max(round(B/10,0),1)
+    
     if (j %% displayevery==0) {
       cat(paste0("replication ",j," of ",B,"\n"))
     }
@@ -439,7 +443,7 @@ cat("Beginning bootstrap \n")
             benchmark = "Mean",
             benchmark_type = benchmark_type)
         } else {
-          point_estim$ind <- benchmark_ebp_level(
+          point_estim$ind <- benchmark_xgb_level(
             point_estim = point_estim,
             framework = fwk,
             fixed = fixed,
@@ -537,7 +541,7 @@ cat("Beginning bootstrap \n")
         benchmark = benchmark,
         benchmark_type = benchmark_type)
     } else {
-      point_estim$ind <- benchmark_ebp_level(
+      point_estim$ind <- benchmark_xgb_level(
         point_estim = point_estim,
         framework = fwk,
         fixed = fixed,

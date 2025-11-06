@@ -146,8 +146,11 @@
 #' Benchmarking is available for \code{"Mean"} and \code{"Head_Count"}.
 #' @param benchmark_type a character indicating the type of benchmarking. Types
 #' that can be chosen (i) Raking ("\code{raking}"), (ii) Ratio adjustment
-#' ("\code{ratio}"), and for head count, ratio adjustment of the complement
-#' ("\code{ratio_complement}". Defaults to "\code{ratio}"
+#' ("\code{ratio}"), (iii) ratio adjustment of the complement
+#' ("\code{ratio_complement}" and (iv) ratio adjustment when the maximum 
+#' benchmarked estimate in the benchmark level <=1 and ratio adjustment of the 
+#' complement when the maximum benchmarked estimate >1 ("\code{ratio_bound}. 
+#' Defaults to "\code{ratio}"
 #' @param benchmark_level a character indicating the level at which the
 #' benchmarking is performed. This name must be represented in the sample and
 #' population data as variable name.
