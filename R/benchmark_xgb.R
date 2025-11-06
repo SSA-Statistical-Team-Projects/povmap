@@ -52,9 +52,9 @@ benchmark_xgb_level <- function (point_estim, framework, fixed, benchmark,
           benchmark_df$xgb_bench <- 1-(1-benchmark_df$point_estim)*factors_complement
   }
   if (benchmark_type=="ratio_bound") {
-    max <- collapse::fmax(xgb_bench,g=benchmark_df[,superarea],TRA=1)
+    max <- collapse::fmax(benchmark_df$xgb_bench,g=benchmark_df[,superarea],TRA=1)
     factors_complement <- (1-benchmark_df$Mean)/(1-benchmark_df$weighted_pe)
-    benchmark_df$xgb_bench[max>1,] <- 1-(1-benchmark_df$point_estim[max>1])*factors_complement[max>1]  
+    benchmark_df$xgb_bench[max>1] <- 1-(1-benchmark_df$point_estim[max>1])*factors_complement[max>1]  
   }  
    
  
@@ -62,7 +62,7 @@ benchmark_xgb_level <- function (point_estim, framework, fixed, benchmark,
   if (is.list(point_estim)) {
     point_estim_bench <- data.frame(benchmark_df$point_estim, benchmark_df$xgb_bench)
   } else {
-    point_estim_bench <- as.matrix(data.frame(benchmark_df$point_estim, xgb_bench))
+    point_estim_bench <- as.matrix(data.frame(benchmark_df$point_estim, benchmark_df$xgb_bench))
   }
   colnames(point_estim_bench)[1:2] <- c("Mean","Mean_bench")
   return(point_estim_bench)
