@@ -413,7 +413,6 @@ cat("Beginning bootstrap \n")
     
     
     if (!is.null(benchmark)) {
-      #browser()
       B_sub[,sub_domains] <- B_sub$sub_domains
     B_sample <- merge(smp_data,B_sub,by=sub_domains,all.x=T)[,c(sub_domains,"sim","domains",benchmark_level,benchmark_weights)]
     B_sample_d <- collapse:::fmean(B_sample$sim,g=B_sample$domains,w=B_sample[,benchmark_weights])
@@ -530,9 +529,9 @@ cat("Beginning bootstrap \n")
   }
 
   if (!is.null(benchmark)) {
-    #browser()
     point_estim <- NULL
     point_estim$ind <- data.frame(Mean = result$ind$Mean)
+    
     if (is.null(benchmark_level)) {
       point_estim$ind <- benchmark_ebp_national(
         point_estim = point_estim,
