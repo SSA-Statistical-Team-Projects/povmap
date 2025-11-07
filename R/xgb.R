@@ -220,8 +220,10 @@ xgb <- function(fixed,
                        conf_level = conf_level,
                        sub_domains = sub_domains,
                        na.rm = na.rm,
+                       benchmark = benchmark, 
                        benchmark_level = benchmark_level,
-                       benchmark_weights = benchmark_weights)
+                       benchmark_weights = benchmark_weights,
+                       benchmark_type = benchmark_type)
 
   # Direct estimates
   #_____________________________________________________________________________

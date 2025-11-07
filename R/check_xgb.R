@@ -6,7 +6,11 @@ xgb_check1 <- function(transformation,
                        pop_weights,
                        conf_level,
                        domains,
-                       sub_domains){
+                       sub_domains,
+                       benchmark,
+                       benchmark_level,
+                       benchmark_weights,
+                       benchmark_type){
 
   #if (!("dplyr" %in% .packages())) stop("dplyr package is required, please use library(dplyr) if installed")
   #require(dplyr)
@@ -56,6 +60,185 @@ xgb_check1 <- function(transformation,
   #if (is.null(pop_weights)==FALSE & length(pop_weights)!=nrow(X_pop)){
   #  stop("Length of population weights must be the same as the number of rows of the population features.")
   #}
+  if (!is.null(benchmark)) {
+    if (!(is.numeric(benchmark) || is.character(benchmark) ||
+          is.data.frame(benchmark))){
+      stop(strwrap(prefix = " ", initial = "",
+                   "For fixed value: Benchmark must be a named vector
+                   containing the numeric benchmark value(s) and is of class
+                   numeric. The names of the vector matchs to the chosen
+                   indicators. \n For survey values: Benchmark must be a
+                   vector of class character containing the names of the chosen
+                   indicators."))
+    }
+    if (is.numeric(benchmark)) {
+      if (!length(benchmark) %in% 1:2) {
+        stop(strwrap(prefix = " ", initial = "",
+                     "Benchmark must be a named vector containing the numeric
+                     benchmark value(s) and is of class numeric. Benchmarking is
+                     supplied for the Mean and the Head_Count ratio. Therefore,
+                     the length of benchmark must be 1 or 2. The names of this
+                     vector indicates whether the Mean, the Head_Count, or
+                     both in which order are supplied."))
+      }
+      if (is.null(names(benchmark))) {
+        stop(strwrap(prefix = " ", initial = "",
+                     "Benchmark must be a named vector containing the numeric
+                     benchmark value(s) and is of class numeric. Please provide
+                     names."))
+      }
+      if (!length(benchmark) == length(names(benchmark))) {
+        stop(strwrap(prefix = " ", initial = "",
+                     "Benchmark must be a named vector containing the numeric
+                     benchmark value(s) and is of class numeric. Each numeric must
+                     be labeled. Therefore, benchmark and names(benchmark) have
+                     the same length."))
+      }
+      if (!all(names(benchmark) %in% c("Mean", "Head_Count"))) {
+        stop(strwrap(prefix = " ", initial = "",
+                     "Benchmark must be a named vector containing the numeric
+                     benchmark value(s) and is of class numeric. Benchmarking is
+                     supplied for the Mean and the Head_Count ratio. Therefore,
+                     the names must match with 'Mean' and 'Head_Count'."))
+      }
+      if (!is.null(benchmark_weights)) {
+        stop(strwrap(prefix = " ", initial = "",
+                     "For external benchmarking no benchmark weights can be
+                     used."))
+      }
+    }
+    if (is.character(benchmark)) {
+      if(!length(benchmark) %in% 1:2) {
+        stop(strwrap(prefix = " ", initial = "",
+                     "Benchmark must be a vector of class character containing
+                     the names of the chosen indicators. Benchmarking is
+                     supplied for the Mean and the Head_Count ratio. Therefore,
+                     the length of benchmark must be 1 or 2. The vector
+                     indicates whether the Mean, the Head_Count, or both in
+                     which order are supplied."))
+      }
+      if (!all(benchmark %in% c("Mean", "Head_Count"))) {
+        stop(strwrap(prefix = " ", initial = "",
+                     "Benchmark must be a vector of class character containing
+                     the names of the chosen indicators. Benchmarking is
+                     supplied for the Mean and the Head_Count ratio. Therefore,
+                     it must match with 'Mean' and 'Head_Count'."))
+      }
+      if (is.null(weights)) {
+        stop(strwrap(prefix = " ", initial = "",
+                     "The argument benchmark indicates that it is benchmarked
+                     with the survey data. Please provide weights through the
+                     argument weights."))
+      }
+    }
+    if (is.data.frame(benchmark)) {
+      if (is.null(benchmark_level)) {
+        stop(strwrap(prefix = " ", initial = "",
+                     "As the input in benchmark is a data.frame. Fixed benchmark
+                     values are used at a lower level. Please give the name
+                     of this variable in the sample and population data
+                     by the argument benchmark_level."))
+      }
+      if (!length(benchmark) %in% 2:3) {
+        stop(strwrap(prefix = " ", initial = "",
+                     "Benchmark must be a data.frame composed of a variable
+                     of class character containing the domain names at which the
+                     benchmarkaing is performed and variable(s) with
+                     benchmark value(s) of class numeric. Benchmarking is
+                     supplied for the Mean and the Head_Count ratio. Therefore,
+                     the names of the data.frame must match for the first
+                     variable the benchmark_level and for the other(s) to Mean
+                     and Head_Count."))
+      }
+      if (is.null(names(benchmark))) {
+        stop(strwrap(prefix = " ", initial = "",
+                     "Benchmark must be a data.frame composed of a variable
+                     of class character containing the domain names at which the
+                     benchmarkaing is performed and variable(s) with
+                     benchmark value(s) of class numeric. Benchmarking is
+                     supplied for the Mean and the Head_Count ratio. Therefore,
+                     the names of the data.frame must match for the first
+                     variable the benchmark_level and for the other(s) to Mean
+                     and Head_Count. Please provide names."))
+      }
+      if (!length(benchmark) == length(names(benchmark))) {
+        stop(strwrap(prefix = " ", initial = "",
+                     "Benchmark must be a data.frame composed of a variable
+                     of class character containing the domain names at which the
+                     benchmarkaing is performed and variable(s) with
+                     benchmark value(s) of class numeric. Benchmarking is
+                     supplied for the Mean and the Head_Count ratio. Therefore,
+                     the names of the data.frame must match for the first
+                     variable the benchmark_level and for the other(s) to Mean
+                     and Head_Count. Each variable in the data.frame must
+                     be labeled."))
+      }
+      if (!all(names(benchmark)[-1] %in% c("Mean", "Head_Count"))) {
+        stop(strwrap(prefix = " ", initial = "",
+                     "Benchmark must be a data.frame composed of a variable
+                     of class character containing the domain names at which the
+                     benchmarkaing is performed and variable(s) with
+                     benchmark value(s) of class numeric. Benchmarking is
+                     supplied for the Mean and the Head_Count ratio. Therefore,
+                     the names of the data.frame must match for the first
+                     variable the benchmark_level and for the other(s) to Mean
+                     and Head_Count. No other names are possible."))
+      }
+      if (names(benchmark)[1] != benchmark_level) {
+        stop(strwrap(prefix = " ", initial = "",
+                     "Benchmark must be a data.frame composed of a variable
+                     of class character containing the domain names at which the
+                     benchmarkaing is performed and variable(s) with
+                     benchmark value(s) of class numeric. Benchmarking is
+                     supplied for the Mean and the Head_Count ratio. Therefore,
+                     the names of the data.frame must match for the first
+                     variable the benchmark_level and for the other(s) to Mean
+                     and Head_Count. The name of the first variable indicataing
+                     the domains of the benchmark_level does not match to the
+                     argument benchmark_level."))
+      }
+      if (!is.null(benchmark_weights)) {
+        stop(strwrap(prefix = " ", initial = "",
+                     "For external benchmarking no benchmark weights can be
+                     used."))
+      }
+    }
+  }
+  
+  if (!benchmark_level %in% colnames(X_pop)) {
+    stop(strwrap(prefix = " ", initial = "",
+                 paste0("The variable ",benchmark_level, " specified as the benchmark_level is not contained in the population data")))
+  }
+  
+  
+  if (benchmark_type != "ratio" && benchmark_type != "raking" && benchmark_type != "ratio_complement" && benchmark_type != "ratio_bound") {
+    stop(strwrap(prefix = " ", initial = "",
+                 "The benchmark version of ebp is only available with
+                   'raking', 'ratio', 'ratio_complement', and 'ratio_bound'."))
+  }
+  
+  if (benchmark_type == "ratio_complement" && is.data.frame(benchmark))  {
+    if (max(benchmark[["Head_Count"]])>1 | max(benchmark[["Mean"]])>1) {
+      stop(strwrap(prefix = " ", initial = "",
+                   "When benchmarking with ratio_complement, the target values must lie between 0 and 1."))
+    }
+  } 
+  
+  
+  if (is.null(benchmark) && benchmark_type != "ratio") {
+    stop(strwrap(prefix = " ", initial = "",
+                 "A benchmark type is provided, but no benchmark value.
+                   Please provide the argument 'benchmark' within the
+                   function."))
+  
+}
+  
+  
+  
+  
+  
+  
+  
 }
 
 xgb_check2 <- function(transformation,

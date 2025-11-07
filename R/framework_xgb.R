@@ -7,7 +7,9 @@ framework_xgb <-function(fixed,
                          transformation,
                          conf_level,
                          sub_domains,
+                         benchmark,
                          benchmark_level, 
+                         benchmark_type, 
                          benchmark_weights, 
                          na.rm) {
 
@@ -112,7 +114,11 @@ framework_xgb <-function(fixed,
     pop_weights = pop_weights,
     conf_level = conf_level,
     domains = domains,
-    sub_domains = sub_domains
+    sub_domains = sub_domains,
+    benchmark=benchmark,
+    benchmark_level=benchmark_level,
+    benchmark_weights=benchmark_weights,
+    benchmark_type=benchmark_type
   )
 
   # Transformation

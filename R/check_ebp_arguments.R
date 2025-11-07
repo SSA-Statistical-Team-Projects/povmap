@@ -394,10 +394,10 @@ ebp_check2 <- function(threshold, transformation, interval, MSE, boot_type, B,
       }
     }
   }
-  if (benchmark_type != "ratio" && benchmark_type != "raking" && benchmark_type != "ratio_complement") {
+  if (benchmark_type != "ratio" && benchmark_type != "raking" && benchmark_type != "ratio_complement" && benchmark_type != "ratio_bound") {
       stop(strwrap(prefix = " ", initial = "",
                    "The benchmark version of ebp is only available with
-                   'raking', 'ratio', and 'ratio_complement'."))
+                   'raking', 'ratio', 'ratio_complement', and 'ratio_bound'."))
   }
   
   if (benchmark_type == "ratio_complement" && is.data.frame(benchmark))  {
