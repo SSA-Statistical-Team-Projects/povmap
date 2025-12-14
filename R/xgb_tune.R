@@ -112,9 +112,6 @@ xgb_tune <- function(fixed,
   if(is.null(smp_weights)==FALSE){
     smp_weights <- smp_data[,smp_weights]
   } else {
-    smp_weights <- NULL
-  }
-  if (is.null(smp_weights)==TRUE){
     smp_weights <- rep(1, length = nrow(Y_smp))
   }
   if (cluster=="domains"){
@@ -198,7 +195,7 @@ xgb_tune <- function(fixed,
         max_delta_step     = tunegrid$max_delta_step[row],
         lambda             = tunegrid$lambda[row],
         alpha              = tunegrid$alpha[row],
-        objective          = "reg:squarederror",
+        #objective          = "reg:squarederror",
         verbose            = 0,
         ...
       )
@@ -397,7 +394,7 @@ tidy_xgb_tune <- function(fixed,
                sample_size = define_param("sample_size", tune_params),
                stop_iter = define_param("stop_iter", tune_params)) %>%
     set_engine("xgboost",
-               objective = "reg:squarederror",
+               #objective = "reg:squarederror",
                alpha = define_param("alpha", tune_params),
                lambda = define_param("lambda", tune_params),
                colsample_bytree = define_param("colsample_bytree", tune_params),
@@ -575,14 +572,14 @@ build_xgb_param_set <- function(tune_params) {
 
   # combine into a compact params object
   param_objs <- dials::parameters(x = param_objs)
-
   return(param_objs)
-
 }
 
 
 define_param <- function(param, tune_params) {
-  # If the parameter exists in the tune_params list AND has a vector (length>1) → tune()
+
+# If the parameter exists in the tune_params list AND has a vector (length>1) → tune()
+
   if (!is.null(tune_params[[param]]) && length(tune_params[[param]]) > 1) {
     return(tune())
   }
