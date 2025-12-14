@@ -319,34 +319,6 @@ xgb <- function(fixed,
   domains_direct <- aggregate_weighted_mean(df=domains_direct$outcome,by=list(domains_direct$domains),w=domains_direct$wts)
   colnames(domains_direct) <- c("domains","outcome")
   
-  # benchmarking exercise to obtain modified residuals for bootstrap (benchmarking of points estimates occurs at end of function below)
-  #domains_pred$hat_bench <- domains_pred$hat 
-  #sub_domains_direct$hat_bench <- sub_domains_direct$hat 
-  # if (!is.null(benchmark)) {
-  #   point_estim <- NULL
-  #   point_estim$ind <- data.frame(Mean = domains_pred$hat)
-  #   if (is.null(benchmark_level)) {
-  #     point_estim$ind <- benchmark_ebp_national(
-  #       point_estim = point_estim,
-  #       framework = fwk,
-  #       fixed = fixed,
-  #       benchmark = benchmark,
-  #       benchmark_type = benchmark_type)
-  #   } else {
-  #     point_estim$ind <- benchmark_ebp_level(
-  #       point_estim = point_estim,
-  #       framework = fwk,
-  #       fixed = fixed,
-  #       benchmark = benchmark,
-  #       benchmark_type = benchmark_type,
-  #       benchmark_level = benchmark_level)
-  #   }
-  #   domains_pred$hat_bench <- point_estim$ind$Mean_bench
-  #   }
-  # adjust sample sub_domain predictions according to benchmark ratios  
-  #benchmark_factors <- data.frame(domains = domains_pred$domains,benchmark_factor = domains_pred$hat_bench/domains_pred$hat)
-  # benchmark_factor is a vector of ones when benchmarking not selected 
-  #sub_domains_direct <- merge(sub_domains_direct,benchmark_factors,by="domains",all.X=T )
   resid_sub_domains <- (sub_domains_direct$outcome - as.numeric(sub_domains_direct$hat)) 
   
   
@@ -393,8 +365,6 @@ cat("Beginning bootstrap \n")
       cat(paste0("replication ",j," of ",B,"\n"))
     }
 
-    #bs_sub <- bs_sub |>
-    #  arrange(subarea)
     # randomly sample residuals USING THE WEIGHTS CALCULATED ABOVE if weighted_BS==TRUE
     B_sub$sim <- as.numeric(B_sub$hat) + resid_sub_domains[sample(1:length(resid_sub_domains),
                                                                              nrow(B_sub), prob=pop_subarea_d, 
@@ -426,14 +396,10 @@ cat("Beginning bootstrap \n")
     # create new area draws 
     B_sample_d <- merge(B_sample_d,area_draws,by="domains",all.X=T)
     B_sample_d$sim <- B_sample_d$sim+B_sample_d$area_draw
-    
-#    area_draws2 <- data.frame(domains=B_sample_d$domains,area_draw=resid_domains[sample(1:length(resid_domains),
-#                                                                                      nrow(B_sample_d), prob=pop_area_d, 
-#                                                                                      replace = TRUE)])
- #   B_sample_d$sim <- B_sample_d$sim+area_draws2$area_draw
-    
+    # create benchmark dataframe to collapse to
     bm <- collapse:::fmean(B_sample_d$sim,g=B_sample_d[,benchmark_level],w=B_sample_d[,benchmark_weights])
-    bm <- data.frame("state_" = names(bm),"Mean" = bm)
+    bm <- data.frame(names(bm),"Mean" = bm)
+    colnames(bm)[1] <- benchmark_level 
     point_estim <- NULL
     point_estim$ind <- data.frame("Mean" = B_domains$sim)
     if (is.null(benchmark_level)) {
@@ -450,7 +416,7 @@ cat("Beginning bootstrap \n")
             fixed = fixed,
             benchmark = bm,
             benchmark_type = benchmark_type,
-            benchmark_level = "state_")
+            benchmark_level = benchmark_level)
         }
     B_results_bench[j,] <- purrr::as_vector(point_estim$ind$Mean_bench)
     } # close benchmarking loop for bootstrap 
@@ -478,8 +444,6 @@ cat("Beginning bootstrap \n")
     if (transformation=="arcsin"){
       temp <- ifelse(temp>asin(1), asin(1), temp)
       temp <- ifelse(temp<asin(0), asin(0), temp)
-    }
-    if (transformation=="arcsin"){
       temp <- sin(temp)^2
     }
     if (transformation=="log"){

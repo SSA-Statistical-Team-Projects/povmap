@@ -46,15 +46,19 @@ benchmark_xgb_level <- function (point_estim, framework, fixed, benchmark,
   if (benchmark_type == "ratio" | benchmark_type=="ratio_bound") {
       #ratio benchmarking 
         benchmark_df$xgb_bench <- benchmark_df$point_estim*(benchmark_df$Mean/benchmark_df$weighted_pe)
+        # For benchmark levels with no survey data, do no benchmarking 
+        benchmark_df$xgb_bench[is.na(benchmark_df$Mean)]<-benchmark_df$point_estim[is.na(benchmark_df$Mean)]
   }
   if (benchmark_type=="ratio_complement") {
           factors_complement <- (1-benchmark_df$Mean)/(1-benchmark_df$weighted_pe)
           benchmark_df$xgb_bench <- 1-(1-benchmark_df$point_estim)*factors_complement
+          benchmark_df$xgb_bench[is.na(benchmark_df$Mean)]<-benchmark_df$point_estim[is.na(benchmark_df$Mean)]
   }
   if (benchmark_type=="ratio_bound") {
     max <- collapse::fmax(benchmark_df$xgb_bench,g=benchmark_df[,superarea],TRA=1)
     factors_complement <- (1-benchmark_df$Mean)/(1-benchmark_df$weighted_pe)
     benchmark_df$xgb_bench[max>1] <- 1-(1-benchmark_df$point_estim[max>1])*factors_complement[max>1]  
+    benchmark_df$xgb_bench[is.na(benchmark_df$Mean)]<-benchmark_df$point_estim[is.na(benchmark_df$Mean)]
   }  
    
  
