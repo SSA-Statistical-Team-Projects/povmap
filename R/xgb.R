@@ -275,6 +275,7 @@ xgb <- function(fixed,
                  max_delta_step     = max_delta_step,
                  lambda             = lambda,
                  alpha              = alpha,
+                 nthread            = 1,
                  ...)
 
   dtrain <- xgboost::xgb.DMatrix(
@@ -289,8 +290,8 @@ xgb <- function(fixed,
     data               = dtrain,
     params             = params,
     nrounds            = nrounds,
-    verbose            = 0,
-    nthread            = 1
+    verbose            = 0
+
   )
 
 
