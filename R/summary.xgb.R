@@ -64,10 +64,10 @@ summary.xgb <- function(object, ...) {
   )
 
 
-  
-  
-  
-  y <- object$smp_data[,c(object$framework$outcome,object$framework$sub_domains,object$framework$domains,object$framework$smp_weights_var)]
+
+
+
+  y <- object$smp_data[,c(object$framework$outcome,object$framework$sub_domains,object$framework$domains,object$framework$smp_weights)]
   colnames(y)[2] <- "sub_domains"
   y <- na.omit(merge(x=y,y=object$yhat,all.x=T,by="sub_domains"))
   r_squared <- cor(y[,object$framework$outcome],y$hat)^2
@@ -75,8 +75,8 @@ summary.xgb <- function(object, ...) {
   if (is.character(domains)==T) {
     domains <- unlist(strsplit(domains," "),recursive=T)
   }
-  smp_weight <- y[,object$framework$smp_weights_var]
-  if (!is.null(object$framework$smp_weights_var)) {
+  smp_weight <- y[,object$framework$smp_weights]
+  if (!is.null(object$framework$smp_weights)) {
   y_area <- aggregate_weighted_mean(df=y[,object$framework$outcome],by=list(domains),w=smp_weight)
   }
   else {
@@ -85,19 +85,22 @@ summary.xgb <- function(object, ...) {
   colnames(y_area) <- c("Domain","V1")
   y_area <- merge(x = y_area, y = object$ind, by = "Domain", all.x = TRUE)
   area_r_squared <- cor(y_area$Mean,y_area$V1)^2
-  
+
   coeff_det <- data.frame(
     R2    = r_squared,
     Area_R2 = area_r_squared,
     row.names      = ""
   )
-  
+
+  feature_names <- xgboost:::xgb.feature_names(object$model)
+  n_features <- length(feature_names)
+
   # information on xgb:
   xgb_info <- data.frame(c(
     object$transformation,
-    object$model$niter,
-    object$model$params$max_depth,
-    object$model$nfeatures)
+    xgb.get.num.boosted.rounds(object$model),
+    attributes(object$model)$params$max_depth,
+    n_features)
   )
 
   colnames(xgb_info) <- NULL
@@ -106,8 +109,8 @@ summary.xgb <- function(object, ...) {
     "Number of independent variables:"
   )
 
-  
-  
+
+
 
   sum_xgb <- list(
     call_xgb = call_xgb,
