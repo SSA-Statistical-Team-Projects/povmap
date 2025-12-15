@@ -31,13 +31,13 @@
 #' to different sheets in the Excel file. In \code{write.ods} \code{TRUE} will
 #' result in different files for point estimates and their precisions.
 #' Defaults to \code{FALSE}.
-#' @param model logical if \code{FALSE}, the estimation model is not exported 
+#' @param model logical if \code{FALSE}, the estimation model is not exported
 #'Defaults to \code{TRUE}.
 #' @param gammas logical if \code{TRUE}, estimated gamma parameters are output
 #' in a separate worksheet. Defaults to \code{FALSE}.
-#' @param domain_names vector specifies optional vector of domain names to output 
+#' @param domain_names vector specifies optional vector of domain names to output
 #' with estimates. Defaults to \code{NULL}
-#' 
+#'
 #' @return An Excel file is created in your working directory, or at the given
 #' path. Alternatively multiple ODS files are created at the given path.
 #' @details These functions create an Excel file via the package
@@ -176,7 +176,7 @@ write.excel <- function(object,
       headlines_cs = headlines_cs,
       MSE = MSE,
       CV = CV,
-      domain_names = domain_names 
+      domain_names = domain_names
     )
   } else {
     wb <- add_pointests(
@@ -184,7 +184,7 @@ write.excel <- function(object,
       object = object,
       indicator = indicator,
       headlines_cs = headlines_cs,
-      domain_names = domain_names 
+      domain_names = domain_names
     )
     if (MSE || CV) {
       wb <- add_precisions(
@@ -200,21 +200,21 @@ write.excel <- function(object,
 
   if (model) {
     if (inherits(object,"xgb")) {
-    wb <- add_model_xgb(object=object,wb=wb)  
+    wb <- add_model_xgb(object=object,wb=wb)
     }
     else {
     wb <- add_model(object=object,
                     wb=wb
     )
-    } 
+    }
   }
 
   if (gammas) {
     wb <- add_gammas(object=object,
                      wb=wb)
   }
-  
-  
+
+
   saveWorkbook(wb, file, overwrite = TRUE)
 
 }
@@ -317,7 +317,7 @@ add_summary_ebp <- function(object, wb, headlines_cs) {
     tableStyle = "TableStyleMedium2"
   )
   starting_row <- starting_row + 2 + nrow(su$normality)
-  
+
   writeDataTable(
     x = su$variance,
     wb = wb,
@@ -330,10 +330,10 @@ add_summary_ebp <- function(object, wb, headlines_cs) {
     colNames = TRUE,
     tableStyle = "TableStyleMedium2"
   )
-  
+
   starting_row <- starting_row + 2 + nrow(su$variance)
 
-  
+
   writeDataTable(
     x = su$coeff_determ,
     wb = wb,
@@ -360,10 +360,10 @@ add_summary_ebp <- function(object, wb, headlines_cs) {
     colNames = TRUE,
     tableStyle = "TableStyleMedium2"
   )
-  
-  
-  
-    
+
+
+
+
   setColWidths(
     wb = wb,
     sheet = "summary",
@@ -375,7 +375,7 @@ add_summary_ebp <- function(object, wb, headlines_cs) {
 
 add_summary_ell <- function(object, wb, headlines_cs) {
   su <- summary(object)
-  
+
   title_cs <- createStyle(
     fontSize = 14,
     border = "Bottom",
@@ -383,7 +383,7 @@ add_summary_ell <- function(object, wb, headlines_cs) {
     borderStyle = "thick",
     textDecoration = "bold"
   )
-  
+
   df_nobs <- data.frame(Count = c(
     su$out_of_smp,
     su$in_smp, su$size_pop,
@@ -396,9 +396,9 @@ add_summary_ell <- function(object, wb, headlines_cs) {
     "in sample observations"
   )
   df_size_dom <- as.data.frame(su$size_dom)
-  
+
   addWorksheet(wb, sheetName = "summary", gridLines = FALSE)
-  
+
   writeData(
     wb = wb, sheet = "summary",
     x = "ELL", colNames = FALSE
@@ -407,7 +407,7 @@ add_summary_ell <- function(object, wb, headlines_cs) {
     wb = wb, sheet = "summary", cols = 1, rows = 1,
     style = title_cs, stack = TRUE
   )
-  
+
   starting_row <- 5
   writeDataTable(
     x = df_nobs,
@@ -421,9 +421,9 @@ add_summary_ell <- function(object, wb, headlines_cs) {
     colNames = TRUE,
     tableStyle = "TableStyleMedium2"
   )
-  
+
   starting_row <- starting_row + 2 + nrow(df_nobs)
-  
+
   writeDataTable(
     x = df_size_dom,
     wb = wb,
@@ -436,10 +436,10 @@ add_summary_ell <- function(object, wb, headlines_cs) {
     colNames = TRUE,
     tableStyle = "TableStyleMedium2"
   )
-  
+
   starting_row <- starting_row + 2 + nrow(df_size_dom)
-  
-  
+
+
   if (!is.null(su$transform)) {
     writeDataTable(
       x = su$transform,
@@ -453,11 +453,11 @@ add_summary_ell <- function(object, wb, headlines_cs) {
       colNames = TRUE,
       tableStyle = "TableStyleMedium2"
     )
-    
+
     starting_row <- starting_row + 2 + nrow(su$transform)
   }
-  
-  
+
+
   writeDataTable(
     x = su$normality,
     wb = wb,
@@ -472,7 +472,7 @@ add_summary_ell <- function(object, wb, headlines_cs) {
   )
 
   starting_row <- starting_row + 2 + nrow(su$normality)
-  
+
   writeDataTable(
     x = su$variance,
     wb = wb,
@@ -485,11 +485,11 @@ add_summary_ell <- function(object, wb, headlines_cs) {
     colNames = TRUE,
     tableStyle = "TableStyleMedium2"
   )
-  
+
   starting_row <- starting_row + 2 + nrow(su$variance)
-  
-  
-  
+
+
+
   writeDataTable(
     x = su$coeff_determ,
     wb = wb,
@@ -502,7 +502,7 @@ add_summary_ell <- function(object, wb, headlines_cs) {
     colNames = TRUE,
     tableStyle = "TableStyleMedium2"
   )
-  
+
   setColWidths(
     wb = wb,
     sheet = "summary",
@@ -609,7 +609,7 @@ add_summary_hdp <- function(object, wb, headlines_cs) {
 
 add_summary_xgb <- function(object, wb, headlines_cs) {
   su <- summary(object)
-  
+
   title_cs <- createStyle(
     fontSize = 14,
     border = "Bottom",
@@ -617,10 +617,10 @@ add_summary_xgb <- function(object, wb, headlines_cs) {
     borderStyle = "thick",
     textDecoration = "bold"
   )
-  
+
   df_nobs <- data.frame(Count = c(
     su$dom_info$"Out-of-sample",
-    su$dom_info$"In-sample", 
+    su$dom_info$"In-sample",
     su$pop_size,
     su$smp_size
   ))
@@ -631,9 +631,9 @@ add_summary_xgb <- function(object, wb, headlines_cs) {
     "in sample observations"
   )
   df_size_dom <- as.data.frame(su$sizedom_smp_pop)
-  
+
   addWorksheet(wb, sheetName = "summary", gridLines = FALSE)
-  
+
   writeData(
     wb = wb, sheet = "summary",
     x = "Extreme Gradient Boosting", colNames = FALSE
@@ -642,10 +642,10 @@ add_summary_xgb <- function(object, wb, headlines_cs) {
     wb = wb, sheet = "summary", cols = 1, rows = 1,
     style = title_cs, stack = TRUE
   )
-  
+
   starting_row <- 5
   df_nobs <- cbind(rownames(df_nobs),df_nobs)
-  colnames(df_nobs)[1] <- " " 
+  colnames(df_nobs)[1] <- " "
   writeDataTable(
     x = df_nobs,
     withFilter = FALSE,
@@ -659,8 +659,8 @@ add_summary_xgb <- function(object, wb, headlines_cs) {
     tableStyle = "TableStyleMedium2"
   )
 
-  
-    
+
+
   starting_row <- starting_row + 2 + nrow(df_nobs)
   df_size_dom <- cbind(rownames(df_size_dom),df_size_dom)
   colnames(df_size_dom)[1] <- " "
@@ -676,10 +676,10 @@ add_summary_xgb <- function(object, wb, headlines_cs) {
     colNames = TRUE,
     tableStyle = "TableStyleMedium2"
   )
-  
+
   starting_row <- starting_row + 2 + nrow(df_size_dom)
-  
-  
+
+
   if (!is.null(su$transform)) {
     writeDataTable(
       x = su$transform,
@@ -693,10 +693,10 @@ add_summary_xgb <- function(object, wb, headlines_cs) {
       colNames = TRUE,
       tableStyle = "TableStyleMedium2"
     )
-    
+
     starting_row <- starting_row + 2 + nrow(su$transform)
   }
-  
+
   writeDataTable(
     x = su$coeff_determ,
     wb = wb,
@@ -709,10 +709,10 @@ add_summary_xgb <- function(object, wb, headlines_cs) {
     colNames = TRUE,
     tableStyle = "TableStyleMedium2"
   )
-  
-  
-  
-  
+
+
+
+
   setColWidths(
     wb = wb,
     sheet = "summary",
@@ -1016,7 +1016,7 @@ add_pointests <- function(object, indicator, wb, headlines_cs,domain_names=domai
   if (!is.null(domain_names)) {
     data <- data.frame(domain_names,data)
   }
-  
+
   writeDataTable(
     x = data,
     sheet = "Point Estimators",
@@ -1116,7 +1116,7 @@ add_estims <- function(object, indicator, wb, headlines_cs, MSE, CV,domain_names
   if (!is.null(domain_names)) {
     data <- data.frame(domain_names,data)
   }
-  
+
   writeDataTable(
     x = data,
     sheet = "Estimates",
@@ -1145,7 +1145,7 @@ add_estims <- function(object, indicator, wb, headlines_cs, MSE, CV,domain_names
   return(wb)
 }
 
-# write model coefficients to model worksheet 
+# write model coefficients to model worksheet
 add_model <- function(object,  wb) {
 
   model <- ebp_reportcoef_table(object,decimals=3)
@@ -1174,20 +1174,20 @@ add_model <- function(object,  wb) {
   return(wb)
 }
 
-#Write feature names and shapley score values to model worksheet 
+#Write feature names and shapley score values to model worksheet
 add_model_xgb <- function(object,  wb) {
 
-Xvars <- object$model$feature_names
+Xvars <-  xgboost:::xgb.feature_names(object$model)
 Yvar <- object$framework$outcome
-smp_data <- as.matrix(object$smp_data[,Xvars])  
+smp_data <- as.matrix(object$smp_data[,Xvars])
 abs_shap_values <- as.data.frame(abs(predict(object$model, smp_data, predcontrib = T)))
-abs_shap_values <- abs_shap_values[,-ncol(abs_shap_values)]  
-weights <- object$framework$smp_weights_vec 
+abs_shap_values <- abs_shap_values[,-ncol(abs_shap_values)]
+weights <- object$framework$smp_weights_vec
 
 weighted_mean_shap_values <- as.matrix(apply(abs_shap_values, 2, function(x) weighted.mean(x, w = weights)))
 weighted_mean_shap_values <- weighted_mean_shap_values[order(weighted_mean_shap_values[,1],decreasing=T),]
 weighted_mean_shap_values <- data.frame(Variable = names(weighted_mean_shap_values),Shapley_score = weighted_mean_shap_values/sum(weighted_mean_shap_values))
-  
+
 addWorksheet(wb, sheetName = "Model", gridLines = FALSE)
 headlines_cs <- createStyle(
   fontColour = "#ffffff",

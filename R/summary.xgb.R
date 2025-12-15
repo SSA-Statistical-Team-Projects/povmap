@@ -98,14 +98,14 @@ summary.xgb <- function(object, ...) {
   # information on xgb:
   xgb_info <- data.frame(c(
     object$transformation,
-    xgb.get.num.boosted.rounds(object$model),
+    xgboost::xgb.get.num.boosted.rounds(object$model),
     attributes(object$model)$params$max_depth,
     n_features)
   )
 
   colnames(xgb_info) <- NULL
   rownames(xgb_info) <- c(
-    "Transformation","Number of booting interations:", "Maximum depth of a tree:",
+    "Transformation","Number of boosting interations:", "Maximum depth of a tree:",
     "Number of independent variables:"
   )
 
