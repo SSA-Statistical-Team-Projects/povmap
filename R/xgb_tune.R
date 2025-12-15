@@ -51,7 +51,7 @@
 #' @param alpha L1 regularization term on weights. Increasing this value will result in a more conservative model.
 #' Defaults to 0.
 #' @param verbose display progress. Defaults to FALSE.
-#' @param ... additional parameters to be passed to \code{xgboost}.
+#' @param ... additional parameters to be passed to \code{xgb.train}.
 #'
 #' @return An object of class \code{xgb}, \code{emdi}, containing the optimal
 #' hyperparameters for an extreme gradient boosting model.
@@ -179,26 +179,56 @@ xgb_tune <- function(fixed,
 
     for (row in 1:nrow(tunegrid)){
 
-      xgb_fit <-  xgboost::xgboost(
-        data               = data.matrix(X_final[cluster_col$fold!=fold,]),
-        label              = Y_smp[cluster_col$fold!=fold,],
-        weight             = as.matrix(smp_weights)[cluster_col$fold!=fold,],
-        nrounds            = tunegrid$nround[row],
-        max_depth          = tunegrid$max_depth[row],
-        colsample_bytree   = tunegrid$colsample_bytree[row],
-        colsample_bylevel  = tunegrid$colsample_bylevel[row],
-        colsample_bynode   = tunegrid$colsample_bynode[row],
-        subsample          = tunegrid$subsample[row],
-        min_child_weight   = tunegrid$min_child_weight[row],
-        eta                = tunegrid$eta[row],
-        gamma              = tunegrid$gamma[row],
-        max_delta_step     = tunegrid$max_delta_step[row],
-        lambda             = tunegrid$lambda[row],
-        alpha              = tunegrid$alpha[row],
-        #objective          = "reg:squarederror",
-        verbose            = 0,
-        ...
+      # xgb_fit <-  xgboost::xgboost(
+      #   data               = data.matrix(X_final[cluster_col$fold!=fold,]),
+      #   label              = Y_smp[cluster_col$fold!=fold,],
+      #   weight             = as.matrix(smp_weights)[cluster_col$fold!=fold,],
+      #   nrounds            = tunegrid$nround[row],
+      #   max_depth          = tunegrid$max_depth[row],
+      #   colsample_bytree   = tunegrid$colsample_bytree[row],
+      #   colsample_bylevel  = tunegrid$colsample_bylevel[row],
+      #   colsample_bynode   = tunegrid$colsample_bynode[row],
+      #   subsample          = tunegrid$subsample[row],
+      #   min_child_weight   = tunegrid$min_child_weight[row],
+      #   eta                = tunegrid$eta[row],
+      #   gamma              = tunegrid$gamma[row],
+      #   max_delta_step     = tunegrid$max_delta_step[row],
+      #   lambda             = tunegrid$lambda[row],
+      #   alpha              = tunegrid$alpha[row],
+      #   #objective          = "reg:squarederror",
+      #   verbose            = 0,
+      #   ...
+      # )
+
+
+      params <- list(max_depth          = tunegrid$max_depth[row],
+                     colsample_bytree   = tunegrid$colsample_bytree[row],
+                     colsample_bylevel  = tunegrid$colsample_bylevel[row],
+                     subsample          = tunegrid$subsample[row],
+                     min_child_weight   = tunegrid$min_child_weight[row],
+                     eta                = tunegrid$eta[row],
+                     gamma              = tunegrid$gamma[row],
+                     max_delta_step     = tunegrid$max_delta_step[row],
+                     lambda             = tunegrid$lambda[row],
+                     alpha              = tunegrid$alpha[row],
+                     ...)
+
+      dtrain <- xgboost::xgb.DMatrix(
+        data = data.matrix(X_final[cluster_col$fold!=fold,]),
+        label = Y_smp[cluster_col$fold!=fold,],
+        weight = as.matrix(smp_weights)[cluster_col$fold!=fold,]
       )
+
+
+
+      xgb_fit <- xgboost::xgb.train(
+        data               = dtrain,
+        params             = params,
+        nrounds            = tunegrid$nround[row],
+        verbose            = 0,
+
+      )
+
 
       # Predictions (only for those out of sample)
       domains_hat <- data.frame(predict(xgb_fit, data.matrix(X_final[cluster_col$fold==fold,])))
