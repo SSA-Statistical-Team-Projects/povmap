@@ -1179,7 +1179,7 @@ add_model_xgb <- function(object,  wb) {
 
 Xvars <-  xgboost:::xgb.feature_names(object$model)
 Yvar <- object$framework$outcome
-smp_data <- as.matrix(object$smp_data[,Xvars])
+smp_data <- as.matrix(object$framework$smp_data[,Xvars])
 abs_shap_values <- as.data.frame(abs(predict(object$model, smp_data, predcontrib = T)))
 abs_shap_values <- abs_shap_values[,-ncol(abs_shap_values)]
 weights <- object$framework$smp_weights_vec
