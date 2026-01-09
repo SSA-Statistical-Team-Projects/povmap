@@ -16,7 +16,7 @@ xgb_check1 <- function(transformation,
   #require(dplyr)
   #require(xgboost)
   require(stats)
-  
+
   if(!(transformation %in% c("no", "arcsin", "log"))) stop("For transformation, please choose no, arcsin, or log.")
 
   if (transformation=="arcsin"){
@@ -204,41 +204,41 @@ xgb_check1 <- function(transformation,
       }
     }
   }
-  
+
   if (!benchmark_level %in% colnames(X_pop)) {
     stop(strwrap(prefix = " ", initial = "",
                  paste0("The variable ",benchmark_level, " specified as the benchmark_level is not contained in the population data")))
   }
-  
-  
+
+
   if (benchmark_type != "ratio" && benchmark_type != "raking" && benchmark_type != "ratio_complement" && benchmark_type != "ratio_bound") {
     stop(strwrap(prefix = " ", initial = "",
                  "The benchmark version of ebp is only available with
                    'raking', 'ratio', 'ratio_complement', and 'ratio_bound'."))
   }
-  
+
   if (benchmark_type == "ratio_complement" && is.data.frame(benchmark))  {
     if (max(benchmark[["Head_Count"]])>1 | max(benchmark[["Mean"]])>1) {
       stop(strwrap(prefix = " ", initial = "",
                    "When benchmarking with ratio_complement, the target values must lie between 0 and 1."))
     }
-  } 
-  
-  
+  }
+
+
   if (is.null(benchmark) && benchmark_type != "ratio") {
     stop(strwrap(prefix = " ", initial = "",
                  "A benchmark type is provided, but no benchmark value.
                    Please provide the argument 'benchmark' within the
                    function."))
-  
+
 }
-  
-  
-  
-  
-  
-  
-  
+
+
+
+
+
+
+
 }
 
 xgb_check2 <- function(transformation,
@@ -249,8 +249,8 @@ xgb_check2 <- function(transformation,
                        cluster){
 
 
-  
-  
+
+
   if(!(transformation %in% c("no", "arcsin", "log"))) stop("For transformation, please choose no, arcsin, or log.")
 
   if (transformation=="arcsin"){
@@ -263,7 +263,7 @@ xgb_check2 <- function(transformation,
 
   if(sum(is.na(Y_smp))>0) stop("There are missing values in the outcome variable.")
 
-  if(sum(is.na(X_smp))>0) stop("There are missing values in the independent variables in the sample dataset.")
+  if(sum(is.na(X_smp[,domains]))>0) stop("There are missing values in the domain variable in the sample dataset.")
 
   if(sum(is.na(smp_weights))>0) stop("There are missing values in the sample weights.")
 
