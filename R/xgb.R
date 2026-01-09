@@ -418,8 +418,8 @@ cat("Beginning bootstrap \n")
 
     if (!is.null(benchmark)) {
       B_sub[,sub_domains] <- B_sub$sub_domains
-    B_sample <- merge(smp_data,B_sub,by=sub_domains,all.x=T)[,c(sub_domains,"sim","domains",benchmark_level,benchmark_weights)]
-    B_sample_d <- collapse:::fmean(B_sample$sim,g=B_sample$domains,w=B_sample[,benchmark_weights])
+    B_sample <- merge(smp_data,B_sub,by=sub_domains,all.x=T)[,c(sub_domains,"sim",domains,benchmark_level,benchmark_weights)]
+    B_sample_d <- collapse:::fmean(B_sample$sim,g=B_sample[,domains],w=B_sample[,benchmark_weights])
     B_sample_d <- data.frame("domains" = names(B_sample_d),"sim" = B_sample_d)
     B_sample_d <- data.frame(B_sample_d, collapse:::ffirst(B_sample[,benchmark_level],g=B_sample$domains))
     B_sample_d <- data.frame(B_sample_d, collapse:::fsum(B_sample[,benchmark_weights],g=B_sample$domains))
