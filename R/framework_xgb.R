@@ -8,9 +8,9 @@ framework_xgb <-function(fixed,
                          conf_level,
                          sub_domains,
                          benchmark,
-                         benchmark_level, 
-                         benchmark_type, 
-                         benchmark_weights, 
+                         benchmark_level,
+                         benchmark_type,
+                         benchmark_weights,
                          na.rm) {
 
   # Data preparation
@@ -19,7 +19,7 @@ framework_xgb <-function(fixed,
   outcome <- trimws(split[[1]][1])
   covariates <- trimws(strsplit(trimws(split[[2]]), "\\+")[[1]])
 
-  #checks 
+  #checks
   if (!all(covariates %in% colnames(pop_data))) {
     missing_vars <- covariates[(!covariates %in% colnames(pop_data))]
     stop(paste("Variables",missing_vars,"not present in population dataframe"))
@@ -33,49 +33,48 @@ framework_xgb <-function(fixed,
   if (!outcome %in% colnames(smp_data)) {
     stop(paste("Outcome",outcome,"not present in sample dataframe"))
   }
-  
+
 
   # Deletion of NA
   if (na.rm == TRUE) {
     pop_data <- na.omit(pop_data)
     smp_data <- na.omit(smp_data)
-  } else if (any(is.na(pop_data)) || any(is.na(smp_data))) {
+  } else if (any(is.na(pop_data[,domains])) || any(is.na(smp_data[,domains]))) {
     stop(strwrap(prefix = " ", initial = "",
-                 "XGB does not work with missing values. Set na.rm = TRUE in
-                 function xgb."))
+                 "The domain variable in the sample or population data contains missing values."))
   }
 
   # Extracting relevant subsets of data
   X_smp <- smp_data[, c(covariates,domains,sub_domains)]
-  
+
   if (!is.null(smp_weights) && benchmark_weights==smp_weights) {
      X_smp <- cbind(X_smp,smp_data[,benchmark_level])
   }
   else {
      X_smp <- cbind(X_smp,smp_data[,c(benchmark_level,benchmark_weights)])
   }
-    
-  
-  
-  
-  
+
+
+
+
+
   Y_smp <- smp_data[, outcome]
   #X_pop <- pop_data[, c(covariates,domains,sub_domains,pop_weights)]
   X_pop <- pop_data[, c(covariates,domains,sub_domains,benchmark_level)]
-  # add pop weights if they are not already in thecovariates 
+  # add pop weights if they are not already in thecovariates
   if (!pop_weights %in% covariates) {
     X_pop <- data.frame(X_pop,pop_weights)
   }
-  
+
   # Handling sample and population weights
-    smp_weights_name <- smp_weights 
+    smp_weights_name <- smp_weights
     if (!is.null(smp_weights)) {
     smp_weights <- smp_data[, smp_weights]
   } else {
     smp_weights <- rep(1, length = length(Y_smp))
   }
 
-    pop_weights_name <- pop_weights 
+    pop_weights_name <- pop_weights
   if (!is.null(pop_weights)) {
     pop_weights <- pop_data[, pop_weights]
   } else {
@@ -83,7 +82,7 @@ framework_xgb <-function(fixed,
   }
 
 
-  
+
 
   # Determining domains in sample and population
   in_smp <- unique(smp_data[[domains]])
@@ -101,7 +100,7 @@ framework_xgb <-function(fixed,
     domains = domains
     sub_domains = sub_domains
     outcome = outcome
-    smp_weights_name = smp_weights_name 
+    smp_weights_name = smp_weights_name
     pop_domains_vec <- pop_data[[domains]]
 
   # Check
@@ -134,25 +133,25 @@ framework_xgb <-function(fixed,
   return(list(Y_smp = Y_smp,
               X_smp = X_smp,
               X_pop = X_pop,
-              smp_data = smp_data, 
-              pop_data = pop_data, 
+              smp_data = smp_data,
+              pop_data = pop_data,
               smp_weights_vec = smp_weights,
               pop_weights_vec = pop_weights,
-              N_smp = N_smp, 
-              N_pop = N_pop, 
-              domains_out = domains_out, 
-              domains_in = domains_in, 
-              domains_total = domains_total, 
-              ni_smp = ni_smp, 
-              ni_pop = ni_pop, 
-              domains = domains, 
+              N_smp = N_smp,
+              N_pop = N_pop,
+              domains_out = domains_out,
+              domains_in = domains_in,
+              domains_total = domains_total,
+              ni_smp = ni_smp,
+              ni_pop = ni_pop,
+              domains = domains,
               sub_domains = sub_domains,
-              outcome=outcome, 
+              outcome=outcome,
               smp_weights = smp_weights_name,
-              pop_weights = pop_weights_name, 
+              pop_weights = pop_weights_name,
               covariates = covariates,
-              benchmark_weights = benchmark_weights, 
-              smp_domains = domains, 
-              pop_domains_vec = pop_domains_vec 
+              benchmark_weights = benchmark_weights,
+              smp_domains = domains,
+              pop_domains_vec = pop_domains_vec
               ))
 }
