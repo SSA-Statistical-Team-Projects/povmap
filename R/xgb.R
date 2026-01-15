@@ -469,10 +469,7 @@ cat("Beginning bootstrap \n")
 
     temp <- B_results[,l]
 
-    if (center_residuals==T) {
-            temp <- temp + domains_pred$hat[l] - mean(temp)
-            # Ensures that mean of the simulation is the mean of the prediction
-    }
+
 
     if (transformation=="arcsin"){
       temp <- ifelse(temp>asin(1), asin(1), temp)
@@ -483,7 +480,12 @@ cat("Beginning bootstrap \n")
       temp <- exp(temp)
     }
 
+    if (center_residuals==T) {
+      results$hat[l] <- domains_pred$hat[l]
+    }
+    else {
     results$hat[l] <- mean(temp)
+    }
     results$lower[l] <- quantile(temp, probs = (1-conf_level)/2)
     results$upper[l] <- quantile(temp, probs = 1-(1-conf_level)/2)
     results$var[l] <- var(temp)
