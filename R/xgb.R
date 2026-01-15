@@ -248,20 +248,6 @@ xgb <- function(fixed,
   X_pop_xgb <- fwk$X_pop[,fwk$covariates]
 
   set.seed(seed)
-  # xgb_fit <- xgboost::xgboost(
-  #   data = as.matrix(X_smp_xgb),
-  #   label = sub_domains_direct$outcome,
-  #   weight = (fwk$smp_weights_vec/mean(fwk$smp_weights_vec)),
-  #   nrounds = nrounds,
-  #   max_depth = max_depth,
-  #   colsample_bytree = colsample_bytree, colsample_bylevel = colsample_bylevel,
-  #   colsample_bynode = colsample_bynode, subsample = subsample,
-  #   min_child_weight = min_child_weight, eta = eta, gamma = gamma, max_delta_step = max_delta_step,
-  #   lambda = lambda, alpha = alpha,
-  #   verbose = 0,
-  #   nthread=1,
-  #   ...
-  # )
 
 
   params <- list(max_depth          = max_depth,
@@ -305,7 +291,19 @@ xgb <- function(fixed,
       predict(xgb_fit, as.matrix(X_pop_xgb))
     )
 
+  if (list(...)$objective=="reg:logistic") {
+    transform <- arcsin_transform
+    back_transform <- arcsin_transform_back
+  }
+else if (is.na(list(...)$objective)) {
+  transform <- no_transform
+  back_transform <- no_transform
+}
+
+
   colnames(sub_pred) <- c("domains", "sub_domains", "wts", "hat")
+  sub_pred$hat_t <- transform(sub_pred$hat)$y
+
 
   if (transformation=="arcsin"){
     sub_pred$hat <- ifelse(sub_pred$hat>asin(1), asin(1), sub_pred$hat)
@@ -328,20 +326,19 @@ xgb <- function(fixed,
   #_____________________________________________________________________________
   # Subdomains
 
+  # merge subdomain prediction with subdomain direct estimate
   sub_domains_direct <-merge(x = sub_domains_direct, y = sub_pred, by = c("sub_domains", "domains"), all.x = T)
   sub_domains_direct <- sub_domains_direct[order(sub_domains_direct$sub_domains),]
+  # Transform direct estimate if necessary to calculate residual
+  sub_domains_direct$outcome_t <- transform(sub_domains_direct$outcome)$y
 
 
-
-
-  #sub_domains_direct <- sub_domains_direct[order(sub_domains_direct$sub_domains),]
-
-  domains_pred <- aggregate_weighted_mean(df=sub_pred$hat,by=list(sub_pred$domains),w=sub_pred$wts)
+  domains_pred <- aggregate_weighted_mean(df=sub_pred[,c("hat","hat_t")],by=list(sub_pred$domains),w=sub_pred$wts)
   # add sum of weights to domain-level predictions df
   wts <- aggregate(x=sub_pred$wts,by=list(sub_pred$domains),FUN = sum)
   wts[,1] <- unique(sub_pred$domains)
   domains_pred <- data.frame(domains_pred,wts$x)
-  colnames(domains_pred) <- c("domains","hat","weight")
+  colnames(domains_pred) <- c("domains","hat","hat_t","weight")
 
   # Get direct estimates at domain level
   domains_direct <- data.frame(fwk$Y_smp,
@@ -350,8 +347,9 @@ xgb <- function(fixed,
   colnames(domains_direct) <- c("outcome", "wts", "domains")
   domains_direct <- aggregate_weighted_mean(df=domains_direct$outcome,by=list(domains_direct$domains),w=domains_direct$wts)
   colnames(domains_direct) <- c("domains","outcome")
+  domains_direct$outcome_t <- transform(domains_direct$outcome)$y
 
-  resid_sub_domains <- (sub_domains_direct$outcome - as.numeric(sub_domains_direct$hat))
+  resid_sub_domains <- (sub_domains_direct$outcome_t - as.numeric(sub_domains_direct$hat_t))
 
 
   # merge direct estimates at area level with predictions while maintaining sort order
@@ -359,7 +357,7 @@ xgb <- function(fixed,
   #domains_direct <- merge(x=domains_direct,y=benchmark_factors,by="domains",all.x=T)
 
   # calculate domain residuals
-    resid_domains <- (domains_direct$outcome - domains_direct$hat)
+    resid_domains <- (domains_direct$outcome_t - domains_direct$hat_t)
 
 
 
@@ -379,7 +377,7 @@ xgb <- function(fixed,
     domain_wts <- aggregate(sub_domains_direct$smp_weights,by=list(sub_domains_direct$domains),FUN=sum)$x
     pop_area_d <- domain_wts/sum(domain_wts)
   } else {
-    # Otherwise sample each subarea and area with fixed proobability
+    # Otherwise sample each subarea and area with fixed probability
     pop_subarea_d <- rep(1/length(resid_sub_domains),length(resid_sub_domains))
     pop_area_d <- rep(1/length(resid_domains),length(resid_domains))
   }
@@ -398,7 +396,7 @@ cat("Beginning bootstrap \n")
     }
 
     # randomly sample residuals USING THE WEIGHTS CALCULATED ABOVE if weighted_BS==TRUE
-    B_sub$sim <- as.numeric(B_sub$hat) + resid_sub_domains[sample(1:length(resid_sub_domains),
+    B_sub$sim <- as.numeric(B_sub$hat_t) + resid_sub_domains[sample(1:length(resid_sub_domains),
                                                                              nrow(B_sub), prob=pop_subarea_d,
                                                                              replace = TRUE)]
 
@@ -412,7 +410,7 @@ cat("Beginning bootstrap \n")
                                                                                       nrow(B_domains), prob=pop_area_d,
                                                                                       replace = TRUE)]
     )
-    # randomly sample residuals USING THE WEIGHTS CALCULATED ABOVE if weighted_BS==TRUE
+    # randomly sample residuals (on transformed scale) USING THE WEIGHTS CALCULATED ABOVE if weighted_BS==TRUE
     B_domains$sim <- B_domains$sim +area_draws$area_draw
 
 
@@ -433,7 +431,7 @@ cat("Beginning bootstrap \n")
     bm <- data.frame(names(bm),"Mean" = bm)
     colnames(bm)[1] <- benchmark_level
     point_estim <- NULL
-    point_estim$ind <- data.frame("Mean" = B_domains$sim)
+    point_estim$ind <- data.frame("Mean" = back_transform(B_domains$sim)) # convert from transformed to probability scale
     if (is.null(benchmark_level)) {
           point_estim$ind <- benchmark_ebp_national(
             point_estim = point_estim,
@@ -453,9 +451,11 @@ cat("Beginning bootstrap \n")
     B_results_bench[j,] <- purrr::as_vector(point_estim$ind$Mean_bench)
     } # close benchmarking loop for bootstrap
 
+  else {  # no benchmarking
+    B_domains$sim <- back_transform(B_domains$sim) # convert from transformed to probability scale
+  }
 
-
-    B_results[j,] <- purrr::as_vector(B_domains$sim)
+    B_results[j,] <- purrr::as_vector(back_transform(B_domains$sim))
 } # close bootstrap loop
   # Prepare results
   #_____________________________________________________________________________
@@ -471,6 +471,7 @@ cat("Beginning bootstrap \n")
 
     if (center_residuals==T) {
             temp <- temp + domains_pred$hat[l] - mean(temp)
+            # Ensures that mean of the simulation is the mean of the prediction
     }
 
     if (transformation=="arcsin"){
