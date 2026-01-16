@@ -200,6 +200,17 @@ xgb <- function(fixed,
                 center_residuals = F,
                 ...){
 
+  #Structure of function
+  #1. Estimate model and generate sub-area predictions
+  #2. Generate residuals and aggregate to area level
+  #3. Benchmark if needed
+  #4. Do bootstrap with transformation is needed
+  #5. Either use benchmarked prediction or mean of bootstraps as prediction
+  #6. Use distribution of bootstraps to estimate CIs and variance
+
+
+#1. Estimate model and generate sub-area predictions
+
   out_call <- match.call()
 
   if (is.null(benchmark_weights) & !is.null(smp_weights)) {
@@ -245,7 +256,7 @@ xgb <- function(fixed,
   #X_smp_xgb[,c(paste0(domains),paste0(sub_domains))] <- list(NULL)
 
   #We only want the predictors
-  X_pop_xgb <- fwk$X_pop[,fwk$covariates]
+  X_pop_xgb <- fwk$X_pop[fwk$covariates]
 
   set.seed(seed)
 
@@ -285,9 +296,9 @@ xgb <- function(fixed,
   #Generate predictions at sub-area level (assumed to be each observation)
 
   sub_pred <- data.frame(
-      fwk$X_pop[,domains],
-      fwk$X_pop[,sub_domains],
-      fwk$X_pop[,pop_weights],
+      fwk$X_pop[domains],
+      fwk$X_pop[sub_domains],
+      fwk$X_pop[pop_weights],
       predict(xgb_fit, as.matrix(X_pop_xgb))
     )
 
@@ -303,7 +314,6 @@ else if (is.na(list(...)$objective)) {
 
   colnames(sub_pred) <- c("domains", "sub_domains", "wts", "hat")
   sub_pred$hat_t <- transform(sub_pred$hat)$y
-
 
   if (transformation=="arcsin"){
     sub_pred$hat <- ifelse(sub_pred$hat>asin(1), asin(1), sub_pred$hat)
@@ -322,7 +332,7 @@ else if (is.na(list(...)$objective)) {
 
 
 
-  # Residuals
+  # 2. Generate residuals and aggregate to area level
   #_____________________________________________________________________________
   # Subdomains
 
@@ -332,13 +342,16 @@ else if (is.na(list(...)$objective)) {
   # Transform direct estimate if necessary to calculate residual
   sub_domains_direct$outcome_t <- transform(sub_domains_direct$outcome)$y
 
-
   domains_pred <- aggregate_weighted_mean(df=sub_pred[,c("hat","hat_t")],by=list(sub_pred$domains),w=sub_pred$wts)
   # add sum of weights to domain-level predictions df
   wts <- aggregate(x=sub_pred$wts,by=list(sub_pred$domains),FUN = sum)
   wts[,1] <- unique(sub_pred$domains)
   domains_pred <- data.frame(domains_pred,wts$x)
   colnames(domains_pred) <- c("domains","hat","hat_t","weight")
+
+
+
+
 
   # Get direct estimates at domain level
   domains_direct <- data.frame(fwk$Y_smp,
@@ -360,7 +373,31 @@ else if (is.na(list(...)$objective)) {
     resid_domains <- (domains_direct$outcome_t - domains_direct$hat_t)
 
 
-
+  # 3. Benchmark domain predictions if necessary
+    if (!is.null(benchmark)) {
+      bm <- collapse:::fmean(fwk$Y_smp,g=fwk$X_smp[,benchmark_level],w=fwk$smp_weights_vec)
+      bm <- data.frame(rownames(bm),"Mean" = bm)
+      colnames(bm)[1] <- benchmark_level
+      point_estim <- NULL
+      point_estim$ind <- data.frame("Mean" = domains_pred$hat)
+      if (is.null(benchmark_level)) {
+        domains_pred <- benchmark_ebp_national(
+          point_estim = point_estim,
+          framework = fwk,
+          fixed = fixed,
+          benchmark = "Mean",
+          benchmark_type = benchmark_type)
+      } else {
+        point_estim$ind <- benchmark_xgb_level(
+          point_estim = point_estim,
+          framework = fwk,
+          fixed = fixed,
+          benchmark = bm,
+          benchmark_type = benchmark_type,
+          benchmark_level = benchmark_level)
+      }
+      domains_pred$hat_bench <- point_estim$ind$Mean_bench
+    } # close if benchmark loop
 
   #pop_subarea_d <- (subarea_coords$weights*subarea_coords$n)/(sum(subarea_coords$weights*subarea_coords$n))
   #pop_area_d <- (area_coords$weights*area_coords$n)/(sum(area_coords$weights*area_coords$n))
@@ -427,7 +464,9 @@ cat("Beginning bootstrap \n")
     B_sample_d <- merge(B_sample_d,area_draws,by="domains",all.X=T)
     B_sample_d$sim <- B_sample_d$sim+B_sample_d$area_draw
     # create benchmark dataframe to collapse to
-    bm <- collapse:::fmean(B_sample_d$sim,g=B_sample_d[,benchmark_level],w=B_sample_d[,benchmark_weights])
+    #bm <- collapse:::fmean(B_sample_d,g=B_sample_d[,benchmark_level],w=B_sample_d[,benchmark_weights])
+    bm <- collapse:::fmean(B_sample_d,g=B_sample_d[,benchmark_level],w=B_sample_d[,benchmark_weights])
+
     bm <- data.frame(names(bm),"Mean" = bm)
     colnames(bm)[1] <- benchmark_level
     point_estim <- NULL
@@ -481,7 +520,12 @@ cat("Beginning bootstrap \n")
     }
 
     if (center_residuals==T) {
+      if (!is.null(benchmark)) {
+        results$hat[l] <- domains_pred$hat_bench[l]
+      }
+      else {
       results$hat[l] <- domains_pred$hat[l]
+      }
     }
     else {
     results$hat[l] <- mean(temp)

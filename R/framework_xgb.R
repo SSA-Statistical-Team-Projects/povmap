@@ -69,14 +69,14 @@ framework_xgb <-function(fixed,
   # Handling sample and population weights
     smp_weights_name <- smp_weights
     if (!is.null(smp_weights)) {
-    smp_weights <- smp_data[smp_weights]
+    smp_weights <- smp_data[, smp_weights]
   } else {
     smp_weights <- rep(1, length = length(Y_smp))
   }
 
     pop_weights_name <- pop_weights
   if (!is.null(pop_weights)) {
-    pop_weights <- pop_data[pop_weights]
+    pop_weights <- pop_data[, pop_weights]
   } else {
     pop_weights <- rep(1, length = nrow(pop_data))
   }
