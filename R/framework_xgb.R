@@ -45,22 +45,22 @@ framework_xgb <-function(fixed,
   }
 
   # Extracting relevant subsets of data
-  X_smp <- smp_data[, c(covariates,domains,sub_domains)]
+  X_smp <- smp_data[c(covariates,domains,sub_domains)]
 
   if (!is.null(smp_weights) && benchmark_weights==smp_weights) {
-     X_smp <- cbind(X_smp,smp_data[,benchmark_level])
+     X_smp <- cbind(X_smp,smp_data[benchmark_level])
   }
   else {
-     X_smp <- cbind(X_smp,smp_data[,c(benchmark_level,benchmark_weights)])
+     X_smp <- cbind(X_smp,smp_data[c(benchmark_level,benchmark_weights)])
   }
 
 
 
 
 
-  Y_smp <- smp_data[, outcome]
+  Y_smp <- smp_data[outcome]
   #X_pop <- pop_data[, c(covariates,domains,sub_domains,pop_weights)]
-  X_pop <- pop_data[, c(covariates,domains,sub_domains,benchmark_level)]
+  X_pop <- pop_data[c(covariates,domains,sub_domains,benchmark_level)]
   # add pop weights if they are not already in thecovariates
   if (!pop_weights %in% covariates) {
     X_pop <- data.frame(X_pop,pop_weights)
