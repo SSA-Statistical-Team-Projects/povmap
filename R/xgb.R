@@ -465,7 +465,7 @@ cat("Beginning bootstrap \n")
     B_sample_d$sim <- B_sample_d$sim+B_sample_d$area_draw
     # create benchmark dataframe to collapse to
     #bm <- collapse:::fmean(B_sample_d,g=B_sample_d[,benchmark_level],w=B_sample_d[,benchmark_weights])
-    bm <- collapse:::fmean(B_sample_d,g=B_sample_d[,benchmark_level],w=B_sample_d[,benchmark_weights])
+    bm <- collapse:::fmean(B_sample_d$sim,g=B_sample_d[,benchmark_level],w=B_sample_d[,benchmark_weights])
 
     bm <- data.frame(names(bm),"Mean" = bm)
     colnames(bm)[1] <- benchmark_level
