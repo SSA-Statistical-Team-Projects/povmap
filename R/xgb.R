@@ -374,30 +374,31 @@ else if (is.na(list(...)$objective)) {
 
 
   # 3. Benchmark domain predictions if necessary
-    if (!is.null(benchmark)) {
-      bm <- collapse:::fmean(fwk$Y_smp,g=fwk$X_smp[,benchmark_level],w=fwk$smp_weights_vec)
-      bm <- data.frame(rownames(bm),"Mean" = bm)
-      colnames(bm)[1] <- benchmark_level
-      point_estim <- NULL
-      point_estim$ind <- data.frame("Mean" = domains_pred$hat)
-      if (is.null(benchmark_level)) {
-        domains_pred <- benchmark_ebp_national(
-          point_estim = point_estim,
-          framework = fwk,
-          fixed = fixed,
-          benchmark = "Mean",
-          benchmark_type = benchmark_type)
-      } else {
-        point_estim$ind <- benchmark_xgb_level(
-          point_estim = point_estim,
-          framework = fwk,
-          fixed = fixed,
-          benchmark = bm,
-          benchmark_type = benchmark_type,
-          benchmark_level = benchmark_level)
-      }
-      domains_pred$hat_bench <- point_estim$ind$Mean_bench
-    } # close if benchmark loop
+    # if (!is.null(benchmark)) {
+
+    #   colnames(bm)[1] <- benchmark_level
+    #   point_estim <- NULL
+    #   point_estim$ind <- data.frame("Mean" = domains_pred$hat)
+    #   if (is.null(benchmark_level)) {
+    #     domains_pred <- benchmark_ebp_national(
+    #       point_estim = point_estim,
+    #       framework = fwk,
+    #       fixed = fixed,
+    #       benchmark = "Mean",
+    #       benchmark_type = benchmark_type)
+    #   } else {
+    #   bm <- collapse:::fmean(fwk$Y_smp,g=fwk$X_smp[,benchmark_level],w=fwk$smp_weights_vec)
+    #   bm <- data.frame(rownames(bm),"Mean" = bm)
+    #     point_estim$ind <- benchmark_xgb_level(
+    #       point_estim = point_estim,
+    #       framework = fwk,
+    #       fixed = fixed,
+    #       benchmark = bm,
+    #       benchmark_type = benchmark_type,
+    #       benchmark_level = benchmark_level)
+    #   }
+    #   domains_pred$hat_bench <- point_estim$ind$Mean_bench
+    # } # close if benchmark loop
 
   #pop_subarea_d <- (subarea_coords$weights*subarea_coords$n)/(sum(subarea_coords$weights*subarea_coords$n))
   #pop_area_d <- (area_coords$weights*area_coords$n)/(sum(area_coords$weights*area_coords$n))
@@ -520,12 +521,7 @@ cat("Beginning bootstrap \n")
     }
 
     if (center_residuals==T) {
-      if (!is.null(benchmark)) {
-        results$hat[l] <- domains_pred$hat_bench[l]
-      }
-      else {
       results$hat[l] <- domains_pred$hat[l]
-      }
     }
     else {
     results$hat[l] <- mean(temp)
@@ -585,6 +581,8 @@ cat("Beginning bootstrap \n")
         benchmark = benchmark,
         benchmark_type = benchmark_type)
     } else {
+      #bm <- collapse:::fmean(fwk$Y_smp,g=fwk$X_smp[,benchmark_level],w=fwk$smp_weights_vec)
+      #bm <- data.frame(rownames(bm),"Mean" = bm)
       point_estim$ind <- benchmark_xgb_level(
         point_estim = point_estim,
         framework = fwk,
