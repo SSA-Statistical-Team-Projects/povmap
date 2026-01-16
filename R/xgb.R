@@ -593,8 +593,10 @@ cat("Beginning bootstrap \n")
     }
     result$ind$Mean_bench <- point_estim$ind$Mean_bench
     colnames(result$ind)[ncol(result$ind)] <- "Mean_bench"
-    result$var$Mean_bench <- results$var_bench
-    colnames(result$var)[ncol(result$var)] <- "Mean_bench"
+    if (bootstrap==T) {
+      result$var$Mean_bench <- results$var_bench
+      colnames(result$var)[ncol(result$var)] <- "Mean_bench"
+    }
   }
 
   class(result) <- c("xgb","povmap")
