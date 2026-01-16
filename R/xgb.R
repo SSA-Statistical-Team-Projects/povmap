@@ -348,7 +348,7 @@ else if (is.na(list(...)$objective)) {
   wts[,1] <- unique(sub_pred$domains)
   domains_pred <- data.frame(domains_pred,wts$x)
   colnames(domains_pred) <- c("domains","hat","hat_t","weight")
-
+  domains_pred$domains <- unique(sub_pred$domains)
 
 
 
@@ -476,7 +476,7 @@ cat("Beginning bootstrap \n")
   results$upper <- NA
   results$var <- NA
   results$var_bench <- NULL
-  results$domains <- unique(sub_pred$domains)
+
 
   for (l in 1:nrow(results)){
 
