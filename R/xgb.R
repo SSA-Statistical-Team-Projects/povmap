@@ -203,11 +203,10 @@ xgb <- function(fixed,
   #Structure of function
   #1. Estimate model and generate sub-area predictions
   #2. Generate residuals and aggregate to area level
-  #3. Benchmark if needed
-  #4. Do bootstrap with transformation is needed
-  #5. Either use benchmarked prediction or mean of bootstraps as prediction
-  #6. Use distribution of bootstraps to estimate CIs and variance
-
+  #3. Do bootstrap with transformation is needed
+  #4. Either use benchmarked prediction or mean of bootstraps as prediction
+  #5. Use distribution of bootstraps to estimate CIs and variance
+  #6. Benchmark point estimates if needed
 
 #1. Estimate model and generate sub-area predictions
 
@@ -342,6 +341,7 @@ else if (is.na(list(...)$objective)) {
   # Transform direct estimate if necessary to calculate residual
   sub_domains_direct$outcome_t <- transform(sub_domains_direct$outcome)$y
 
+
   domains_pred <- aggregate_weighted_mean(df=sub_pred[,c("hat","hat_t")],by=list(sub_pred$domains),w=sub_pred$wts)
   # add sum of weights to domain-level predictions df
   wts <- aggregate(x=sub_pred$wts,by=list(sub_pred$domains),FUN = sum)
@@ -373,35 +373,7 @@ else if (is.na(list(...)$objective)) {
     resid_domains <- (domains_direct$outcome_t - domains_direct$hat_t)
 
 
-  # 3. Benchmark domain predictions if necessary
-    # if (!is.null(benchmark)) {
 
-    #   colnames(bm)[1] <- benchmark_level
-    #   point_estim <- NULL
-    #   point_estim$ind <- data.frame("Mean" = domains_pred$hat)
-    #   if (is.null(benchmark_level)) {
-    #     domains_pred <- benchmark_ebp_national(
-    #       point_estim = point_estim,
-    #       framework = fwk,
-    #       fixed = fixed,
-    #       benchmark = "Mean",
-    #       benchmark_type = benchmark_type)
-    #   } else {
-    #   bm <- collapse:::fmean(fwk$Y_smp,g=fwk$X_smp[,benchmark_level],w=fwk$smp_weights_vec)
-    #   bm <- data.frame(rownames(bm),"Mean" = bm)
-    #     point_estim$ind <- benchmark_xgb_level(
-    #       point_estim = point_estim,
-    #       framework = fwk,
-    #       fixed = fixed,
-    #       benchmark = bm,
-    #       benchmark_type = benchmark_type,
-    #       benchmark_level = benchmark_level)
-    #   }
-    #   domains_pred$hat_bench <- point_estim$ind$Mean_bench
-    # } # close if benchmark loop
-
-  #pop_subarea_d <- (subarea_coords$weights*subarea_coords$n)/(sum(subarea_coords$weights*subarea_coords$n))
-  #pop_area_d <- (area_coords$weights*area_coords$n)/(sum(area_coords$weights*area_coords$n))
 
   # Bootstrap
   #_____________________________________________________________________________
@@ -504,6 +476,7 @@ cat("Beginning bootstrap \n")
   results$upper <- NA
   results$var <- NA
   results$var_bench <- NULL
+  results$domains <- unique(sub_pred$domains)
 
   for (l in 1:nrow(results)){
 
@@ -602,3 +575,5 @@ cat("Beginning bootstrap \n")
   class(result) <- c("xgb","povmap")
   return(result)
 }
+
+
