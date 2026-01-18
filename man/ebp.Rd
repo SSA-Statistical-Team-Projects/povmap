@@ -129,8 +129,7 @@ values larger than 200 are recommended (see also
 \cite{Molina, I. and Rao, J.N.K. (2010)}).}
 
 \item{seed}{an integer to set the seed for the random number generator. For
-the usage of random number generation, see Details. If seed is set to
-\code{NULL}, seed is chosen randomly. Defaults to \code{123}.}
+the usage of random number generation, see Details. Defaults to \code{123}.}
 
 \item{boot_type}{character string to choose between different MSE estimation
 procedures,currently a \code{"parametric"} and a semi-parametric
@@ -207,8 +206,11 @@ Benchmarking is available for \code{"Mean"} and \code{"Head_Count"}.}
 
 \item{benchmark_type}{a character indicating the type of benchmarking. Types
 that can be chosen (i) Raking ("\code{raking}"), (ii) Ratio adjustment
-("\code{ratio}"), and for head count, ratio adjustment of the complement
-("\code{ratio_complement}". Defaults to "\code{ratio}"}
+("\code{ratio}"), (iii) ratio adjustment of the complement
+("\code{ratio_complement}" and (iv) ratio adjustment when the maximum 
+benchmarked estimate in the benchmark level <=1 and ratio adjustment of the 
+complement when the maximum benchmarked estimate >1 ("\code{ratio_bound}. 
+Defaults to "\code{ratio}"}
 
 \item{benchmark_level}{a character indicating the level at which the
 benchmarking is performed. This name must be represented in the sample and

@@ -308,7 +308,7 @@ xgb_tune <- function(fixed,
 #' (ii) log transformation ("log"); (iii) Arcsin transformation ("arcsin").
 #' Defaults to \code{"no"}.
 #'
-#' @import tidymodels dplyr rlang recipes doFuture
+#' @import dplyr rlang recipes
 
 
 tidy_xgb_tune <- function(fixed,

@@ -11,11 +11,11 @@
 \usage{
 \method{fixef}{ebp}(object, ...)
 
-\method{fixed.effects}{ebp}(object, ...)
+\method{fixed}{effects.ebp}(object, ...)
 
 \method{fixef}{fh}(object, ...)
 
-\method{fixed.effects}{fh}(object, ...)
+\method{fixed}{effects.fh}(object, ...)
 }
 \arguments{
 \item{object}{an object of type "emdi", depending on the used method either

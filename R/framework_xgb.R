@@ -121,12 +121,15 @@ framework_xgb <-function(fixed,
   )
 
   # Transformation
-  # Applying specified transformations to Y_smp
+  # Applying specified transformations to Y_smp - comment out now because we do it in the main code
   if (!is.null(transformation)) {
     if (transformation == "arcsin") {
-      Y_smp <- asin(sqrt(Y_smp))
+      if (max(Y_smp)>1 | min(Y_smp)<0) {
+        stop("Outcome must be between 0 and 1 when using the arcsin transformation")
+      }
+      #Y_smp <- asin(sqrt(Y_smp))
     } else if (transformation == "log") {
-      Y_smp <- log(Y_smp)
+      #Y_smp <- log(Y_smp)
     }
   }
 

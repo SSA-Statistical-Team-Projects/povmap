@@ -29,10 +29,12 @@ ell(
   benchmark_level = NULL,
   benchmark_weights = NULL,
   rescale_weights = FALSE,
-  random_method = NULL,
+  random_method = "walhus",
   Ydump = NULL,
   errors = "normal",
   model_parameters = "variable",
+  estimation_method = "plm",
+  standardize = FALSE,
   indicators = NULL
 )
 }
@@ -174,7 +176,7 @@ If \code{FALSE} (default), the sample weights do not change. When \code{TRUE}
 within each domain.}
 
 \item{random_method}{selects the method used by the plm function to estimate the random effects model.
-It can take on the values "swar" (default), "amemiya", "walhus", or "nerlove"}
+It can take on the values "swar", "amemiya", "walhus" (default), or "nerlove".}
 
 \item{Ydump}{a string specifying the name of a .csv file to save all simulated
 values of the dependent value, model predictions, and error terms used for
@@ -188,8 +190,16 @@ non-parametric bootstrap.}
 estimates of model parameters beta and sigma will be drawn from their estimated 
 distribution. Otherwise they are assumed fixed. Defaults to "variable".}
 
+\item{standardize}{If \code{TRUE}, all right hand side predictors in both the sample and population data
+are rescaled by substracting the sample mean and dividing by the sample standard deviation. This can make it 
+easier to estimate models when using the plm estimation method. Defaults to \code{FALSE}.}
+
 \item{indicators}{a list of strings containing outcome indicators that should be calculated. 
 Defaults to NULL, which selects all indicators.}
+
+\item{estimation_method.}{When set to "plm", uses the plm function in the plm package to estimate the model. 
+When set to "gls", uses the gls function in the nlme package to estimate the model. The former uses a GLS transformation
+to estimate the model while the latter uses maximum likelihood estimation.}
 }
 \value{
 An object of class "ell", "emdi" that provides estimators for

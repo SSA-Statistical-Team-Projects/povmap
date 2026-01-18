@@ -34,10 +34,19 @@
 #' Defaults to \code{"no"}.
 #' @param bootstrap If TRUE, implements bootstrap procedure to estimate variance.
 #' Defaults to TRUE.
+#' @param bootstrap_type character spring specifying the type of bootstrap implemented.
+#' (i) "case" requests a cluster case resampling bootstrap while (ii) "residual" requests a
+#' cluster residual bootstrap. Defaults to "residual".
 #' @param B a number determining the number of bootstrap populations in the
 #' nonparametric residual bootstrap approach used in the MSE estimation. The
 #' number must be greater than 1. Defaults to 1000. For practical applications,
 #' values larger than 200 are recommended.
+#' @param weightedBS. If TRUE and smp_weights is specified, gives each area and subarea weight proportional to
+#' their sample weight when implementing the cluster residual bootstrap. If FALSE, gives each area and subarea
+#' equal weight. Defaults to TRUE.
+#' @param center_residuals. If TRUE, residuals are centered around zero prior to adding then to XGboost predictions
+#' to generate estimates. Defaults to FALSE.
+#' @param cpus. Number of cores to parallelize across. Defaults to 1 (no parallelization)
 #' @param conf_level confidence level for the confidence interval. Defaults to 0.95.
 #' @param nrounds maximum number of boosting iterations. Defaults to 100.
 #' @param max_depth maximum depth of a tree. Increasing this value will result
@@ -110,11 +119,6 @@
 #' This is only possible for internal benchmarking and enable users to benchmark
 #' with weights differing from the survey weights (Default for weighting for
 #' internal benchmarking).
-#' @param weightedBS. If TRUE and smp_weights is specified, gives each area and subarea weight proportional to
-#' their sample weight when implementing the cluster residual bootstrap. If FALSE, gives each area and subarea
-#' equal weight. Defaults to TRUE.
-#' @param center_residuals. If TRUE, residuals are centered around zero prior to adding then to XGboost predictions
-#' to generate estimates. Defaults to FALSE.
 #' @param ... additional parameters to be passed to \code{xgboost}.
 #'
 #' @return An object of class \code{xgb}, \code{emdi}, which includes point estimates,
@@ -129,6 +133,9 @@
 #' in Developing Countries (No. 10348). The World Bank.
 #' @importFrom purrr as_vector
 #' @importFrom collapse fmean
+#' @importFrom foreach foreach %dopar%
+#' @importFrom doParallel registerDoParallel
+#' @importFrom doSNOW registerDoSNOW txtProgressBar
 #' @export
 #' @examples
 #' \donttest{
@@ -174,7 +181,9 @@ xgb <- function(fixed,
                 sub_domains,
                 transformation = "no",
                 bootstrap = T,
+                bootstrap_type = "residual",
                 B = 1000,
+                cpus=1,
                 conf_level = 0.95,
                 # use MORE CONSERVATIVE XGBoost defaults (https://xgboost.readthedocs.io/en/stable/parameter.html)
                 nrounds = 100,
@@ -227,6 +236,23 @@ xgb <- function(fixed,
 
   # Direct estimates
   #_____________________________________________________________________________
+  #Transform outcome if called for
+  if (transformation=="arcsin"){
+    transform_outcome <- arcsin_transform
+    back_transform_outcome <- arcsin_transform_back
+  }
+  else if (transformation=="log"){
+    transform_outcome <- log_transform
+    back_transform_outcome <- log_transform_back
+  }
+  else if (transformation=="no") {
+    transform_outcome <- no_transform
+    back_transform_outcome <- no_transform_back
+  }
+  else {
+    stop("transformation must be 'no', 'log', or 'arcsin'")
+  }
+
   # Subdomains
   sub_domains_direct <- data.frame(fwk$Y_smp,
                                          fwk$X_smp[sub_domains],
@@ -235,6 +261,8 @@ xgb <- function(fixed,
   colnames(sub_domains_direct) <- c("outcome", sub_domains, "domains","smp_weights")
   #sub_domains_direct$domains <- as.character(sub_domains_direct$domains)
   #sub_domains_direct$sub_domains <- as.character(sub_domains_direct$sub_domains)
+
+
 
 
 
@@ -280,7 +308,7 @@ xgb <- function(fixed,
 
   dtrain <- xgboost::xgb.DMatrix(
     data = as.matrix(X_smp_xgb),
-    label = sub_domains_direct$outcome,
+    label = transform_outcome(sub_domains_direct$outcome)$y,
     weight = (fwk$smp_weights_vec/mean(fwk$smp_weights_vec))
   )
 
@@ -302,26 +330,23 @@ xgb <- function(fixed,
       fwk$X_pop[,domains],
       fwk$X_pop[,sub_domains],
       fwk$X_pop[,pop_weights],
-      predict(xgb_fit, as.matrix(X_pop_xgb))
+      back_transform_outcome(predict(xgb_fit, as.matrix(X_pop_xgb)))
     )
 
   colnames(sub_pred) <- c("domains", sub_domains, "wts", "hat")
 
 
-  if (list(...)$objective=="reg:logistic") {
-    transform <- arcsin_transform
-    back_transform <- arcsin_transform_back
+  if ((!is.na(list(...)$objective) && list(...)$objective=="reg:logistic" && bootstrap_type=="residual") | transformation=="arcsin") {
+    transform_boot <- arcsin_transform
+    back_transform_boot <- arcsin_transform_back
   }
-  else if (is.na(list(...)$objective)) {
-    transform <- no_transform
-    back_transform <- no_transform
+  else  {
+    transform_boot <- no_transform
+    back_transform_boot <- no_transform_back
   }
-  sub_pred$hat_t <- transform(sub_pred$hat)$y
+  sub_pred$hat_t <- transform_boot(sub_pred$hat)$y
 
-  if (transformation=="arcsin"){
-    sub_pred$hat <- ifelse(sub_pred$hat>asin(1), asin(1), sub_pred$hat)
-    sub_pred$hat <- ifelse(sub_pred$hat<asin(0), asin(0), sub_pred$hat)
-  }
+
 
   ### write predictions to file if needed
   if (!is.null(ydump)) {
@@ -343,7 +368,7 @@ xgb <- function(fixed,
   sub_domains_direct <- sub_domains_direct[order(sub_domains_direct[,sub_domains]),]
 
   # Transform direct estimate if necessary to calculate residual
-  sub_domains_direct$outcome_t <- transform(sub_domains_direct$outcome)$y
+  sub_domains_direct$outcome_t <- transform_boot(sub_domains_direct$outcome)$y
 
 
   #sub_domains_direct <- sub_domains_direct[order(sub_domains_direct$sub_domains),]
@@ -362,7 +387,7 @@ xgb <- function(fixed,
   colnames(domains_direct) <- c("outcome", "wts", "domains")
   domains_direct <- aggregate_weighted_mean(df=domains_direct$outcome,by=list(domains_direct$domains),w=domains_direct$wts)
   colnames(domains_direct) <- c("domains","outcome")
-  domains_direct$outcome_t <- transform(domains_direct$outcome)$y
+  domains_direct$outcome_t <- transform_boot(domains_direct$outcome)$y
 
   resid_sub_domains <- (sub_domains_direct$outcome_t - as.numeric(sub_domains_direct$hat_t))
 
@@ -402,72 +427,122 @@ xgb <- function(fixed,
 
 
 if (bootstrap==T) {
+  clusters <- unique(smp_data[,fwk$domains])
+  if (cpus>1) {
+    cl <- parallel::makeCluster(cpus)
+    doSNOW::registerDoSNOW(cl)
+
+  }
 cat("Beginning bootstrap \n")
-  for (j in 1:B){
-    displayevery = max(round(B/10,0),1)
+  #for (j in 1:B){
 
-    if (j %% displayevery==0) {
-      cat(paste0("replication ",j," of ",B,"\n"))
-    }
+pb <- txtProgressBar(max = B, style = 3)
+progress <- function(n) setTxtProgressBar(pb, n)
 
-    # randomly sample residuals USING THE WEIGHTS CALCULATED ABOVE if weighted_BS==TRUE
-    B_sub$sim <- as.numeric(B_sub$hat_t) + resid_sub_domains[sample(1:length(resid_sub_domains),
-                                                                             nrow(B_sub), prob=pop_subarea_d,
-                                                                             replace = TRUE)]
-
-    # aggregate to area
-    #B_domains <- aggregate_weighted_mean(df=B_sub$sim,by=list(B_sub$domains),w=B_sub$wts)
-    #colnames(B_domains) <- c("domains","sim")
-    B_domains <- collapse:::fmean(x=B_sub$sim,g=B_sub$domains,w=B_sub$wts)
-    B_domains <- data.frame("domains" = names(B_domains),"sim" = B_domains)
-
-    area_draws <- data.frame(domains=B_domains$domains,area_draw=resid_domains[sample(1:length(resid_domains),
-                                                                                      nrow(B_domains), prob=pop_area_d,
-                                                                                      replace = TRUE)]
-    )
-    # randomly sample residuals USING THE WEIGHTS CALCULATED ABOVE if weighted_BS==TRUE
-    B_domains$sim <- back_transform(B_domains$sim +area_draws$area_draw)
+B_results <- foreach::foreach(j = 1:B, .combine = rbind,
+                            .packages = c("xgboost"),
+                            .options.snow = list(progress = progress)) %dopar% {
 
 
-    if (!is.null(benchmark)) {
-      # Take sampled subdomains
-    #browser()
-    B_sample <- merge(smp_data,B_sub,by=sub_domains,all.x=T)[,c(sub_domains,"sim",domains,benchmark_level,benchmark_weights)]
-    B_sample_d <- collapse:::fmean(back_transform(B_sample$sim),g=B_sample[,domains],w=B_sample[,benchmark_weights])
-    B_sample_d <- data.frame("domains" = names(B_sample_d),"sim" = B_sample_d)
-    B_sample_d <- data.frame(B_sample_d, collapse:::ffirst(B_sample[,benchmark_level],g=B_sample$domains))
-    B_sample_d <- data.frame(B_sample_d, collapse:::fsum(B_sample[,benchmark_weights],g=B_sample$domains))
-    colnames(B_sample_d)[3:4] <- c(benchmark_level,benchmark_weights)
+    #displayevery = max(round(B/10,0),1)
 
-    # create benchmark dataframe to collapse to
-    bm <- collapse:::fmean(B_sample_d$sim,g=B_sample_d[,benchmark_level],w=B_sample_d[,benchmark_weights])
-    bm <- data.frame(names(bm),"Mean" = bm)
-    colnames(bm)[1] <- benchmark_level
-    point_estim <- NULL
-    point_estim$ind <- data.frame("Mean" = B_domains$sim)
-    if (is.null(benchmark_level)) {
-          point_estim$ind <- benchmark_ebp_national(
-            point_estim = point_estim,
-            framework = fwk,
-            fixed = fixed,
-            benchmark = "Mean",
-            benchmark_type = benchmark_type)
-        } else {
-          point_estim$ind <- benchmark_xgb_level(
-            point_estim = point_estim,
-            framework = fwk,
-            fixed = fixed,
-            benchmark = bm,
-            benchmark_type = benchmark_type,
-            benchmark_level = benchmark_level)
-        }
-    B_results_bench[j,] <- purrr::as_vector(point_estim$ind$Mean_bench)
-    } # close benchmarking loop for bootstrap
+    #if (j %% displayevery==0) {
+      #cat(paste0("replication ",j," of ",B,"\n"))
+    #}
+
+    if (bootstrap_type=="residual") {
+      # randomly sample residuals USING THE WEIGHTS CALCULATED ABOVE if weighted_BS==TRUE
+      B_sub$sim <- as.numeric(B_sub$hat_t) + resid_sub_domains[sample(1:length(resid_sub_domains),
+                                                                               nrow(B_sub), prob=pop_subarea_d,
+                                                                               replace = TRUE)]
+      # aggregate to area
+      #B_domains <- aggregate_weighted_mean(df=B_sub$sim,by=list(B_sub$domains),w=B_sub$wts)
+      #colnames(B_domains) <- c("domains","sim")
+      B_domains <- collapse:::fmean(x=B_sub$sim,g=B_sub$domains,w=B_sub$wts)
+      B_domains <- data.frame("domains" = names(B_domains),"sim" = B_domains)
+
+      area_draws <- data.frame(domains=B_domains$domains,area_draw=resid_domains[sample(1:length(resid_domains),
+                                                                                        nrow(B_domains), prob=pop_area_d,
+                                                                                        replace = TRUE)]
+      )
+      # randomly sample residuals USING THE WEIGHTS CALCULATED ABOVE if weighted_BS==TRUE
+      B_domains$sim <- back_transform_boot(B_domains$sim +area_draws$area_draw)
+    } # close residual bootstrap
+
+    # case resampling bootstrap
+
+      else if (bootstrap_type=="case") {
+        # Resample of clusters with replacement
+        #browser()
+        boot_clusters <- sample(clusters, replace = TRUE)
+        # Get all observations from sampled clusters
+        boot_data <- do.call(rbind, lapply(boot_clusters, function(clust) {
+          smp_data[smp_data[,fwk$domains] == clust, ]}))
+          X_smp_boot <- boot_data[fwk$covariates]
+          #Estimate model
+          dtrain <- xgboost::xgb.DMatrix(
+            data = as.matrix(X_smp_boot),
+            label = transform_outcome(boot_data[,fwk$outcome])$y,
+            weight = (boot_data[,smp_weights]/mean(boot_data[,smp_weights]))
+          )
+          xgb_fit <- xgboost::xgb.train(
+            data               = dtrain,
+            params             = params,
+            nrounds            = nrounds,
+            verbose            = 0
+          )
+         # Obtain predictions
+           B_sub$sim <-
+            back_transform_outcome(predict(xgb_fit, as.matrix(X_pop_xgb))
+          )
+          B_domains <- collapse:::fmean(x=B_sub$sim,g=B_sub$domains,w=B_sub$wts)
+          B_domains <- data.frame("domains" = names(B_domains),"sim" = B_domains)
+      }
+
+      if (!is.null(benchmark)) {
+        # Take sampled subdomains
+      B_sample <- merge(smp_data,B_sub,by=sub_domains,all.x=T)[,c(sub_domains,"sim",domains,benchmark_level,benchmark_weights)]
+      B_sample_d <- collapse:::fmean(back_transform_boot(B_sample$sim),g=B_sample[,domains],w=B_sample[,benchmark_weights])
+      B_sample_d <- data.frame("domains" = names(B_sample_d),"sim" = B_sample_d)
+      B_sample_d <- data.frame(B_sample_d, collapse:::ffirst(B_sample[,benchmark_level],g=B_sample$domains))
+      B_sample_d <- data.frame(B_sample_d, collapse:::fsum(B_sample[,benchmark_weights],g=B_sample$domains))
+      colnames(B_sample_d)[3:4] <- c(benchmark_level,benchmark_weights)
+
+      # create benchmark dataframe to collapse to
+      bm <- collapse:::fmean(B_sample_d$sim,g=B_sample_d[,benchmark_level],w=B_sample_d[,benchmark_weights])
+      bm <- data.frame(names(bm),"Mean" = bm)
+      colnames(bm)[1] <- benchmark_level
+      point_estim <- NULL
+      point_estim$ind <- data.frame("Mean" = B_domains$sim)
+      if (is.null(benchmark_level)) {
+            point_estim$ind <- benchmark_ebp_national(
+              point_estim = point_estim,
+              framework = fwk,
+              fixed = fixed,
+              benchmark = "Mean",
+              benchmark_type = benchmark_type)
+          } else {
+            point_estim$ind <- benchmark_xgb_level(
+              point_estim = point_estim,
+              framework = fwk,
+              fixed = fixed,
+              benchmark = bm,
+              benchmark_type = benchmark_type,
+              benchmark_level = benchmark_level)
+          }
+      B_results_bench[j,] <- purrr::as_vector(point_estim$ind$Mean_bench)
+      } # close benchmarking loop for bootstrap
 
 
+      #B_results[j,] <- purrr::as_vector(B_domains$sim)
+     purrr::as_vector(B_domains$sim)
 
-    B_results[j,] <- purrr::as_vector(B_domains$sim)
-} # close bootstrap loop
+  } # close bootstrap loop
+
+close(pb)
+parallel::stopCluster(cl)
+
+
   # Prepare results
   #_____________________________________________________________________________
 

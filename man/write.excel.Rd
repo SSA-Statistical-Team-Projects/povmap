@@ -3,7 +3,7 @@
 \name{write.excel}
 \alias{write.excel}
 \alias{write.ods}
-\title{Exports an povmapObject to an Excel File or OpenDocument Spreadsheet}
+\title{Exports a povmapObject to an Excel File or OpenDocument Spreadsheet}
 \usage{
 write.excel(
   object,
@@ -12,7 +12,9 @@ write.excel(
   MSE = FALSE,
   CV = FALSE,
   split = FALSE,
-  model = TRUE
+  model = TRUE,
+  gammas = FALSE,
+  domain_names = NULL
 )
 
 write.ods(
@@ -44,7 +46,7 @@ one of the groups. If the \code{model} argument is of type "fh",
 indicator can be set to "all", "Direct", FH", or "FH_Bench" (if povmap
 object is overwritten by function benchmark). Defaults to "all".}
 
-\item{MSE}{logical. If \code{TRUE}, the MSE of the povmapObject is exported.
+\item{MSE}{logical. If \code{TRUE}, the MSE or Variance of the povmapObject is exported.
 Defaults to \code{FALSE}.}
 
 \item{CV}{logical. If \code{TRUE}, the CV of the povmapObject is exported.
@@ -55,8 +57,14 @@ to different sheets in the Excel file. In \code{write.ods} \code{TRUE} will
 result in different files for point estimates and their precisions.
 Defaults to \code{FALSE}.}
 
-\item{model}{logical if \code{FALSE}, the estimation model is not exported.
-#' Defaults to \code{TRUE}.}
+\item{model}{logical if \code{FALSE}, the estimation model is not exported
+Defaults to \code{TRUE}.}
+
+\item{gammas}{logical if \code{TRUE}, estimated gamma parameters are output
+in a separate worksheet. Defaults to \code{FALSE}.}
+
+\item{domain_names}{vector specifies optional vector of domain names to output
+with estimates. Defaults to \code{NULL}}
 }
 \value{
 An Excel file is created in your working directory, or at the given

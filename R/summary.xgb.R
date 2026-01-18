@@ -68,8 +68,8 @@ summary.xgb <- function(object, ...) {
 
 
   y <- object$smp_data[,c(object$framework$outcome,object$framework$sub_domains,object$framework$domains,object$framework$smp_weights)]
-  colnames(y)[2] <- "sub_domains"
-  y <- na.omit(merge(x=y,y=object$yhat,all.x=T,by="sub_domains"))
+  #colnames(y)[2] <- "sub_domains"
+  y <- na.omit(merge(x=y,y=object$yhat,all.x=T,by=object$framework$sub_domains))
   r_squared <- cor(y[,object$framework$outcome],y$hat)^2
   domains <- y[,object$framework$domains]
   if (is.character(domains)==T) {

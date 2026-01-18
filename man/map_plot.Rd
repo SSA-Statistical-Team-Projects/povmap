@@ -8,23 +8,18 @@ map_plot(
   object,
   indicator = "all",
   MSE = FALSE,
-  var = FALSE,
   CV = FALSE,
   map_obj = NULL,
   map_dom_id = NULL,
   map_tab = NULL,
   color = c("white", "red4"),
-  viridis_option = NULL,
   scale_points = NULL,
-  na.color = "transparent",
   guide = "colourbar",
-  return_data = FALSE,
-  save_file = NULL,
-  save_format = "pdf"
+  return_data = FALSE
 )
 }
 \arguments{
-\item{object}{an object of type povmap, containing the estimates to be
+\item{object}{an object of type emdi, containing the estimates to be
 visualized.}
 
 \item{indicator}{optional character vector that selects which indicators
@@ -37,14 +32,11 @@ shall be returned: (i) all calculated indicators ("all");
 defined as argument for model-based approaches (see also \code{\link{ebp}})
 and do not appear in groups of indicators even though these might belong to
 one of the groups. If the \code{model} argument is of type "fh",
-indicator can be set to "all", "Direct", FH", or "FH_Bench" (if povmap
+indicator can be set to "all", "Direct", FH", or "FH_Bench" (if emdi
 object is overwritten by function benchmark). Defaults to "all".}
 
 \item{MSE}{optional logical. If \code{TRUE}, the MSE is also visualized.
 Defaults to \code{FALSE}.}
-
-\item{var}{optional logical. If \code{TRUE} and the object is an ELL object,
-the variance is also visualized. Defaults to \code{FALSE}.}
 
 \item{CV}{optional logical. If \code{TRUE}, the CV is also visualized.
 Defaults to \code{FALSE}.}
@@ -64,15 +56,9 @@ in both objects (`map_obj` and `object`) differ.}
 \item{color}{a \code{vector} of length 2 defining the lowest and highest
 color in the plots.}
 
-\item{viridis_option}{a one-character string between "A" and "H" requesting a 
-viridis palette with the specified option. Defaults to NULL}
-
 \item{scale_points}{a structure defining the lowest and the highest
 value of the colorscale. If a numeric vector of length two is given, this
 scale will be used for every plot.}
-
-\item{na.color}{a character string indicating the color used to plot regions with no data, 
-passed to the na.value argument in scale_fill_gradient in ggplot2. Defaults to "transparent".}
 
 \item{guide}{character passed to
 \code{scale_colour_gradient} from \pkg{ggplot2}.
@@ -82,12 +68,6 @@ Possible values are "none", "colourbar", and "legend".}
 the map data as well as the chosen indicators is returned. Customized maps
 can easily be obtained from this data frame via the package \pkg{ggplot2}.
 Defaults to \code{FALSE}.}
-
-\item{save_file}{a character string that specified the prefix of the file name to save the plot. 
-The suffix is the name of the indicator. Defaults to NULL, in which case plots are not saved.}
-
-\item{save_format}{a character string that is passed to ggsave's device argument to determine the 
-format that the plot is saved in. Defaults to "pdf"}
 }
 \value{
 Creates the plots demanded, and, if selected, a fortified data.frame
@@ -102,8 +82,8 @@ obtained by small area estimation methods or direct estimation.
 data("eusilcA_pop")
 data("eusilcA_smp")
 
-# Generate povmap object with additional indicators; here via function ebp()
-povmap_model <- ebp(
+# Generate emdi object with additional indicators; here via function ebp()
+emdi_model <- ebp(
   fixed = eqIncome ~ gender + eqsize + cash +
     self_empl + unempl_ben + age_ben + surv_ben + sick_ben +
     dis_ben + rent + fam_allow + house_allow + cap_inv +
@@ -118,7 +98,7 @@ load_shapeaustria()
 
 # Create map plot for mean indicator - point and MSE estimates but no CV
 map_plot(
-  object = povmap_model, MSE = TRUE, CV = FALSE,
+  object = emdi_model, MSE = TRUE, CV = FALSE,
   map_obj = shape_austria_dis, indicator = c("Mean"),
   map_dom_id = "PB"
 )
@@ -127,11 +107,11 @@ map_plot(
 # file
 
 # First find the right order
-dom_ord <- match(shape_austria_dis$PB, povmap_model$ind$Domain)
+dom_ord <- match(shape_austria_dis$PB, emdi_model$ind$Domain)
 
 # Create the mapping table based on the order obtained above
 map_tab <- data.frame(
-  pop_data_id = povmap_model$ind$Domain[dom_ord],
+  pop_data_id = emdi_model$ind$Domain[dom_ord],
   shape_id = shape_austria_dis$BKZ
 )
 
@@ -139,7 +119,7 @@ map_tab <- data.frame(
 # using the numerical domain identifiers of the shape file
 
 map_plot(
-  object = povmap_model, MSE = FALSE, CV = TRUE,
+  object = emdi_model, MSE = FALSE, CV = TRUE,
   map_obj = shape_austria_dis, indicator = c("Mean"),
   map_dom_id = "BKZ", map_tab = map_tab
 )
@@ -147,5 +127,5 @@ map_plot(
 }
 \seealso{
 \code{\link{direct}}, \code{\link{ebp}}, \code{\link{fh}},
-\code{\link{povmapObject}}
+\code{\link{emdiObject}}
 }
