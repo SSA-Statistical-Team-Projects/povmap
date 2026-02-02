@@ -39,6 +39,7 @@ benchmark_xgb_level <- function (point_estim, framework, fixed, benchmark,
   # unfortunately because it is a many to one merge the sort order is not preserved, so we need to reorder by hand
   benchmark_df <- benchmark_df[order(benchmark_df$order),]
   popwts <- data.frame(collapse::fsum(framework$pop_data[,framework$pop_weights],g=framework$pop_data[,framework$domains]))
+  population_lga2 <- collapse:::fsum(framework$pop_data$population,g=framework$pop_data$lgacode)
   colnames(popwts) <- framework$pop_weights
   benchmark_df <- data.frame(benchmark_df,popwts)
   weighted_pe <- data.frame(collapse::fmean(benchmark_df$point_estim,g=benchmark_df[,superarea],w=benchmark_df[,framework$pop_weights],TRA=1))

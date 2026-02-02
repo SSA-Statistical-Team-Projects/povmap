@@ -71,20 +71,9 @@ summary.xgb <- function(object, ...) {
   #colnames(y)[2] <- "sub_domains"
   y <- na.omit(merge(x=y,y=object$yhat,all.x=T,by=object$framework$sub_domains))
   r_squared <- cor(y[,object$framework$outcome],y$hat)^2
-  domains <- y[,object$framework$domains]
-  if (is.character(domains)==T) {
-    domains <- unlist(strsplit(domains," "),recursive=T)
-  }
-  smp_weight <- y[,object$framework$smp_weights]
-  if (!is.null(object$framework$smp_weights)) {
-  y_area <- aggregate_weighted_mean(df=y[,object$framework$outcome],by=list(domains),w=smp_weight)
-  }
-  else {
-    y_area <- aggregate(x=y[,object$framework$outcome],by=list(domains),FUN=mean)
-  }
-  colnames(y_area) <- c("Domain","V1")
-  y_area <- merge(x = y_area, y = object$ind, by = "Domain", all.x = TRUE)
-  area_r_squared <- cor(y_area$Mean,y_area$V1)^2
+  y_yhat <- y[,c(object$framework$outcome,"hat")]
+  area_means <- collapse::fmean(x=y_yhat,g=y[,object$framework$domains],w=y[,object$framework$smp_weights])
+  area_r_squared <- cor(area_means[,object$framework$outcome],area_means$hat)^2
 
   coeff_det <- data.frame(
     R2    = r_squared,

@@ -340,6 +340,10 @@ xgb <- function(fixed,
     transform_boot <- arcsin_transform
     back_transform_boot <- arcsin_transform_back
   }
+  else if (!is.na(list(...)$objective) && list(...)$objective=="reg:gamma" && bootstrap_type=="residual") {
+    transform_boot <- log_transform
+    back_transform_boot <- log_transform_back
+  }
   else  {
     transform_boot <- no_transform
     back_transform_boot <- no_transform_back
@@ -380,12 +384,18 @@ xgb <- function(fixed,
   domains_pred <- data.frame(domains_pred,wts$x)
   colnames(domains_pred) <- c("domains","hat","hat_t","weight")
 
+  # This code uses the actual domain variable in domain instead of converting to factor
+  #domains_pred <- data.frame(domains=unique(sub_pred$domains),collapse:::fmean(x=sub_pred[,c("hat","hat_t")],g=sub_pred$domains,w=sub_pred$wts,use.g.names=T))
+  #domains_pred <- data.frame(domains_pred,weight = collapse:::fsum(sub_pred$wts,g=sub_pred$domains))
+
   # Get direct estimates at domain level
   domains_direct <- data.frame(fwk$Y_smp,
                                fwk$smp_weights_vec,
                                fwk$X_smp[paste0(domains)])
   colnames(domains_direct) <- c("outcome", "wts", "domains")
   domains_direct <- aggregate_weighted_mean(df=domains_direct$outcome,by=list(domains_direct$domains),w=domains_direct$wts)
+  #domains_direct <- data.frame(domains=unique(domains_direct$domains),collapse:::fmean(domains_direct$outcome,g=domains_direct$domains,w=domains_direct$wts,use.g.names=T))
+
   colnames(domains_direct) <- c("domains","outcome")
   domains_direct$outcome_t <- transform_boot(domains_direct$outcome)$y
 
@@ -393,7 +403,7 @@ xgb <- function(fixed,
 
 
   # merge direct estimates at area level with predictions while maintaining sort order
-  domains_direct <- merge(x=domains_direct,y=domains_pred,by="domains",all.x=T)
+  domains_direct <- dplyr:::left_join(x=domains_direct,y=domains_pred,by="domains")
   #domains_direct <- merge(x=domains_direct,y=benchmark_factors,by="domains",all.x=T)
 
   # calculate domain residuals
@@ -431,17 +441,24 @@ if (bootstrap==T) {
   if (cpus>1) {
     cl <- parallel::makeCluster(cpus)
     doSNOW::registerDoSNOW(cl)
-
   }
+  else {
+    foreach::registerDoSEQ()
+  }
+
+
 cat("Beginning bootstrap \n")
   #for (j in 1:B){
 
 pb <- txtProgressBar(max = B, style = 3)
 progress <- function(n) setTxtProgressBar(pb, n)
 
-B_results <- foreach::foreach(j = 1:B, .combine = rbind,
+
+B_results_list <- foreach::foreach(j = 1:B,
+                            #.combine = rbind,
                             .packages = c("xgboost"),
                             .options.snow = list(progress = progress)) %dopar% {
+
 
 
     #displayevery = max(round(B/10,0),1)
@@ -535,12 +552,20 @@ B_results <- foreach::foreach(j = 1:B, .combine = rbind,
 
 
       #B_results[j,] <- purrr::as_vector(B_domains$sim)
-     purrr::as_vector(B_domains$sim)
+     #purrr::as_vector(B_domains$sim)
+     list(B_results = purrr::as_vector(B_domains$sim), B_results_bench = purrr::as_vector(point_estim$ind$Mean_bench))
 
   } # close bootstrap loop
 
 close(pb)
+
+if (cpus>1) {
 parallel::stopCluster(cl)
+}
+
+# Extract and combine from list
+B_results <- do.call(rbind, lapply(B_results_list, `[[`, "B_results"))
+B_results_bench <- do.call(rbind, lapply(B_results_list, `[[`, "B_results_bench"))
 
 
   # Prepare results
@@ -576,6 +601,8 @@ parallel::stopCluster(cl)
     if (!is.null(benchmark)) {
       temp_bench <- B_results_bench[,l]
       results$var_bench[l] <- var(temp_bench)
+      results$lower_bench[l] <- quantile(temp_bench, probs = (1-conf_level)/2)
+      results$upper_bench[l] <- quantile(temp_bench, probs = 1-(1-conf_level)/2)
     }
 
   }
@@ -583,6 +610,8 @@ parallel::stopCluster(cl)
   colnames(results) <- c("Domain", "Mean", "Lower", "Upper", "var")
   if (!is.null(benchmark)) {
   colnames(results)[6] <- c("var_bench")
+  colnames(results)[7] <- c("Lower_bench")
+  colnames(results)[8] <- c("Upper_bench")
     }
 
 
@@ -590,8 +619,10 @@ parallel::stopCluster(cl)
     ind = data.frame(Domain = results["Domain"], Mean = results["Mean"]),
     var = data.frame(Domain = results["Domain"], Mean = results["var"]),
     CI  = data.frame(Domain = results["Domain"],
-                           LowerCI = results["Lower"],
-                           UpperCI = results["Upper"]),
+                           Lower = results["Lower"],
+                           Upper = results["Upper"],
+                           Lower_bench = results["Lower_bench"],
+                           Upper_bench = results["Upper_bench"]),
     yhat=data.frame(sub_domains_direct[,c(sub_domains,"hat")]),
     model = xgb_fit,
     smp_data =  smp_data,
@@ -635,10 +666,17 @@ parallel::stopCluster(cl)
     }
     result$ind$Mean_bench <- point_estim$ind$Mean_bench
     colnames(result$ind)[ncol(result$ind)] <- "Mean_bench"
-    result$var$Mean_bench <- results$var_bench
-    colnames(result$var)[ncol(result$var)] <- "Mean_bench"
-  }
+
+    if (bootstrap==T) {
+      result$var$Mean_bench <- results$var_bench
+      if (!is.null(result$var)) {
+        colnames(result$var)[ncol(result$var)] <- "Mean_bench"
+      }
+      result$CI$lower_bench <-results$lower_bench
+      result$CI$upper_bench <-results$upper_bench
+    }
 
   class(result) <- c("xgb","povmap")
   return(result)
+}
 }
