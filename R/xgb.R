@@ -214,6 +214,7 @@ xgb <- function(fixed,
   if (is.null(benchmark_weights) & !is.null(smp_weights)) {
     benchmark_weights <- smp_weights
   }
+  collapse:::set_collapse(sort = FALSE)
 
 
 
@@ -233,6 +234,7 @@ xgb <- function(fixed,
                        benchmark_level = benchmark_level,
                        benchmark_weights = benchmark_weights,
                        benchmark_type = benchmark_type)
+
 
   # Direct estimates
   #_____________________________________________________________________________
@@ -368,8 +370,8 @@ xgb <- function(fixed,
   #_____________________________________________________________________________
   # Subdomains
 
-  sub_domains_direct <-merge(x = sub_domains_direct, y = sub_pred, by = c(sub_domains, "domains"), all.x = T)
-  sub_domains_direct <- sub_domains_direct[order(sub_domains_direct[,sub_domains]),]
+  sub_domains_direct <-left_join(x = sub_domains_direct, y = sub_pred, by = c(sub_domains, "domains"))
+  #sub_domains_direct <- sub_domains_direct[order(sub_domains_direct[,sub_domains]),]
 
   # Transform direct estimate if necessary to calculate residual
   sub_domains_direct$outcome_t <- transform_boot(sub_domains_direct$outcome)$y
@@ -385,12 +387,11 @@ xgb <- function(fixed,
   #colnames(domains_pred) <- c("domains","hat","hat_t","weight")
   # This code uses the actual domain variable in domain and correctly preserves sort order
   sub_pred$order=1:nrow(sub_pred)
-  domains_pred <- data.frame(collapse:::fmean(x=sub_pred[,c("hat","hat_t")],g=sub_pred$domains,w=sub_pred$wts,use.g.names=T),weight = collapse:::fsum(sub_pred$wts,g=sub_pred$domains),
-                             order=collapse:::ffirst(x=sub_pred$order,g=sub_pred$domains))
-  domains_pred <- domains_pred[order(domains_pred$order),]
+  domains_pred <- data.frame(collapse:::fmean(x=sub_pred[,c("hat","hat_t")],g=sub_pred$domains,w=sub_pred$wts,use.g.names=T),
+                             weight = collapse:::fsum(sub_pred$wts,g=sub_pred$domains))
   #domains_pred <- data.frame(domains_pred,weight = collapse:::fsum(sub_pred$wts,g=sub_pred$domains))
   domains_pred$domains <- rownames(domains_pred)
-  domains_pred$order <- NULL
+
   # Get direct estimates at domain level
   domains_direct <- data.frame(outcome = fwk$Y_smp,
                                wts=fwk$smp_weights_vec,
@@ -399,10 +400,9 @@ xgb <- function(fixed,
   colnames(domains_direct) <- c("outcome","wts","domains","order")
 
   #domains_direct <- aggregate_weighted_mean(df=domains_direct$outcome,by=list(domains_direct$domains),w=domains_direct$wts)
-  domains_direct <- data.frame(outcome=collapse:::fmean(domains_direct$outcome,g=domains_direct$domains,w=domains_direct$wts,use.g.names=T),order=collapse:::ffirst(domains_direct$order,g=domains_direct$domains))
-  domains_direct <- domains_direct[order(domains_direct$order),]
+  domains_direct <- data.frame(outcome=collapse:::fmean(domains_direct$outcome,g=domains_direct$domains,w=domains_direct$wts,use.g.names=T))
   domains_direct$domains <- rownames(domains_direct)
-  domains_direct$order <- NULL
+
   domains_direct$outcome_t <- transform_boot(domains_direct$outcome)$y
 
   resid_sub_domains <- (sub_domains_direct$outcome_t - as.numeric(sub_domains_direct$hat_t))
@@ -412,7 +412,7 @@ xgb <- function(fixed,
   domains_direct <- dplyr:::left_join(x=domains_direct,y=domains_pred,by="domains")
   #domains_direct <- merge(x=domains_direct,y=benchmark_factors,by="domains",all.x=T)
 
-  domains_direct <- domains_direct[order(domains_direct$domains),]
+  #domains_direct <- domains_direct[order(domains_direct$domains),]
   # calculate domain residuals
     resid_domains <- (domains_direct$outcome_t - domains_direct$hat_t)
 
@@ -432,7 +432,7 @@ xgb <- function(fixed,
   if (weightedBS==T & !is.null(smp_weights)) {
     pop_subarea_d <- sub_domains_direct$smp_weights/sum(sub_domains_direct$smp_weights)
     #domain_wts <- aggregate(sub_domains_direct$smp_weights,by=list(sub_domains_direct$domains),FUN=sum)$x
-    domain_wts <- collapse:::fsum(sub_domains_direct$smp_weights,g=sub_domains_direct$domains)
+    domain_wts <- collapse:::fsum(sub_domains_direct$smp_weights,g=sub_domains_direct$domains,use.g.names=T)
 
     pop_area_d <- domain_wts/sum(domain_wts)
   } else {
@@ -441,7 +441,7 @@ xgb <- function(fixed,
     pop_area_d <- rep(1/length(resid_domains),length(resid_domains))
   }
   B_sub <- sub_pred
-  B_sub <- B_sub[order(B_sub[,sub_domains]), ]
+  #B_sub <- B_sub[order(B_sub[,sub_domains]), ]
   results <- domains_pred[, c("domains", "hat")]
 
 
@@ -485,8 +485,8 @@ B_results_list <- foreach::foreach(j = 1:B,
       #B_domains <- aggregate_weighted_mean(df=B_sub$sim,by=list(B_sub$domains),w=B_sub$wts)
       #colnames(B_domains) <- c("domains","sim")
       B_domains <- collapse:::fmean(x=B_sub$sim,g=B_sub$domains,w=B_sub$wts)
-      #B_domains <- data.frame("domains" = names(B_domains),"sim" = B_domains)
-      B_domains <- data.frame("domains" = unique(B_sub$domains),"sim" = B_domains)
+      B_domains <- data.frame("domains" = names(B_domains),"sim" = B_domains)
+      #B_domains <- data.frame("domains" = unique(B_sub$domains),"sim" = B_domains)
       area_draws <- data.frame(domains=B_domains$domains,area_draw=resid_domains[sample(1:length(resid_domains),
                                                                                         nrow(B_domains), prob=pop_area_d,
                                                                                         replace = TRUE)]
