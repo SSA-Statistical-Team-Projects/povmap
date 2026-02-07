@@ -668,7 +668,7 @@ B_results_domains <- B_results_domains[row_reorder]
 
 
  result <- list(
-    ind = data.frame(Domain = results["Domain"], Mean = domains_pred["hat"]),
+    ind = data.frame(Domain = results["Domain"], Mean = results["hat"]),
     var = data.frame(Domain = results["Domain"], Mean = results["Var"]),
     CI  = data.frame(Domain = results["Domain"],
                            Lower = results["Lower"],
@@ -702,7 +702,7 @@ else {
   }
 
   if (!is.null(benchmark)) {
-    result$ind$Mean_bench <- domains_pred[,"hat_bench"]
+    result$ind$Mean_bench <- results[,"hat_bench"]
     colnames(result$ind)[ncol(result$ind)] <- "Mean_bench"
 
     if (bootstrap==T) {
