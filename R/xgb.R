@@ -46,6 +46,8 @@
 #' equal weight. Defaults to TRUE.
 #' @param boot_estimates. If TRUE, point_estimates are set equal to the average of the bootstrap replications. If set to FALSE, point estimates
 #' are set equal to the XGboost prediction. Defaults to FALSE.
+#' @param center_residuals. If TRUE, the mean of the residuals during the bootstrap are subtracted from the residuals prior to the bootstrapping procedure.
+#' Defaults to FALSE.
 #' @param cpus. Number of cores to parallelize across. Defaults to 1 (no parallelization)
 #' @param conf_level confidence level for the confidence interval. Defaults to 0.95.
 #' @param nrounds maximum number of boosting iterations. Defaults to 100.
@@ -207,6 +209,7 @@ xgb <- function(fixed,
                 ydump = NULL,
                 weightedBS = T,
                 boot_estimates = F,
+                center_residuals = F,
                 ...){
 
   #1. Initialize
@@ -445,14 +448,19 @@ xgb <- function(fixed,
     pop_subarea_d <- rep(1/length(resid_sub_domains),length(resid_sub_domains))
     pop_area_d <- rep(1/length(resid_domains),length(resid_domains))
   }
+
   B_sub <- sub_pred
   #B_sub <- B_sub[order(B_sub[,sub_domains]), ]
-  results <- domains_pred[, c("domains", "hat","hat_bench")]
+
 
 
 if (bootstrap==T) {
-
-
+  #browser()
+  if (center_residuals==T) {
+    resid_sub_domains <- resid_sub_domains-weighted.mean(resid_sub_domains,w=pop_subarea_d)
+    resid_domains <- resid_domains-weighted.mean(resid_domains,w=pop_area_d)
+    resid_domains_bench <- resid_domains_bench - weighted.mean(resid_domains_bench,w=pop_area_d)
+  }
   clusters <- unique(smp_data[,fwk$domains])
   if (cpus>1) {
     cl <- parallel::makeCluster(cpus)
@@ -468,7 +476,6 @@ cat("Beginning bootstrap \n")
 
 pb <- txtProgressBar(max = B, style = 3)
 progress <- function(n) setTxtProgressBar(pb, n)
-#browser()
 B_results_list <- foreach::foreach(j = 1:B,
                             .combine = rbind,
                             .packages = c("xgboost"),
@@ -499,19 +506,28 @@ B_results_list <- foreach::foreach(j = 1:B,
 
 
       # Add bootstrapped area residual and back transform
-      B_domains$sim_t <- B_domains$sim_t +area_draws$area_draw
-      B_domains$sim <- back_transform_boot(B_domains$sim_t)
+      B_domains$sim_t_plus_area <- B_domains$sim_t +area_draws$area_draw
+      B_domains$sim <- back_transform_boot(B_domains$sim_t_plus_area)
 
-      B_domains <- dplyr:::left_join(B_domains,domains_pred[,c("domains","hat_bench_t")],by="domains")
-      #B_domains$sim_bench_t <- (domains_pred$hat_bench_t+(B_domains$sim_t-B_domains$hat_t))
-      B_domains$sim_bench_t <- (B_domains$sim_t*(B_domains$hat_bench_t/B_domains$hat_t))
+
+      #B_domains$sim_bench_t <- (B_domains$sim_t*(B_domains$hat_bench_t/B_domains$hat_t))
       #That last one -- scaling --  gives intervals that are too wide, i.e. from 6 to 99.9
+
+      if (!is.null(benchmark)) {
+      B_domains <- dplyr:::left_join(B_domains,domains_pred[,c("domains","hat_bench_t")],by="domains")
+      area_draws <-   data.frame(area_draws,area_draw_bench = resid_domains_bench[sample(1:length(resid_domains_bench),
+                                                                                           nrow(B_domains), prob=pop_area_d,
+                                                                                           replace = TRUE)])
+
+      B_domains$sim_bench_t <- B_domains$hat_bench_t+(B_domains$sim_t-B_domains$hat_t)+area_draws$area_draw_bench
+
+
+      if (identical(transform_boot, arcsin_transform)==T) {
+      # truncate at 0, pi/2 to ensure monotonicity
+      B_domains$sim_bench_t <- pmax(0, pmin(B_domains$sim_bench_t, pi/2))
+      }
       B_domains$sim_bench <- back_transform_boot(B_domains$sim_bench_t)
-
-      # This isn't good because it gives answers greater than 1
-      #B_domains$sim_bench <- B_domains$sim*domains_pred$hat_bench/domains_pred$hat
-
-
+      }
 
       # If benchmark is selected, draw from distribution of benchmarked residuals, add and back transform
       #if (!is.null(benchmark)) {
@@ -626,15 +642,18 @@ B_results_domains <- B_results_domains[row_reorder]
   # Prepare results
   #_____________________________________________________________________________
   #results <- NULL
+  results <- data.frame(domains = B_results_domains)
   results$Lower <- NA
   results$Upper <- NA
   results$Mean <- NA
   results$Var <- NA
-  results$Var_bench <- NULL
-  results$Mean_bench <- NULL
-  results$Lower_bench <- NULL
-  results$Upper_bench <- NULL
-  results$Domain <- B_results_domains
+  results$Var_bench <- NA
+  results$Mean_bench <- NA
+  results$Lower_bench <- NA
+  results$Upper_bench <- NA
+
+  results <- left_join (results, domains_pred[, c("hat","hat_bench","domains")],by="domains")
+  colnames(results)[1] <- "Domain"
 
   for (l in 1:ncol(B_results)){
 
