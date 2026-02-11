@@ -85,7 +85,7 @@ data_transformation <- function(fixed,
   } else if (transformation=="logit") {
     logit_transform(y = y_vector, shift = NULL)
   }
-  
+
 
   smp_data[paste(fixed[[2]])] <- transformed$y
 
@@ -127,7 +127,7 @@ std_data_transformation <- function(fixed = fixed, smp_data, transformation,
   else if (transformation == "logit") {
     std_transformed <- smp_data[paste(fixed[[2]])]
   }
-  
+
 #  std_transformed <- if (transformation == "box.cox") {
 #    as.data.frame(box_cox_std(y = y_vector, lambda = lambda))
 #  } else if (transformation == "dual") {
@@ -144,7 +144,7 @@ std_data_transformation <- function(fixed = fixed, smp_data, transformation,
 #    smp_data[paste(fixed[[2]])]
 #  } else if (transformation == "logit") {
 #    smp_data[paste(fixed[[2]])]
-#  } 
+#  }
 
   smp_data[paste(fixed[[2]])] <- std_transformed
   return(transformed_data = smp_data)
@@ -173,15 +173,15 @@ back_transformation <- function(y, transformation, lambda, shift,
     ordernorm_back(y = y, shift = shift, framework = framework, fixed = fixed)
   } else if (transformation == "logit") {
     logit_transform_back(y = y, shift = shift)
-  } 
-  
+  }
+
   return(y = back_transformed)
 } # End back_transform
 
 transformation <- function(y, transformation, lambda, shift,
                            framework, fixed) {
-  
-  
+
+
   transformed <- if (transformation == "no") {
     no_transform(y = y)
   } else if (transformation == "log") {
@@ -198,8 +198,8 @@ transformation <- function(y, transformation, lambda, shift,
     ordernorm(y = y, shift = shift)
   } else if (transformation == "logit") {
     logit_transform(y = y, shift = shift)
-  } 
-  
+  }
+
   return(y = transformed)
 } # End transform
 
@@ -508,9 +508,8 @@ arcsin_transform <- function(y, shift = NULL) {
 }
 
 arcsin_transform_back <- function(y, shift = NULL) {
+  y <- pmax(0, pmin(y, pi/2))
   y <- sin(y)^2
-  y[y<0] <- 0
-  y[y>1] <- 1
   return(y = y)
 }
 
@@ -521,7 +520,12 @@ logit_transform <- function(y,shift=NULL) {
     return(list(y=y, shift=shift))
 }
 
-logit_transform_back <- function(y,shift=NULL) {
+logit_transform_epsilon <- function(y,shift=NULL,epsilon=1e-7) {
+    y <- pmin(pmax(y, epsilon), 1 - epsilon)
+    y <- log(y/(1-y))
+    return(list(y=y, shift=shift))
+}
+logit_transform_back <- function(y,shift=NULL,epsilon=NULL) {
   y <- exp(y)/(1+exp(y))
   return(y = y)
 }

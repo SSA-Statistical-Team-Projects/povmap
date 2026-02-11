@@ -17,10 +17,10 @@ xgb_check1 <- function(transformation,
   #require(xgboost)
   require(stats)
 
-  if(!(transformation %in% c("no", "arcsin", "log"))) stop("For transformation, please choose no, arcsin, or log.")
+  if(!(transformation %in% c("no", "arcsin", "log","logistic"))) stop("For transformation, please choose no, arcsin, logistic, or log.")
 
-  if (transformation=="arcsin"){
-    if(min(Y_smp)<0 | max(Y_smp)>1) stop("The outcome variable must be between 0 and 1 for arcsin transformations.")
+  if (transformation=="arcsin" | transformation=="logistic"){
+    if(min(Y_smp)<0 | max(Y_smp)>1) stop("The outcome variable must be between 0 and 1 for arcsin or logistic transformations.")
   }
 
   if (transformation=="log"){
