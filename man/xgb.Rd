@@ -15,7 +15,8 @@ xgb(
   transformation = "no",
   bootstrap = T,
   bootstrap_type = "residual",
-  B = 1000,
+  B = 200,
+  L = 100,
   cpus = 1,
   conf_level = 0.95,
   nrounds = 100,
@@ -38,6 +39,7 @@ xgb(
   benchmark_weights = NULL,
   ydump = NULL,
   weightedBS = T,
+  boot_estimates = F,
   center_residuals = F,
   ...
 )
@@ -85,8 +87,11 @@ cluster residual bootstrap. Defaults to "residual".}
 
 \item{B}{a number determining the number of bootstrap populations in the
 nonparametric residual bootstrap approach used in the MSE estimation. The
-number must be greater than 1. Defaults to 1000. For practical applications,
+number must be greater than 1. Defaults to 200. For practical applications,
 values larger than 200 are recommended.}
+
+\item{L}{a number determining the number of Monte-Carlo residual bootstrap simulations to run to generate
+point estimates when using a transformation. Defaults to 100.}
 
 \item{conf_level}{confidence level for the confidence interval. Defaults to 0.95.}
 
@@ -177,8 +182,11 @@ internal benchmarking).}
 their sample weight when implementing the cluster residual bootstrap. If FALSE, gives each area and subarea
 equal weight. Defaults to TRUE.}
 
-\item{center_residuals.}{If TRUE, residuals are centered around zero prior to adding then to XGboost predictions
-to generate estimates. Defaults to FALSE.}
+\item{boot_estimates.}{If TRUE, point_estimates are set equal to the average of the bootstrap replications. If set to FALSE, point estimates
+are set equal to the XGboost prediction. Defaults to FALSE.}
+
+\item{center_residuals.}{If TRUE, the mean of the residuals during the bootstrap are subtracted from the residuals prior to the bootstrapping procedure.
+Defaults to FALSE.}
 
 \item{cpus.}{Number of cores to parallelize across. Defaults to 1 (no parallelization)}
 

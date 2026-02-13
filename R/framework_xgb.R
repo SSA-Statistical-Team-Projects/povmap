@@ -154,6 +154,7 @@ framework_xgb <-function(fixed,
               pop_weights = pop_weights_name,
               covariates = covariates,
               benchmark_weights = benchmark_weights,
+              benchmark_level = benchmark_level,
               smp_domains = domains,
               pop_domains_vec = pop_domains_vec
               ))
