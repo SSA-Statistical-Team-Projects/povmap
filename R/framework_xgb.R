@@ -63,7 +63,7 @@ framework_xgb <-function(fixed,
   X_pop <- pop_data[c(covariates,domains,sub_domains,benchmark_level)]
   # add pop weights if they are not already in thecovariates
   if (!pop_weights %in% covariates) {
-    X_pop <- data.frame(X_pop,pop_weights)
+    X_pop <- data.frame(X_pop,pop_data[pop_weights])
   }
 
   # Handling sample and population weights

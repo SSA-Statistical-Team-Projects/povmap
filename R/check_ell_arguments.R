@@ -38,19 +38,19 @@ ell_check1 <- function(fixed, pop_data, pop_domains, smp_data, smp_domains, L,tr
                  determining the number of Monte-Carlo simulations. The value
                  must be at least 0. See also help(ell)."))
   }
-  
+
   if (!all(unique(as.character(smp_data[[smp_domains]])) %in%
     unique(as.character(pop_data[[pop_domains]])))) {
     stop(strwrap(prefix = " ", initial = "",
                 "The sample data contains domains that are not contained in the
                 population data."))
   }
-  
+
   if (transformation=="arcsin" & (min(smp_data[,as.character(fixed[[2]])],na.rm=T)<0 | max(smp_data[,as.character(fixed[[2]])],na.rm=T)>1))  {
     stop("The dependent variable must be between zero and one when using the arcsin transformation")
   }
-  
-  
+
+
 }
 
 ell_check2 <- function(threshold, transformation, interval, MSE, boot_type, B,
@@ -83,23 +83,23 @@ ell_check2 <- function(threshold, transformation, interval, MSE, boot_type, B,
                  'box.cox', dual', log.shift', 'ordernorm', and
                  'arcsin'."))
   }
-  
-  
+
+
   if (L==0 && !(transformation == "no" || transformation == "arcsin" | transformation=="log" | transformation == "log.shift")) {
     stop(strwrap(prefix = " ", initial = "",
                  "Analytic calculations not supported with transformations other than log, log shift, and arcsin at this time"))
   }
-  
-  
+
+
   if (!is.null(MSE_pop_weights) && !(transformation == "no" || transformation == "arcsin" | transformation=="log" | transformation == "log.shift")) {
     stop(strwrap(prefix = " ", initial = "",
-                 "MSE population weights not supported with transformations other than log, log shift, and arcsin at this time")) 
+                 "MSE population weights not supported with transformations other than log, log shift, and arcsin at this time"))
   }
-  
-  
 
-  
-  
+
+
+
+
   if (any(interval != "default") & (!is.vector(interval, mode = "numeric") ||
     length(interval) != 2 || !(interval[1] < interval[2]))) {
     stop(strwrap(prefix = " ", initial = "",
@@ -190,8 +190,8 @@ ell_check2 <- function(threshold, transformation, interval, MSE, boot_type, B,
                  specifying the variable name of a numeric variable indicating
                  weights in the sample data. See also help(ell)."))
   }
-  
-  
+
+
 
   if (is.null(weights) &!is.null(weights_type)) {
     stop(strwrap(prefix = " ", initial = "",
@@ -374,13 +374,13 @@ ell_check2 <- function(threshold, transformation, interval, MSE, boot_type, B,
                    "The benchmark version of ell is only available with
                    'raking', 'ratio', and 'ratio_complement'."))
   }
-  
+
   if (benchmark_type == "ratio_complement" && (names(benchmark)[-1] %in% "Head_Count") && max(benchmark[["Head_Count"]])>1) {
     stop(strwrap(prefix = " ", initial = "",
                  "When benchmarking the headcount rate with ratio_complement, the target values must lie between 0 and 1."))
   }
-  
-  
+
+
     if (is.null(benchmark) && benchmark_type != "ratio") {
       stop(strwrap(prefix = " ", initial = "",
                    "A benchmark type is provided, but no benchmark value.
@@ -390,191 +390,3 @@ ell_check2 <- function(threshold, transformation, interval, MSE, boot_type, B,
 }
 
 
-# Functions called in notation
-fw_check1 <- function(pop_data, mod_vars, pop_domains, pop_subdomains=pop_subdomains,smp_data, fixed,
-                      smp_domains, smp_subdomains=NULL, aggregate_to, threshold, weights,
-                      pop_weights, benchmark_level, benchmark_weights,
-                      weights_type, rescale_weights) {
-
-  if (!all(mod_vars %in% colnames(pop_data))) {
-    stop(strwrap(prefix = " ", initial = "",
-                 paste0("Variable ",
-                        mod_vars[(which(!mod_vars %in% colnames(pop_data)))],
-                        " is not contained in pop_data. Please provide valid
-                        variable names for the explanatory variables."
-    )))
-  }
-  if (!(pop_domains %in% colnames(pop_data))) {
-    stop(strwrap(prefix = " ", initial = "",
-                 paste0("The domain variable ", pop_domains, " is not contained
-                        in pop_data. Please provide valid variable name for
-                        pop_domains.")))
-  }
-  if (!all(mod_vars %in% colnames(smp_data))) {
-    stop(strwrap(prefix = " ", initial = "",
-                 paste0("Variable ",
-                        mod_vars[which(!(mod_vars %in% colnames(smp_data)))],
-                        " is not contained in smp_data. Please provide valid
-                        variable names for the explanatory variables."
-    )))
-  }
-  if (!(smp_domains %in% colnames(smp_data))) {
-    stop(strwrap(prefix = " ", initial = "",
-                 paste0("The domain variable ", smp_domains, " is not contained
-                        in smp_data. Please provide valid variable name for
-                        smp_domains.")))
-  }
-  
-  if (!is.null(smp_subdomains)) {
-   if (length(unique(smp_data[,smp_subdomains])) != nrow(unique(smp_data[c(smp_subdomains,smp_domains)]))) {
-     stop(strwrap(prefix = " ", initial = "",
-                  paste0("The subdomain identifier ", smp_subdomains, " cannot refer to multiple domains ",smp_domains," in smp_data.
-                         Please provide a subdomain identifier that takes on different values for each domain. ")))
-   }
-  }
-  
-  if (!((as.character(fixed[2])) %in% colnames(smp_data))) {
-    stop(strwrap(prefix = " ", initial = "",
-                 paste0("Variable ", as.character(fixed[2]), " is not contained
-                        in smp_data. Please provide valid variable name for the
-                        dependent variable.")))
-  }
-
-  if (!is.numeric(smp_data[[paste(fixed[2])]])) {
-    stop(strwrap(prefix = " ", initial = "",
-                 paste0(as.character(fixed[2]), " must be the name of a
-                        variable that is a numeric vector.")))
-  }
-  if (is.character(weights)) {
-    if (!(weights %in% colnames(smp_data))) {
-      stop(strwrap(prefix = " ", initial = "",
-                   paste0("The weights variable ", weights, " is not contained
-                          in smp_data. Please provide a valid variable name for
-                          the weights variable.")))
-    }
-  }
-  if (is.character(weights)) {
-    if (!is.numeric(smp_data[[weights]])) {
-      stop(strwrap(prefix = " ", initial = "",
-                   paste0("The variable ", weights, " must be the name of a
-                          variable that is a numeric vector.")))
-    }
-  }
-  if (is.character(weights)) {
-    if (!all(smp_data[[weights]] >= 0)) {
-      stop(strwrap(prefix = " ", initial = "",
-                   paste0("Negative or zero weights are included in ", weights,
-                          " Please remove obersvations with weight values
-                          less than or equal to zero.")))
-    }
-  }
-
-  if (!is.null(aggregate_to)) {
-    if (!(aggregate_to %in% colnames(pop_data))) {
-      stop(paste0("The domain variable ", aggregate_to, " is not contained in
-                  pop_data. Please provide valid variable name for the
-                  aggregation."))
-    }
-  }
-
-  if (!is.null(benchmark_level)) {
-    if (!(benchmark_level %in% colnames(pop_data))) {
-      stop(paste0("The benchmark_level variable ", benchmark_level, " is not
-                  contained in pop_data. Please provide valid variable name for
-                  the benchmark level."))
-    }
-  }
-
-  if (!is.null(benchmark_level)) {
-    if (!(benchmark_level %in% colnames(smp_data))) {
-      stop(paste0("The benchmark_level variable ", benchmark_level, " is not
-                  contained in smp_data. Please provide valid variable name for
-                  the benchmark level."))
-    }
-  }
-
-  if (is.character(benchmark_weights)) {
-    if (!is.numeric(smp_data[[benchmark_weights]])) {
-      stop(strwrap(prefix = " ", initial = "",
-                   paste0("The variable ", benchmark_weights, " must be the name
-                   of a variable that is a numeric vector.")))
-    }
-  }
-
-  if (is.character(pop_weights)) {
-    if (!is.numeric(pop_data[[pop_weights]])) {
-      stop(strwrap(prefix = " ", initial = "",
-                   paste0("The variable ", pop_weights, " must be numeric.")))
-    }
-  }
-  if (is.character(pop_weights)) {
-    if (!all(pop_data[[pop_weights]] > 0)) {
-      stop(strwrap(prefix = " ", initial = "",
-                   paste0("Negative or zero weights are included in ",
-                          pop_weights, " Please remove obersvations with weight
-                          values less than or equal to zero.")))
-    }
-  }
-
-  if (is.null(pop_weights)) {
-    if (dim(pop_data)[1] < dim(smp_data)[1]) {
-      stop(strwrap(prefix = " ", initial = "",
-                 "The population data set cannot have less observations than
-                 the sample data set."))
-    }
-  }
-
-  if (inherits(threshold, "function") &&
-    (!is.numeric(threshold(smp_data[[paste(fixed[2])]])) ||
-      length(threshold(smp_data[[paste(fixed[2])]])) != 1)) {
-    stop(strwrap(prefix = " ", initial = "",
-                 "The threshold function must return a single numeric value
-                 when evaluated with the dependent variable."))
-  }
-}
-
-
-
-
-fw_check2 <- function(pop_domains, pop_domains_vec, smp_domains,
-                      smp_domains_vec, aggregate_to, aggregate_to_vec) {
-  if (!(is.numeric(pop_domains_vec) ||
-    any(inherits(pop_domains_vec, "factor")))) {
-    stop(strwrap(prefix = " ", initial = "",
-                 paste0(pop_domains, " needs to be the name of a variable that
-                        is numeric or a (ordered) factor.")))
-  }
-  if (!(is.numeric(smp_domains_vec) ||
-    any(inherits(smp_domains_vec, "factor")))) {
-    stop(strwrap(prefix = " ", initial = "",
-                 paste0(smp_domains, " needs to be the name of a variable that
-                        is numeric or a (ordered) factor.")))
-  }
-  if(is.null(aggregate_to) != TRUE){
-    if (!(is.numeric(aggregate_to_vec) ||
-          any(inherits(aggregate_to_vec, "factor")))) {
-      stop(paste0(aggregate_to, " needs to be the name of a variable that is
-                  numeric or a (ordered) factor."))
-    }
-  }
-  if ((is.numeric(pop_domains_vec) &&
-    any(inherits(smp_domains_vec, "factor"))) ||
-    (is.numeric(smp_domains_vec) &&
-      any(inherits(pop_domains_vec, "factor")))) {
-    stop(strwrap(prefix = " ", initial = "",
-                 paste0(pop_domains, " and ", smp_domains, " need to be names
-                        of variables that are of the same class (factor and
-                        ordered factor are considered to be the same class).
-                        See also help(ell).")))
-  }
-}
-
-fw_check3 <- function(obs_dom, dist_obs_dom, pop_domains, smp_domains) {
-  if (sum(obs_dom) == 0 || sum(dist_obs_dom) == 0) {
-    stop(strwrap(prefix = " ", initial = "",
-                 paste0(pop_domains, " and ", smp_domains, " do not have any
-                        value in common. Do really both variables indicate the
-                        same domains in population data and sample data,
-                        respectively?")))
-  }
-}

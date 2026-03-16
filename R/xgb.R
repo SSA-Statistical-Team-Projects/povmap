@@ -565,10 +565,7 @@ parallel::stopCluster(cl)
 }
 
 # Extract and combine from list
-#B_results <- do.call(rbind, lapply(B_results_list, `[[`, "B_results"))
-#B_results_bench <- do.call(rbind, lapply(B_results_list, `[[`, "B_results_bench"))
-#B_results_domains <- sapply(B_results_list, `[[`, "B_domains")
-#browser()
+
 B_results <- do.call(rbind, B_results_list$B_results)
 B_results_bench <- do.call(rbind, B_results_list$B_results_bench)
 B_results_truth <- do.call(rbind, B_results_list$B_results_truth)

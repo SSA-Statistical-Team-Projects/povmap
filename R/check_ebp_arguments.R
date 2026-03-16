@@ -38,20 +38,20 @@ ebp_check1 <- function(fixed, pop_data, pop_domains, smp_data, smp_domains, L,tr
                  determining the number of Monte-Carlo simulations. The value
                  must be at least 0. See also help(ebp)."))
   }
-  
+
   if (!all(unique(as.character(smp_data[[smp_domains]])) %in%
     unique(as.character(pop_data[[pop_domains]])))) {
     stop(strwrap(prefix = " ", initial = "",
                 "The sample data contains domains that are not contained in the
                 population data."))
   }
-  
-  
+
+
   if (transformation=="arcsin" & (min(smp_data[,as.character(fixed[[2]])],na.rm=T)<0 | max(smp_data[,as.character(fixed[[2]])],na.rm=T)>1))  {
     stop("The dependent variable must be between zero and one when using the arcsin transformation")
   }
-  
-  
+
+
 }
 
 ebp_check2 <- function(threshold, transformation, interval, MSE, boot_type, B,
@@ -84,21 +84,21 @@ ebp_check2 <- function(threshold, transformation, interval, MSE, boot_type, B,
                  'box.cox', dual', log.shift', 'ordernorm',
                  'arcsin', and 'logit'."))
   }
-  
-  
+
+
   if (L==0 && !(transformation == "no" || transformation == "arcsin" | transformation=="log" | transformation == "log.shift")) {
     stop(strwrap(prefix = " ", initial = "",
                  "Analytic calculations not supported with transformations other than log, log shift, and arcsin at this time"))
   }
-  
-  
+
+
   if (!is.null(MSE_pop_weights) && !(transformation == "no" || transformation == "arcsin" | transformation=="log" | transformation == "log.shift")) {
     stop(strwrap(prefix = " ", initial = "",
-                 "MSE population weights not supported with transformations other than log, log shift, and arcsin at this time")) 
+                 "MSE population weights not supported with transformations other than log, log shift, and arcsin at this time"))
   }
-  
-  
-  
+
+
+
   if (any(interval != "default") & (!is.vector(interval, mode = "numeric") ||
     length(interval) != 2 || !(interval[1] < interval[2]))) {
     stop(strwrap(prefix = " ", initial = "",
@@ -189,7 +189,7 @@ ebp_check2 <- function(threshold, transformation, interval, MSE, boot_type, B,
                  specifying the variable name of a numeric variable indicating
                  weights in the sample data. See also help(ebp)."))
   }
-  
+
   if (is.null(weights_type)) {
     weights_type <- "Guadarrama-Null"
   }
@@ -200,18 +200,18 @@ ebp_check2 <- function(threshold, transformation, interval, MSE, boot_type, B,
                  "Weighted ebp with weights_type == 'Guadarrama' can only be
                  used without transformation or the log-transformation."))
   }
-  
-    
+
+
   if (!is.null(weights) && (weights_type == "Guadarrama" | weights_type == "Guadarrama-Null") &&
       (!is.null(smp_subdomains) && (!is.null(pop_subdomains)))) {
     stop(strwrap(prefix = " ", initial = "",
                  "Two-fold nested error model may only only be used with nlme or hybrid weights"))
   }
-  
+
   if (weights_type=="Guadarrama-Null") {
-    weights_type <- NULL 
+    weights_type <- NULL
   }
-  
+
   #if (!is.null(weights) && isTRUE(MSE) && boot_type == "wild") {
   #  stop(strwrap(prefix = " ", initial = "",
   #               "The weighted version of ebp is only available with the
@@ -399,15 +399,15 @@ ebp_check2 <- function(threshold, transformation, interval, MSE, boot_type, B,
                    "The benchmark version of ebp is only available with
                    'raking', 'ratio', 'ratio_complement', and 'ratio_bound'."))
   }
-  
+
   if (benchmark_type == "ratio_complement" && is.data.frame(benchmark))  {
     if (max(benchmark[["Head_Count"]])>1 | max(benchmark[["Mean"]])>1) {
     stop(strwrap(prefix = " ", initial = "",
                  "When benchmarking with ratio_complement, the target values must lie between 0 and 1."))
     }
-} 
-  
-  
+}
+
+
     if (is.null(benchmark) && benchmark_type != "ratio") {
       stop(strwrap(prefix = " ", initial = "",
                    "A benchmark type is provided, but no benchmark value.
@@ -451,7 +451,7 @@ fw_check1 <- function(pop_data, mod_vars, pop_domains, pop_subdomains=pop_subdom
                         in smp_data. Please provide valid variable name for
                         smp_domains.")))
   }
-  
+
   if (!is.null(smp_subdomains)) {
    if (length(unique(smp_data[,smp_subdomains])) != nrow(unique(smp_data[c(smp_subdomains,smp_domains)]))) {
      stop(strwrap(prefix = " ", initial = "",
@@ -459,7 +459,7 @@ fw_check1 <- function(pop_data, mod_vars, pop_domains, pop_subdomains=pop_subdom
                          Please provide a subdomain identifier that takes on different values for each domain. ")))
    }
   }
-  
+
   if (!((as.character(fixed[2])) %in% colnames(smp_data))) {
     stop(strwrap(prefix = " ", initial = "",
                  paste0("Variable ", as.character(fixed[2]), " is not contained
@@ -594,6 +594,13 @@ fw_check2 <- function(pop_domains, pop_domains_vec, smp_domains,
                         ordered factor are considered to be the same class).
                         See also help(ebp).")))
   }
+  if (!all(smp_domains_vec %in% pop_domains_vec)) {
+    stop(strwrap(prefix = " ", initial = "",
+                 paste0(smp_domains, " in the sample data contains values not contained in the population domains ", pop_domains,
+                        ". All sample domains must also be contained in the population dataframe")))
+  }
+
+
 }
 
 fw_check3 <- function(obs_dom, dist_obs_dom, pop_domains, smp_domains) {
