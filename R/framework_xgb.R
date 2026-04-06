@@ -11,7 +11,8 @@ framework_xgb <-function(fixed,
                          benchmark_level,
                          benchmark_type,
                          benchmark_weights,
-                         na.rm) {
+                         na.rm,
+                         variance_y) {
 
   # Data preparation
   # Splitting the fixed string to extract outcome and covariates
@@ -54,10 +55,7 @@ framework_xgb <-function(fixed,
      X_smp <- cbind(X_smp,smp_data[c(benchmark_level,benchmark_weights)])
   }
 
-
-
-
-
+  
   Y_smp <- smp_data[outcome]
   #X_pop <- pop_data[, c(covariates,domains,sub_domains,pop_weights)]
   X_pop <- pop_data[c(covariates,domains,sub_domains,benchmark_level)]
@@ -75,14 +73,19 @@ framework_xgb <-function(fixed,
   }
 
     pop_weights_name <- pop_weights
+  
+      # drop census observations with 0 population 
+  X_pop <- X_pop[pop_data[,pop_weights_name]>0,]
+  pop_data <- pop_data[pop_data[,pop_weights_name]>0,]
+
+  
   if (!is.null(pop_weights)) {
     pop_weights <- pop_data[, pop_weights]
   } else {
     pop_weights <- rep(1, length = nrow(pop_data))
   }
 
-
-
+  
 
   # Determining domains in sample and population
   in_smp <- unique(smp_data[[domains]])
@@ -156,6 +159,7 @@ framework_xgb <-function(fixed,
               benchmark_weights = benchmark_weights,
               benchmark_level = benchmark_level,
               smp_domains = domains,
-              pop_domains_vec = pop_domains_vec
+              pop_domains_vec = pop_domains_vec,
+              variance_y = variance_y
               ))
 }
