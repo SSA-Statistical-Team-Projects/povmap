@@ -469,7 +469,8 @@ B_results_list <- foreach(j = 1:B,
       B_domains$sim_truth <- collapse:::fmean(B_sub$sim_plus_area,g=B_sub$domains,w=B_sub$wts)
 
       # 2. Extract sample observations from new population
-      B_sample <- dplyr:::inner_join(smp_data[, c(fwk$sub_domains, fwk$covariates, fwk$smp_weights, fwk$variance_y)]
+      covariates_no_popwt <- setdiff(fwk$covariates, fwk$pop_weights)
+      B_sample <- dplyr:::inner_join(smp_data[, c(fwk$sub_domains, covariates_no_popwt, fwk$smp_weights, fwk$variance_y)]
                                     , B_sub, by=fwk$sub_domains)
       #B_sample$sim_plus_area <- back_transform_outcome(B_sample$sim_t_plus_area)
 
