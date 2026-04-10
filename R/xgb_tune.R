@@ -50,17 +50,21 @@
 #' Defaults to 1.
 #' @param alpha L1 regularization term on weights. Increasing this value will result in a more conservative model.
 #' Defaults to 0.
+#' @param cpus. Number of cores to parallelize across. Defaults to 1 (no parallelization)
 #' @param verbose display progress. Defaults to FALSE.
 #' @param ... additional parameters to be passed to \code{xgb.train}.
 #'
 #' @return An object of class \code{xgb}, \code{emdi}, containing the optimal
-#' hyperparameters for an extreme gradient boosting model.
+#' hyperparameters for an extreme gradient boosting model and the out-of-sample
+#' R-squared at the domain level (\code{r2_oos}).
 #' @references
 #' Merfeld, J. D., & Newhouse, D. (2023). Improving Estimates of Mean Welfare and Uncertainty
 #' in Developing Countries (No. 10348). The World Bank. \cr \cr
 #' @export
 #' @importFrom xgboost xgboost
 #' @importFrom dplyr left_join
+#' @importFrom foreach foreach %dopar%
+#' @importFrom doParallel registerDoParallel stopImplicitCluster
 #'
 #' @examples
 #' \donttest{
@@ -95,7 +99,8 @@ xgb_tune <- function(fixed,
                      max_delta_step = c(0),
                      lambda = c(0.5, 1.5),
                      alpha = c(0),
-                     verbose = FALSE,
+                     cpus = 1, 
+                     verbose = TRUE,
                      ...){
 
   # Data preparation
@@ -175,104 +180,122 @@ xgb_tune <- function(fixed,
 
   # Tuning
   #_____________________________________________________________________________
+
+  # Register parallel backend (uses 1 core when cpus = 1, i.e. sequential)
+  cl <- parallel::makeCluster(cpus)
+  doParallel::registerDoParallel(cl)
+  on.exit(parallel::stopCluster(cl), add = TRUE)
+
+  # Capture extra arguments for passing into parallel workers
+  dots <- list(...)
+
+  # Collect domain-level mean labels per fold for R2 computation
+  domain_labels_list <- vector("list", folds)
+
+  # Progress bar across folds (updates in the main process after each fold completes)
+  if (verbose == TRUE) {
+    pb <- txtProgressBar(min = 0, max = folds, style = 3)
+  }
+
   for (fold in 1:folds){
 
-    for (row in 1:nrow(tunegrid)){
+    # Compute domain-level mean labels for this fold's held-out data
+    # (independent of tuning grid row, so done once per fold)
+    fold_labels <- Y_smp[cluster_col$fold == fold, ]
+    fold_domains <- X_smp[cluster_col$fold == fold, ][[paste0(domains)]]
+    fold_df <- data.frame(labels = fold_labels, domains = fold_domains)
+    domain_labels_list[[fold]] <- sapply(split(fold_df, fold_df$domains),
+                                         function(g) mean(g$labels))
 
-      # xgb_fit <-  xgboost::xgboost(
-      #   data               = data.matrix(X_final[cluster_col$fold!=fold,]),
-      #   label              = Y_smp[cluster_col$fold!=fold,],
-      #   weight             = as.matrix(smp_weights)[cluster_col$fold!=fold,],
-      #   nrounds            = tunegrid$nround[row],
-      #   max_depth          = tunegrid$max_depth[row],
-      #   colsample_bytree   = tunegrid$colsample_bytree[row],
-      #   colsample_bylevel  = tunegrid$colsample_bylevel[row],
-      #   colsample_bynode   = tunegrid$colsample_bynode[row],
-      #   subsample          = tunegrid$subsample[row],
-      #   min_child_weight   = tunegrid$min_child_weight[row],
-      #   eta                = tunegrid$eta[row],
-      #   gamma              = tunegrid$gamma[row],
-      #   max_delta_step     = tunegrid$max_delta_step[row],
-      #   lambda             = tunegrid$lambda[row],
-      #   alpha              = tunegrid$alpha[row],
-      #   #objective          = "reg:squarederror",
-      #   verbose            = 0,
-      #   ...
-      # )
+    fold_mse <- foreach::foreach(
+      row = 1:nrow(tunegrid),
+      .combine  = c,
+      .packages = "xgboost"
+    ) %dopar% {
 
-
-      params <- list(max_depth          = tunegrid$max_depth[row],
-                     colsample_bytree   = tunegrid$colsample_bytree[row],
-                     colsample_bylevel  = tunegrid$colsample_bylevel[row],
-                     subsample          = tunegrid$subsample[row],
-                     min_child_weight   = tunegrid$min_child_weight[row],
-                     eta                = tunegrid$eta[row],
-                     gamma              = tunegrid$gamma[row],
-                     max_delta_step     = tunegrid$max_delta_step[row],
-                     lambda             = tunegrid$lambda[row],
-                     alpha              = tunegrid$alpha[row],
-                     ...)
+      params <- c(list(
+        max_depth          = tunegrid$max_depth[row],
+        colsample_bytree   = tunegrid$colsample_bytree[row],
+        colsample_bylevel  = tunegrid$colsample_bylevel[row],
+        subsample          = tunegrid$subsample[row],
+        min_child_weight   = tunegrid$min_child_weight[row],
+        eta                = tunegrid$eta[row],
+        gamma              = tunegrid$gamma[row],
+        max_delta_step     = tunegrid$max_delta_step[row],
+        lambda             = tunegrid$lambda[row],
+        alpha              = tunegrid$alpha[row]
+      ), dots)
 
       dtrain <- xgboost::xgb.DMatrix(
-        data = data.matrix(X_final[cluster_col$fold!=fold,]),
-        label = Y_smp[cluster_col$fold!=fold,],
-        weight = as.matrix(smp_weights)[cluster_col$fold!=fold,]
+        data   = data.matrix(X_final[cluster_col$fold != fold, ]),
+        label  = Y_smp[cluster_col$fold != fold, ],
+        weight = as.matrix(smp_weights)[cluster_col$fold != fold, ]
       )
-
-
 
       xgb_fit <- xgboost::xgb.train(
-        data               = dtrain,
-        params             = params,
-        nrounds            = tunegrid$nround[row],
-        verbose            = 0,
-
+        data    = dtrain,
+        params  = params,
+        nrounds = tunegrid$nround[row],
+        verbose = 0
       )
 
-
       # Predictions (only for those out of sample)
-      domains_hat <- data.frame(predict(xgb_fit, data.matrix(X_final[cluster_col$fold==fold,])))
-      domains_hat[[paste0(domains)]] <- X_smp[cluster_col$fold==fold,][[paste0(domains)]]
-      domains_hat[[colnames(Y_smp)]] <- Y_smp[cluster_col$fold==fold,]
+      domains_hat <- data.frame(predict(xgb_fit, data.matrix(X_final[cluster_col$fold == fold, ])))
+      domains_hat[[paste0(domains)]] <- X_smp[cluster_col$fold == fold, ][[paste0(domains)]]
+      domains_hat[[colnames(Y_smp)]] <- Y_smp[cluster_col$fold == fold, ]
       colnames(domains_hat) <- c("hat", "domains", "labels")
       grouped_domains <- split(domains_hat, domains_hat$domains)
-      mean_hat <- sapply(grouped_domains, function(group) mean(group$hat))
+      mean_hat    <- sapply(grouped_domains, function(group) mean(group$hat))
       mean_labels <- sapply(grouped_domains, function(group) mean(group$labels))
-      first_rows <- lapply(grouped_domains, function(group) group[1, ])
+      first_rows  <- lapply(grouped_domains, function(group) group[1, ])
       domains_pred <- do.call(rbind, first_rows)
-      domains_pred$hat <- mean_hat
+      domains_pred$hat    <- mean_hat
       domains_pred$labels <- mean_labels
 
-      # Predict, square error, and take mean --> MSE
-      OPT[row, fold] <- mean((domains_pred$labels - domains_pred$hat)^2)
-      if (verbose==TRUE){
-        print(paste0("Fold ", fold, " of ", folds, " and row ", row, " of ", nrow(tunegrid)))
-      }
+      # Return MSE for this row
+      mean((domains_pred$labels - domains_pred$hat)^2)
     }
+
+    OPT[, fold] <- fold_mse
+    if (verbose == TRUE) {
+      setTxtProgressBar(pb, fold)
+    }
+  }
+  if (verbose == TRUE) {
+    close(pb)
   }
 
   # Optimal values
   #_____________________________________________________________________________
-  mse_min <- min(apply(OPT, 1, FUN = mean))
-  nround_opt <- tunegrid$nround[which.min(mse_min)]
-  max_depth_opt <- tunegrid$max_depth[which.min(mse_min)]
-  colsample_bytree_opt <- tunegrid$colsample_bytree[which.min(mse_min)]
-  colsample_bylevel_opt <- tunegrid$colsample_bylevel[which.min(mse_min)]
-  colsample_bynode_opt <- tunegrid$colsample_bynode[which.min(mse_min)]
-  subsample_opt <- tunegrid$subsample[which.min(mse_min)]
-  min_child_weight_opt <- tunegrid$min_child_weight[which.min(mse_min)]
-  eta_opt <- tunegrid$eta[which.min(mse_min)]
-  max_delta_step_opt <- tunegrid$max_delta_step[which.min(mse_min)]
-  gamma_opt <- tunegrid$gamma[which.min(mse_min)]
-  lambda_opt <- tunegrid$lambda[which.min(mse_min)]
-  alpha_opt <- tunegrid$alpha[which.min(mse_min)]
+  mean_mse <- apply(OPT, 1, FUN = mean)
+  best_row <- which.min(mean_mse)
+  mse_min  <- mean_mse[best_row]
+
+  nround_opt <- tunegrid$nround[best_row]
+  max_depth_opt <- tunegrid$max_depth[best_row]
+  colsample_bytree_opt <- tunegrid$colsample_bytree[best_row]
+  colsample_bylevel_opt <- tunegrid$colsample_bylevel[best_row]
+  colsample_bynode_opt <- tunegrid$colsample_bynode[best_row]
+  subsample_opt <- tunegrid$subsample[best_row]
+  min_child_weight_opt <- tunegrid$min_child_weight[best_row]
+  eta_opt <- tunegrid$eta[best_row]
+  max_delta_step_opt <- tunegrid$max_delta_step[best_row]
+  gamma_opt <- tunegrid$gamma[best_row]
+  lambda_opt <- tunegrid$lambda[best_row]
+  alpha_opt <- tunegrid$alpha[best_row]
+
+  # Out-of-sample R2 at the domain level
+  # Variance of domain-level mean outcomes pooled across all folds
+  all_domain_labels <- unlist(domain_labels_list)
+  var_labels <- var(all_domain_labels)
+  r2_oos <- 1 - mse_min / var_labels
 
   final_output <- list(nround_opt, max_depth_opt, colsample_bytree_opt, colsample_bylevel_opt,
                        colsample_bynode_opt, subsample_opt, min_child_weight_opt, eta_opt,
-                       gamma_opt, max_delta_step_opt, lambda_opt, alpha_opt)
+                       gamma_opt, max_delta_step_opt, lambda_opt, alpha_opt, mse_min, r2_oos)
   names(final_output) <- c("nround", "max_depth", "colsample_bytree", "colsample_bylevel",
                            'colsample_bynode', "subsample", "min_child_weight", "eta",
-                           "gamma", "max_delta_step", 'lambda', "alpha")
+                           "gamma", "max_delta_step", 'lambda', "alpha", "mse_oos", "r2_oos")
 
   class(final_output) <- c("xgb","emdi")
   return(final_output)
