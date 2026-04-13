@@ -303,10 +303,16 @@ xgb <- function(fixed,
                  nthread            = 1,
                  ...)
 
+  # Rescale weights within each domain so they sum to the domain sample size
+  # This prevents populous domains from dominating the loss function
+  domain_sum_wts <- ave(fwk$smp_weights_vec, sub_domains_direct$domains, FUN = sum)
+  domain_n <- ave(fwk$smp_weights_vec, sub_domains_direct$domains, FUN = length)
+  smp_weights_rescaled <- fwk$smp_weights_vec * domain_n / domain_sum_wts
+
 # Estimate model
   xgb_model <- point_estim_xgb(params=params,smp_X=X_smp_xgb,
                                smp_Y=sub_domains_direct$outcome,
-                               smp_weight= fwk$smp_weights_vec/mean(fwk$smp_weights_vec),
+                               smp_weight= smp_weights_rescaled/mean(smp_weights_rescaled),
                                pop_X=X_pop_xgb,
                                sub_domains=sub_domains,
                                nrounds=nrounds,
@@ -492,6 +498,10 @@ B_results_list <- foreach(j = 1:B,
           boot_het <- 1
         }
         boot_weights <- B_sample[,fwk$smp_weights] * boot_het
+        # Rescale weights within each domain so they sum to the domain sample size
+        boot_domain_sum_wts <- ave(boot_weights, B_sample[,fwk$domains], FUN = sum)
+        boot_domain_n <- ave(boot_weights, B_sample[,fwk$domains], FUN = length)
+        boot_weights <- boot_weights * boot_domain_n / boot_domain_sum_wts
         boot_weights <- boot_weights / mean(boot_weights)
 
       # 3. Generate predictions using new sample values in arcsin space
@@ -533,11 +543,16 @@ B_results_list <- foreach(j = 1:B,
         boot_data <- do.call(rbind, lapply(boot_clusters, function(clust) {
           smp_data[smp_data[,fwk$domains] == clust, ]}))
           X_smp_boot <- boot_data[fwk$covariates]
+          # Rescale weights within each domain so they sum to the domain sample size
+          case_wts <- boot_data[,smp_weights]
+          case_domain_sum_wts <- ave(case_wts, boot_data[,fwk$domains], FUN = sum)
+          case_domain_n <- ave(case_wts, boot_data[,fwk$domains], FUN = length)
+          case_wts <- case_wts * case_domain_n / case_domain_sum_wts
           #Estimate model
           dtrain <- xgboost::xgb.DMatrix(
             data = as.matrix(X_smp_boot),
             label = transform_outcome(boot_data[,fwk$outcome])$y,
-            weight = (boot_data[,smp_weights]/mean(boot_data[,smp_weights]))
+            weight = (case_wts/mean(case_wts))
           )
           xgb_fit <- xgboost::xgb.train(
             data               = dtrain,

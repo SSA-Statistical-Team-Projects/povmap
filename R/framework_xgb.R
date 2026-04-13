@@ -34,6 +34,9 @@ framework_xgb <-function(fixed,
   if (!outcome %in% colnames(smp_data)) {
     stop(paste("Outcome",outcome,"not present in sample dataframe"))
   }
+if (!is.null(benchmark_level) & !benchmark_level %in% colnames(smp_data)) {
+    stop(paste("Benchmark level",benchmark_level,"not present in sample dataframe"))
+  }
 
 
   # Deletion of NA
@@ -47,6 +50,7 @@ framework_xgb <-function(fixed,
 
   # Extracting relevant subsets of data
   X_smp <- smp_data[c(covariates,domains,sub_domains)]
+
 
   if (!is.null(smp_weights) && benchmark_weights==smp_weights) {
      X_smp <- cbind(X_smp,smp_data[benchmark_level])
