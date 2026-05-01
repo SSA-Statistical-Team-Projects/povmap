@@ -58,6 +58,45 @@ benchmark_xgb_level <- function (point_estim, framework, fixed, benchmark,
           benchmark_df$xgb_bench <- 1-(1-benchmark_df$point_estim)*factors_complement
           benchmark_df$xgb_bench[is.na(benchmark_df$Mean)]<-benchmark_df$point_estim[is.na(benchmark_df$Mean)]
   }
+  if (benchmark_type=="logit_raking") {
+    eps <- 1e-7
+    pe_clamped <- pmax(eps, pmin(1 - eps, benchmark_df$point_estim))
+    logit_pe <- log(pe_clamped / (1 - pe_clamped))
+    benchmark_df$xgb_bench <- benchmark_df$point_estim  # initialize
+    levels <- unique(benchmark_df[, benchmark_level])
+    for (lev in levels) {
+      idx <- benchmark_df[, benchmark_level] == lev
+      target <- benchmark_df$Mean[idx][1]
+      if (is.na(target)) {
+        benchmark_df$xgb_bench[idx] <- benchmark_df$point_estim[idx]
+        next
+      }
+      # Boundary targets: logit raking cannot reach exactly 0 or 1
+      if (target <= eps) {
+        benchmark_df$xgb_bench[idx] <- 0
+        next
+      }
+      if (target >= 1 - eps) {
+        benchmark_df$xgb_bench[idx] <- 1
+        next
+      }
+      wts <- benchmark_df[idx, framework$pop_weights]
+      logit_i <- logit_pe[idx]
+      # Find additive shift c such that weighted mean of logit_inv(logit_i + c) = target
+      obj <- function(c) {
+        adjusted <- exp(logit_i + c) / (1 + exp(logit_i + c))
+        weighted.mean(adjusted, w = wts) - target
+      }
+      # Check if shift is needed
+      if (abs(obj(0)) < 1e-12) {
+        benchmark_df$xgb_bench[idx] <- pe_clamped[idx]
+        next
+      }
+      sol <- uniroot(obj, interval = c(-50, 50), tol = 1e-10)
+      adjusted <- exp(logit_i + sol$root) / (1 + exp(logit_i + sol$root))
+      benchmark_df$xgb_bench[idx] <- adjusted
+    }
+  }
   if (benchmark_type=="ratio_bound") {
     max <- collapse::fmax(benchmark_df$xgb_bench,g=benchmark_df[,benchmark_level],TRA=1)
     factors_complement <- (1-benchmark_df$Mean)/(1-benchmark_df$weighted_pe)

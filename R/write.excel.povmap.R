@@ -710,8 +710,20 @@ add_summary_xgb <- function(object, wb, headlines_cs) {
     tableStyle = "TableStyleMedium2"
   )
 
+  starting_row <- starting_row + 2 + nrow(su$coeff_determ)
 
-
+  writeDataTable(
+    x = su$var_decomp,
+    wb = wb,
+    withFilter = FALSE,
+    sheet = "summary",
+    startRow = starting_row,
+    startCol = 4,
+    rowNames = FALSE,
+    headerStyle = headlines_cs,
+    colNames = TRUE,
+    tableStyle = "TableStyleMedium2"
+  )
 
   setColWidths(
     wb = wb,

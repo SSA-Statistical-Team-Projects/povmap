@@ -17,7 +17,7 @@ xgb_check1 <- function(transformation,
   #require(xgboost)
   require(stats)
 
-  if(!(transformation %in% c("no", "arcsin", "log","logistic"))) stop("For transformation, please choose no, arcsin, logistic, or log.")
+   if(!(transformation %in% c("no", "arcsin", "log","logistic","log.shift","ordernorm","poisson"))) stop("For transformation, please choose no, arcsin, logistic, log, log.shift, or poisson")
 
   if (transformation=="arcsin" | transformation=="logistic"){
     if(min(Y_smp)<0 | max(Y_smp)>1) stop("The outcome variable must be between 0 and 1 for arcsin or logistic transformations.")
@@ -205,16 +205,18 @@ xgb_check1 <- function(transformation,
     }
   }
 
-  if (!benchmark_level %in% colnames(X_pop)) {
-    stop(strwrap(prefix = " ", initial = "",
-                 paste0("The variable ",benchmark_level, " specified as the benchmark_level is not contained in the population data")))
+  if (!is.null(benchmark_level)) {
+    if (!benchmark_level %in% colnames(X_pop)) {
+      stop(strwrap(prefix = " ", initial = "",
+                   paste0("The variable ",benchmark_level, " specified as the benchmark_level is not contained in the population data")))
+    }
   }
 
 
-  if (benchmark_type != "ratio" && benchmark_type != "raking" && benchmark_type != "ratio_complement" && benchmark_type != "ratio_bound") {
+  if (benchmark_type != "ratio" && benchmark_type != "raking" && benchmark_type != "ratio_complement" && benchmark_type != "ratio_bound" && benchmark_type != "logit_raking") {
     stop(strwrap(prefix = " ", initial = "",
                  "The benchmark version of ebp is only available with
-                   'raking', 'ratio', 'ratio_complement', and 'ratio_bound'."))
+                   'raking', 'ratio', 'ratio_complement', 'ratio_bound', and 'logit_raking'."))
   }
 
   if (benchmark_type == "ratio_complement" && is.data.frame(benchmark))  {
@@ -251,7 +253,7 @@ xgb_check2 <- function(transformation,
 
 
 
-  if(!(transformation %in% c("no", "arcsin", "log"))) stop("For transformation, please choose no, arcsin, or log.")
+ if(!(transformation %in% c("no", "arcsin", "log","logistic","log.shift","ordernorm","poisson"))) stop("For transformation, please choose no, arcsin, logistic, log, log.shift, or poisson")
 
   if (transformation=="arcsin"){
     if(min(Y_smp)<0 | max(Y_smp)>1) stop("The outcome variable must be between 0 and 1 for arcsin transformations.")
@@ -259,6 +261,10 @@ xgb_check2 <- function(transformation,
 
   if (transformation=="log"){
     if(min(Y_smp)<=0) stop("The outcome variable must be strictly greater than 0 for log transformations.")
+  }
+
+  if (transformation=="poisson"){
+    if(min(Y_smp)<0) stop("The outcome variable must be non-negative for the poisson transformation.")
   }
 
   if(sum(is.na(Y_smp))>0) stop("There are missing values in the outcome variable.")

@@ -529,3 +529,15 @@ logit_transform_back <- function(y,shift=NULL,epsilon=NULL) {
   y <- exp(y)/(1+exp(y))
   return(y = y)
 }
+
+# The Poisson transformation (log1p / expm1) ------------------------------------
+
+poisson_transform <- function(y, shift = NULL) {
+  y <- log1p(y)
+  return(list(y = y, shift = NULL))
+}
+
+poisson_transform_back <- function(y, shift = NULL) {
+  y <- pmax(0, expm1(y))
+  return(y = y)
+}

@@ -71,13 +71,38 @@ summary.xgb <- function(object, ...) {
   #colnames(y)[2] <- "sub_domains"
   y <- na.omit(merge(x=y,y=object$yhat,all.x=T,by=object$framework$sub_domains))
   r_squared <- cor(y[,object$framework$outcome],y$hat)^2
+  mae <- mean(abs(y[,object$framework$outcome] - y$hat))
+  rank_cor <- cor(y[,object$framework$outcome], y$hat, method = "spearman")
   y_yhat <- y[,c(object$framework$outcome,"hat")]
   area_means <- collapse::fmean(x=y_yhat,g=y[,object$framework$domains],w=y[,object$framework$smp_weights])
   area_r_squared <- cor(area_means[,object$framework$outcome],area_means$hat)^2
+  area_mae <- mean(abs(area_means[,object$framework$outcome] - area_means$hat))
+  area_rank_cor <- cor(area_means[,object$framework$outcome], area_means$hat, method = "spearman")
+
+  # Variance decomposition: area effect (sigma2_v) and idiosyncratic (sigma2_e)
+  y$resid <- y[, object$framework$outcome] - y$hat
+  domain_mean_resid <- collapse::fmean(
+    x = y$resid,
+    g = y[, object$framework$domains],
+    w = y[, object$framework$smp_weights]
+  )
+  sigma2_v <- var(domain_mean_resid)
+  y$domain_mean_resid <- domain_mean_resid[match(y[, object$framework$domains], names(domain_mean_resid))]
+  sigma2_e <- var(y$resid - y$domain_mean_resid)
+
+  var_decomp <- data.frame(
+    Sigma2_v = sigma2_v,
+    Sigma2_e = sigma2_e,
+    row.names = ""
+  )
 
   coeff_det <- data.frame(
     R2    = r_squared,
+    MAE   = mae,
+    Rank_cor = rank_cor,
     Area_R2 = area_r_squared,
+    Area_MAE = area_mae,
+    Area_Rank_cor = area_rank_cor,
     row.names      = ""
   )
 
@@ -108,6 +133,7 @@ summary.xgb <- function(object, ...) {
     pop_size = pop_size,
     sizedom_smp_pop = sizedom_smp_pop,
     coeff_determ = coeff_det,
+    var_decomp = var_decomp,
     xgb_info = xgb_info
   )
 
@@ -139,6 +165,12 @@ print.summary.xgb <- function(x, ...) {
   print(x$sizedom_smp_pop)
   cat("\n")
   print(x$coeff_determ)
+  cat("\n")
+  cat("Variance components:\n")
+  cat("________________________________________________________________\n")
+  cat("Sigma2_v: area effect variance\n")
+  cat("Sigma2_e: idiosyncratic error variance\n")
+  print(x$var_decomp)
   cat("\n")
   cat("Boosting component: \n")
   cat("________________________________________________________________\n")

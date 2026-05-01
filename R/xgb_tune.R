@@ -52,18 +52,11 @@
 #' Defaults to 0.
 #' @param cpus. Number of cores to parallelize across. Defaults to 1 (no parallelization)
 #' @param verbose display progress. Defaults to FALSE.
-#' @param rescale_weights If TRUE, rescales sample weights within each domain so that
-#' they sum to the domain sample size. This prevents populous domains from dominating
-#' the loss function, analogous to the treatment of weights in mixed models.
-#' Defaults to TRUE.
 #' @param ... additional parameters to be passed to \code{xgb.train}.
 #'
 #' @return An object of class \code{xgb}, \code{emdi}, containing the optimal
-#' hyperparameters for an extreme gradient boosting model, the out-of-sample
-#' R-squared at the domain level (\code{r2_oos}), the out-of-sample mean
-#' absolute error at the domain level (\code{mae_oos}), and a common support
-#' diagnostic (\code{common_support_oos}) measuring the average fraction of
-#' held-out domains with covariate means outside the training data range.
+#' hyperparameters for an extreme gradient boosting model and the out-of-sample
+#' R-squared at the domain level (\code{r2_oos}).
 #' @references
 #' Merfeld, J. D., & Newhouse, D. (2023). Improving Estimates of Mean Welfare and Uncertainty
 #' in Developing Countries (No. 10348). The World Bank. \cr \cr
@@ -108,7 +101,6 @@ xgb_tune <- function(fixed,
                      alpha = c(0),
                      cpus = 1, 
                      verbose = TRUE,
-                     rescale_weights = TRUE,
                      ...){
 
   # Data preparation
@@ -151,19 +143,6 @@ xgb_tune <- function(fixed,
     Y_smp <- log(Y_smp)
   }
 
-  # Rescale weights within each domain so they sum to the domain sample size
-  # This prevents populous domains from dominating the loss function
-  #_____________________________________________________________________________
-  if (rescale_weights) {
-    domain_vec <- X_smp[[paste0(domains)]]
-    domain_sum_wts <- ave(smp_weights, domain_vec, FUN = sum)
-    domain_n <- ave(smp_weights, domain_vec, FUN = length)
-    smp_weights <- smp_weights * domain_n / domain_sum_wts
-  } else {
-    # Global normalization: weights sum to total sample size
-    smp_weights <- smp_weights * length(smp_weights) / sum(smp_weights)
-  }
-
   # Folds
   #_____________________________________________________________________________
   cluster_col <- data.frame(X_smp[[paste0(cluster)]])
@@ -198,7 +177,6 @@ xgb_tune <- function(fixed,
   )
 
   OPT <- matrix(NA, ncol = folds, nrow = dim(tunegrid)[1])
-  OPT_MAE <- matrix(NA, ncol = folds, nrow = dim(tunegrid)[1])
 
   # Tuning
   #_____________________________________________________________________________
@@ -213,9 +191,6 @@ xgb_tune <- function(fixed,
 
   # Collect domain-level mean labels per fold for R2 computation
   domain_labels_list <- vector("list", folds)
-
-  # Collect common support diagnostics per fold
-  common_support_list <- vector("list", folds)
 
   # Progress bar across folds (updates in the main process after each fold completes)
   if (verbose == TRUE) {
@@ -233,30 +208,9 @@ xgb_tune <- function(fixed,
     domain_labels_list[[fold]] <- sapply(split(fold_df, fold_df$domains),
                                          function(g) weighted.mean(g$labels, w = g$wts))
 
-    # Common support diagnostic: for each covariate, check whether held-out
-    # domain means fall within the range of the training domain means
-    train_idx <- cluster_col$fold != fold
-    test_idx  <- cluster_col$fold == fold
-    train_domains <- X_smp[train_idx, ][[paste0(domains)]]
-    test_domains  <- X_smp[test_idx, ][[paste0(domains)]]
-
-    cs_results <- lapply(colnames(X_final), function(v) {
-      # Compute domain-level weighted means for this covariate
-      train_df <- data.frame(x = X_final[train_idx, v], d = train_domains, w = smp_weights[train_idx])
-      test_df  <- data.frame(x = X_final[test_idx, v],  d = test_domains,  w = smp_weights[test_idx])
-      train_dmeans <- sapply(split(train_df, train_df$d), function(g) weighted.mean(g$x, w = g$w))
-      test_dmeans  <- sapply(split(test_df, test_df$d),   function(g) weighted.mean(g$x, w = g$w))
-      train_range  <- range(train_dmeans)
-      # Fraction of test domains outside training range
-      outside <- mean(test_dmeans < train_range[1] | test_dmeans > train_range[2])
-      return(outside)
-    })
-    # Average across covariates: mean fraction of domains outside support
-    common_support_list[[fold]] <- mean(unlist(cs_results))
-
-    fold_results <- foreach::foreach(
+    fold_mse <- foreach::foreach(
       row = 1:nrow(tunegrid),
-      .combine  = rbind,
+      .combine  = c,
       .packages = "xgboost"
     ) %dopar% {
 
@@ -300,13 +254,11 @@ xgb_tune <- function(fixed,
       domains_pred$hat    <- mean_hat
       domains_pred$labels <- mean_labels
 
-      # Return MSE and MAE for this row
-      c(mse = mean((domains_pred$labels - domains_pred$hat)^2),
-        mae = mean(abs(domains_pred$labels - domains_pred$hat)))
+      # Return MSE for this row
+      mean((domains_pred$labels - domains_pred$hat)^2)
     }
 
-    OPT[, fold] <- fold_results[, "mse"]
-    OPT_MAE[, fold] <- fold_results[, "mae"]
+    OPT[, fold] <- fold_mse
     if (verbose == TRUE) {
       setTxtProgressBar(pb, fold)
     }
@@ -320,9 +272,6 @@ xgb_tune <- function(fixed,
   mean_mse <- apply(OPT, 1, FUN = mean)
   best_row <- which.min(mean_mse)
   mse_min  <- mean_mse[best_row]
-
-  # Out-of-sample MAE for the best model
-  mae_min <- mean(OPT_MAE[best_row, ])
 
   nround_opt <- tunegrid$nround[best_row]
   max_depth_opt <- tunegrid$max_depth[best_row]
@@ -343,18 +292,12 @@ xgb_tune <- function(fixed,
   var_labels <- var(all_domain_labels)
   r2_oos <- 1 - mse_min / var_labels
 
-  # Common support diagnostic: average fraction of held-out domains
-  # with covariate means outside the training range, across folds
-  common_support_oos <- mean(unlist(common_support_list))
-
   final_output <- list(nround_opt, max_depth_opt, colsample_bytree_opt, colsample_bylevel_opt,
                        colsample_bynode_opt, subsample_opt, min_child_weight_opt, eta_opt,
-                       gamma_opt, max_delta_step_opt, lambda_opt, alpha_opt, mse_min, r2_oos,
-                       mae_min, common_support_oos)
+                       gamma_opt, max_delta_step_opt, lambda_opt, alpha_opt, mse_min, r2_oos)
   names(final_output) <- c("nround", "max_depth", "colsample_bytree", "colsample_bylevel",
                            'colsample_bynode', "subsample", "min_child_weight", "eta",
-                           "gamma", "max_delta_step", 'lambda', "alpha", "mse_oos", "r2_oos",
-                           "mae_oos", "common_support_oos")
+                           "gamma", "max_delta_step", 'lambda', "alpha", "mse_oos", "r2_oos")
 
   class(final_output) <- c("xgb","emdi")
   return(final_output)

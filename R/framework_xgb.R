@@ -34,7 +34,7 @@ framework_xgb <-function(fixed,
   if (!outcome %in% colnames(smp_data)) {
     stop(paste("Outcome",outcome,"not present in sample dataframe"))
   }
-if (!is.null(benchmark_level) & !benchmark_level %in% colnames(smp_data)) {
+if (!is.null(benchmark_level) && !benchmark_level %in% colnames(smp_data)) {
     stop(paste("Benchmark level",benchmark_level,"not present in sample dataframe"))
   }
 
@@ -137,6 +137,10 @@ if (!is.null(benchmark_level) & !benchmark_level %in% colnames(smp_data)) {
       #Y_smp <- asin(sqrt(Y_smp))
     } else if (transformation == "log") {
       #Y_smp <- log(Y_smp)
+    } else if (transformation == "poisson") {
+      if (min(Y_smp) < 0) {
+        stop("Outcome must be non-negative when using the poisson transformation")
+      }
     }
   }
 
