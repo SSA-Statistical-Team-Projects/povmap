@@ -1,0 +1,83 @@
+# Internal: EM algorithm combining Gradient Boosting with a Linear Mixed Model
+#' @importFrom lme4 lmer ranef VarCorr fixef
+#' @importFrom xgboost xgboost xgb.cv
+#' @importFrom stats logLik predict sigma
+
+em_gb_lmm <- function(Y,
+                      X,
+                      formula_random_effects,
+                      data,
+                      gradient_params,
+                      initial_random_effects,
+                      max_iterations,
+                      error_tolerance,
+                      dom_name,
+                      cov_names,
+                      gbm_engine = "xgboost",
+                      ...) {
+
+  target            <- Y
+  continue_condition <- TRUE
+  iterations        <- 0
+  dom_name_effects  <- 0
+  adjusted_target   <- target - initial_random_effects
+  old_log_lik       <- 0
+  features_train    <- X
+
+  while (continue_condition) {
+    iterations <- iterations + 1
+
+    response_train <- adjusted_target
+    gbm_results    <- train_gbmodel(gbm_engine, features_train, response_train,
+                                    params = gradient_params)
+
+    model        <- gbm_results$boosting
+    unit_pred_smp <- gbm_results$prediction
+
+    tmp_res    <- Y - unit_pred_smp
+    formula_lmm <- as.formula(paste0("tmp_res ~ 1 +", formula_random_effects))
+
+    suppressMessages(
+      lmefit <- lme4::lmer(formula_lmm, data = data, REML = FALSE)
+    )
+
+    new_log_lik <- as.numeric(stats::logLik(lmefit))
+
+    continue_condition <- (
+      abs((new_log_lik - old_log_lik[iterations]) / old_log_lik[iterations]) > error_tolerance &
+        iterations < max_iterations
+    )
+
+    old_log_lik     <- c(old_log_lik, new_log_lik)
+    dom_name_effects <- stats::predict(lmefit)
+    adjusted_target  <- target - stats::predict(lmefit) + lme4::fixef(lmefit)
+  }
+
+  residuals  <- target - stats::predict(lmefit) - unit_pred_smp
+  error_sd   <- stats::sigma(lmefit)
+
+  importance_matrix <- get_feature_importance(
+    engine         = gbm_results$engine,
+    model          = gbm_results$boosting,
+    features_train = features_train,
+    train_pool     = gbm_results$train_pool_schema
+  )
+
+  list(
+    call                 = match.call(),
+    boosting             = model,
+    effect_model         = lmefit,
+    dom_name_effects     = lme4::ranef(lmefit),
+    ran_eff_sd           = as.data.frame(lme4::VarCorr(lmefit))$sdcor[1],
+    error_sd             = error_sd,
+    variance_covariance  = lme4::VarCorr(lmefit),
+    log_lik              = old_log_lik,
+    iterations_used      = iterations,
+    residuals            = residuals,
+    dom_name             = dom_name,
+    initial_random_effects = initial_random_effects,
+    importance_matrix    = importance_matrix,
+    eval_log             = gbm_results$eval_log,
+    gradient_params      = gradient_params
+  )
+}

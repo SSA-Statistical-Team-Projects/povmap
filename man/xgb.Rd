@@ -41,6 +41,8 @@ xgb(
   weightedBS = T,
   boot_estimates = F,
   center_residuals = F,
+  variance_y = NULL,
+  rescale_weights = TRUE,
   ...
 )
 }
@@ -73,9 +75,11 @@ numeric or a factor.}
 sub-domains within the dataset. This variable must have unique values across
 observations.}
 
-\item{transformation}{a character string. Two different transformation
-types for the dependent variable can be chosen (i) no transformation ("no");
-(ii) log transformation ("log"); (iii) Arcsin transformation ("arcsin").
+\item{transformation}{a character string. Transformation
+types for the dependent variable: (i) no transformation ("no");
+(ii) log transformation ("log"); (iii) Arcsin transformation ("arcsin");
+(iv) log-shift transformation ("log.shift"); (v) logistic transformation ("logistic");
+(vi) Poisson log1p transformation for count data ("poisson").
 Defaults to \code{"no"}.}
 
 \item{bootstrap}{If TRUE, implements bootstrap procedure to estimate variance.
@@ -175,6 +179,15 @@ with weights differing from the survey weights (Default for weighting for
 internal benchmarking).}
 
 \item{ydump}{if not null, specifies a file name to save XGboost predictions. Defaults to NULL.}
+
+\item{variance_y}{the name of the variable in the sample data that contains the variance of the outcome variable.
+This is used to account for heteroscedasticity when estimating the model. If NULL, no adjustment is made for heteroscedasticity.
+Defaults to NULL.}
+
+\item{rescale_weights}{If TRUE, rescales sample weights within each domain so that
+they sum to the domain sample size. This prevents populous domains from dominating
+the loss function, analogous to the treatment of weights in mixed models.
+Defaults to TRUE.}
 
 \item{...}{additional parameters to be passed to \code{xgboost}.}
 

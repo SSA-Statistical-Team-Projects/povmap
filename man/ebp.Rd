@@ -39,7 +39,7 @@ ebp(
   nlme_opt = "nlminb",
   nlme_optimmethod = "BFGS",
   nlme_method = "REML",
-  nlme_mstol = 1e-07,
+  nlme_mstol = 1e-06,
   nlme_msmaxiter = 1000,
   nlme_returnobject = FALSE,
   rescale_weights = FALSE,

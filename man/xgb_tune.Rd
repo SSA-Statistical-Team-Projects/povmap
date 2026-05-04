@@ -24,7 +24,8 @@ xgb_tune(
   max_delta_step = c(0),
   lambda = c(0.5, 1.5),
   alpha = c(0),
-  verbose = FALSE,
+  cpus = 1,
+  verbose = TRUE,
   ...
 )
 }
@@ -96,10 +97,13 @@ Defaults to 0.}
 \item{verbose}{display progress. Defaults to FALSE.}
 
 \item{...}{additional parameters to be passed to \code{xgb.train}.}
+
+\item{cpus.}{Number of cores to parallelize across. Defaults to 1 (no parallelization)}
 }
 \value{
 An object of class \code{xgb}, \code{emdi}, containing the optimal
-hyperparameters for an extreme gradient boosting model.
+hyperparameters for an extreme gradient boosting model and the out-of-sample
+R-squared at the domain level (\code{r2_oos}).
 }
 \description{
 The funtion \code{xgb_tune} fine-tunes the hyperparameters for extreme gradient boosting models, following \cite{Merfeld and Newhouse (2023)}.

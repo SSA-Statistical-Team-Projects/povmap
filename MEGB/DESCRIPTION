@@ -1,0 +1,21 @@
+Package: MEGB
+Title: Mixed Effects Gradient Boosting for the Context of Small Area
+        Estimation
+Version: 0.0.0.9000
+Authors@R: 
+    person("Paul", "Messer", , "paul.messer@uni-bamberg.de", role = c("aut", "cre"))
+Description: A combination of Gradient Boosting with Mixed Effects. Users have a choice of three Gradient Boosting engines, namely XGBoost, CatBoost and LightGBM.
+License: GPL-3
+Imports: checkmate, dplyr, furrr, future, gains, ggplot2, gridExtra,
+        lme4, magrittr, pbapply, purrr, rlang, stats, xgboost,
+        lightgbm, catboost, ParBayesianOptimization
+Suggests: testthat, SHAPforxgboost, DALEX, DALEXtra
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.2
+Depends: R (>= 4.1.0)
+LazyData: true
+NeedsCompilation: no
+Packaged: 2025-12-19 08:39:55 UTC; paulm
+Author: Paul Messer [aut, cre]
+Maintainer: Paul Messer <paul.messer@uni-bamberg.de>

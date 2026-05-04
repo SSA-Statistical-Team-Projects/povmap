@@ -161,6 +161,11 @@ write.excel <- function(object,
       object = object, wb = wb,
       headlines_cs = headlines_cs
     )
+  } else if (inherits(object, "megb")) {
+    wb <- add_summary_megb(
+      object = object, wb = wb,
+      headlines_cs = headlines_cs
+    )
   } else if (inherits(object,"xgb")) {
     wb <- add_summary_xgb(
       object = object, wb = wb,
@@ -199,13 +204,12 @@ write.excel <- function(object,
   }
 
   if (model) {
-    if (inherits(object,"xgb")) {
-    wb <- add_model_xgb(object=object,wb=wb)
-    }
-    else {
-    wb <- add_model(object=object,
-                    wb=wb
-    )
+    if (inherits(object, "megb")) {
+      wb <- add_model_megb(object = object, wb = wb)
+    } else if (inherits(object,"xgb")) {
+      wb <- add_model_xgb(object=object,wb=wb)
+    } else {
+      wb <- add_model(object=object, wb=wb)
     }
   }
 
@@ -607,7 +611,8 @@ add_summary_hdp <- function(object, wb, headlines_cs) {
   return(wb)
 }
 
-add_summary_xgb <- function(object, wb, headlines_cs) {
+add_summary_xgb <- function(object, wb, headlines_cs,
+                            title = "Extreme Gradient Boosting") {
   su <- summary(object)
 
   title_cs <- createStyle(
@@ -636,7 +641,7 @@ add_summary_xgb <- function(object, wb, headlines_cs) {
 
   writeData(
     wb = wb, sheet = "summary",
-    x = "Extreme Gradient Boosting", colNames = FALSE
+    x = title, colNames = FALSE
   )
   addStyle(
     wb = wb, sheet = "summary", cols = 1, rows = 1,
@@ -737,6 +742,109 @@ add_summary_xgb <- function(object, wb, headlines_cs) {
 
 
 
+
+add_summary_megb <- function(object, wb, headlines_cs) {
+  su <- summary(object)
+
+  title_cs <- createStyle(
+    fontSize = 14,
+    border = "Bottom",
+    halign = "left",
+    borderStyle = "thick",
+    textDecoration = "bold"
+  )
+
+  addWorksheet(wb, sheetName = "summary", gridLines = FALSE)
+
+  writeData(
+    wb = wb, sheet = "summary",
+    x = "Mixed Effects Gradient Boosting", colNames = FALSE
+  )
+  addStyle(
+    wb = wb, sheet = "summary", cols = 1, rows = 1,
+    style = title_cs, stack = TRUE
+  )
+
+  # Domain counts
+  df_nobs <- data.frame(Count = c(
+    su$dom_info$"Out-of-sample",
+    su$dom_info$"In-sample",
+    su$pop_size,
+    su$smp_size
+  ))
+  rownames(df_nobs) <- c(
+    "out of sample domains",
+    "in sample domains",
+    "population observations",
+    "sample observations"
+  )
+  df_nobs <- cbind(" " = rownames(df_nobs), df_nobs)
+
+  starting_row <- 5
+  writeDataTable(
+    x = df_nobs, withFilter = FALSE, wb = wb, sheet = "summary",
+    startRow = starting_row, startCol = 3,
+    rowNames = FALSE, headerStyle = headlines_cs,
+    colNames = TRUE, tableStyle = "TableStyleMedium2"
+  )
+
+  # Domain size distribution
+  df_size_dom <- as.data.frame(su$sizedom_smp_pop)
+  df_size_dom <- cbind(" " = rownames(df_size_dom), df_size_dom)
+
+  starting_row <- starting_row + 2 + nrow(df_nobs)
+  writeDataTable(
+    x = df_size_dom, withFilter = FALSE, wb = wb, sheet = "summary",
+    startRow = starting_row, startCol = 3,
+    rowNames = FALSE, headerStyle = headlines_cs,
+    colNames = TRUE, tableStyle = "TableStyleMedium2"
+  )
+
+  # Goodness-of-fit
+  starting_row <- starting_row + 2 + nrow(df_size_dom)
+  writeDataTable(
+    x = su$coeff_determ, withFilter = FALSE, wb = wb, sheet = "summary",
+    startRow = starting_row, startCol = 4,
+    rowNames = FALSE, headerStyle = headlines_cs,
+    colNames = TRUE, tableStyle = "TableStyleMedium2"
+  )
+
+  # Variance decomposition
+  starting_row <- starting_row + 2 + nrow(su$coeff_determ)
+  writeDataTable(
+    x = su$var_decomp, withFilter = FALSE, wb = wb, sheet = "summary",
+    startRow = starting_row, startCol = 4,
+    rowNames = FALSE, headerStyle = headlines_cs,
+    colNames = TRUE, tableStyle = "TableStyleMedium2"
+  )
+
+  # Shrinkage factors (gamma_i distribution)
+  starting_row <- starting_row + 2 + nrow(su$var_decomp)
+  df_shrink <- data.frame(t(as.matrix(su$shrinkage)), check.names = FALSE)
+  writeDataTable(
+    x = df_shrink, withFilter = FALSE, wb = wb, sheet = "summary",
+    startRow = starting_row, startCol = 4,
+    rowNames = FALSE, headerStyle = headlines_cs,
+    colNames = TRUE, tableStyle = "TableStyleMedium2"
+  )
+
+  # Model info (transformation, engine, variance components)
+  starting_row <- starting_row + 2 + nrow(df_shrink)
+  df_megb <- data.frame(
+    " " = rownames(su$megb_info),
+    Value = su$megb_info[[1]],
+    check.names = FALSE, stringsAsFactors = FALSE
+  )
+  writeDataTable(
+    x = df_megb, withFilter = FALSE, wb = wb, sheet = "summary",
+    startRow = starting_row, startCol = 3,
+    rowNames = FALSE, headerStyle = headlines_cs,
+    colNames = TRUE, tableStyle = "TableStyleMedium2"
+  )
+
+  setColWidths(wb = wb, sheet = "summary", cols = 3:12, widths = "auto")
+  return(wb)
+}
 
 add_summary_fh <- function(object, wb, headlines_cs) {
   su <- summary(object)
@@ -1223,6 +1331,58 @@ writeDataTable(
   withFilter = FALSE
 )
 return(wb)
+}
+
+
+# Write xgb.importance table for a MEGB model (no SHAP; engine-agnostic)
+add_model_megb <- function(object, wb) {
+
+  headlines_cs <- createStyle(
+    fontColour     = "#ffffff",
+    halign         = "center",
+    valign         = "center",
+    fgFill         = NULL,
+    textDecoration = "Bold",
+    border         = "Bottom",
+    borderStyle    = "medium"
+  )
+
+  addWorksheet(wb, sheetName = "Model", gridLines = FALSE)
+
+  if (object$gbm_engine == "xgboost" && !is.null(object$model)) {
+    imp <- tryCatch(
+      as.data.frame(xgboost::xgb.importance(model = object$model)),
+      error = function(e) NULL
+    )
+    if (!is.null(imp) && nrow(imp) > 0) {
+      imp_df <- data.frame(
+        Feature   = imp$Feature,
+        Gain      = imp$Gain,
+        Cover     = imp$Cover,
+        Frequency = imp$Frequency
+      )
+    } else {
+      imp_df <- data.frame(Note = "Feature importance not available")
+    }
+  } else {
+    imp_df <- data.frame(
+      Note = paste("Feature importance display not yet supported for",
+                   object$gbm_engine, "engine")
+    )
+  }
+
+  writeDataTable(
+    x           = imp_df,
+    sheet       = "Model",
+    wb          = wb,
+    startRow    = 1,
+    startCol    = 1,
+    rowNames    = FALSE,
+    headerStyle = headlines_cs,
+    tableStyle  = "TableStyleMedium2",
+    withFilter  = FALSE
+  )
+  return(wb)
 }
 
 

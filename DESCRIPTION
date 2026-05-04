@@ -52,11 +52,18 @@ Imports:
     pracma,
     lmeInfo,
     xgboost,
-    viridis
+    viridis,
+    checkmate,
+    dplyr,
+    furrr,
+    future,
+    lme4,
+    purrr
 Suggests:
     testthat,
     R.rsp,
     simFrame,
     laeken,
     graphics,
+    lightgbm,
 VignetteBuilder: R.rsp
