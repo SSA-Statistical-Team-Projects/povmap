@@ -101,11 +101,11 @@ xgb_check1 <- function(transformation,
                      supplied for the Mean and the Head_Count ratio. Therefore,
                      the names must match with 'Mean' and 'Head_Count'."))
       }
-      if (!is.null(benchmark_weights)) {
-        stop(strwrap(prefix = " ", initial = "",
-                     "For external benchmarking no benchmark weights can be
-                     used."))
-      }
+      # if (!is.null(benchmark_weights)) {
+      #   stop(strwrap(prefix = " ", initial = "",
+      #                "For external benchmarking no benchmark weights can be
+      #                used."))
+      # }
     }
     if (is.character(benchmark)) {
       if(!length(benchmark) %in% 1:2) {
@@ -197,11 +197,11 @@ xgb_check1 <- function(transformation,
                      the domains of the benchmark_level does not match to the
                      argument benchmark_level."))
       }
-      if (!is.null(benchmark_weights)) {
-        stop(strwrap(prefix = " ", initial = "",
-                     "For external benchmarking no benchmark weights can be
-                     used."))
-      }
+      # if (!is.null(benchmark_weights)) {
+      #   stop(strwrap(prefix = " ", initial = "",
+      #                "For external benchmarking no benchmark weights can be
+      #                used."))
+      # }
     }
   }
 

@@ -33,9 +33,66 @@
 #'   fitting. One of \code{"no"} (default), \code{"log"}, \code{"log.shift"},
 #'   \code{"arcsin"}, \code{"logistic"}, or \code{"poisson"}. Unit-level
 #'   population predictions are back-transformed before domain aggregation.
-#' @param mse logical. If \code{TRUE} (default), estimates MSE via the MEGB
-#'   parametric bootstrap. Confidence intervals use a normal approximation with
-#'   a delta-method correction when a transformation is applied.
+#' @param mse logical. If \code{TRUE} (default), runs the parametric bootstrap
+#'   to quantify uncertainty. The form of the resulting summary is controlled
+#'   by \code{mse_type}.
+#' @param em_iterations integer, number of EM refinement iterations run
+#'   after the lme4 init step. Default \code{2}. Higher values drift
+#'   \eqn{\sigma_u} toward zero whenever the gradient-boosting features
+#'   carry strong area-level signal: each subsequent EM iteration leaks a
+#'   little of the lme4 BLUP back into the booster's target via the
+#'   shrinkage residual, the booster absorbs more between-area variance,
+#'   and lme4's \eqn{\sigma_u} shrinks. With many strong area-aggregate
+#'   predictors this can collapse \eqn{\sigma_u} to zero entirely, removing
+#'   shrinkage. \code{em_iterations = 1} is the most conservative;
+#'   \code{em_iterations = 2} usually balances stability against collapse.
+#'   Larger values are appropriate only when area-level X signal is weak
+#'   and you want the EM to fully iterate.
+#' @param bench_target one of \code{"random"} (default) or \code{"fixed"}.
+#'   Controls how the benchmark target is treated *inside the bootstrap*. Only
+#'   matters when \code{benchmark} is character (internal, survey-derived
+#'   benchmarking); for numeric or data.frame benchmarks the target is a
+#'   constant by construction.
+#'   \code{"random"} (default): recompute the target on every bootstrap
+#'   iteration from the bootstrap-simulated survey data. Both the target and
+#'   the model estimate vary together, preserving the joint sampling
+#'   correlation between them — which is the right thing for re-sampling-based
+#'   inference about the unconditional variance of the benchmarked estimator.
+#'   In practice this is also typically *narrower* than \code{"fixed"} for
+#'   internal benchmarks: when survey resamples shift the target up they also
+#'   shift the model estimate up, so the benchmark-adjustment shift \eqn{c}
+#'   has less work to do, and \eqn{var(c) \propto var(T - WM)} stays small.
+#'   \code{"fixed"}: hold the target at the value computed from the *observed*
+#'   survey and reuse it on every iteration. The resulting variance is
+#'   conditional on the target — \eqn{Var(\hat\theta_{bench} \mid target)}.
+#'   Use this when the benchmark target really is a known constraint that you
+#'   don't want to bootstrap over. For survey-derived (internal) benchmarks
+#'   the target *is* itself a sample statistic, so this conditioning is a
+#'   somewhat artificial inferential target — \code{"random"} is usually
+#'   preferable.
+#' @param bootstrap_refit one of \code{"lmm_only"} (default) or \code{"full"}.
+#'   \code{"lmm_only"}: refit only the linear mixed model on bootstrap residuals
+#'   each iteration, treating the gradient-booster fit as fixed. This is the
+#'   standard EBLUP parametric bootstrap (Prasad–Rao / Hall–Maiti) and yields
+#'   the textbook leading-order MSE \eqn{g_1 = \gamma_d \sigma_e^2 / n_d}.
+#'   It isolates random-effect uncertainty, runs an order of magnitude faster
+#'   than the full refit, and gives CIs comparable to the residual bootstrap
+#'   used by \code{\link{xgb}}. \code{"full"}: refit both the booster and the
+#'   linear mixed model in every bootstrap iteration. This propagates GB
+#'   refit-to-refit drift into the prediction-error variance, making CIs
+#'   substantially wider, especially for flexible boosters; use it when you
+#'   want CIs that explicitly include GB-fit uncertainty.
+#' @param mse_type one of \code{"var"} (default) or \code{"mse"}. \code{"var"}
+#'   reports the empirical bootstrap variance of back-transformed domain means
+#'   and uses bootstrap quantiles (recentred at the point estimate) for the CI,
+#'   matching \code{\link{xgb}}. Benchmarked CIs use the centred residual
+#'   between benchmarked-bootstrap and bootstrap-truth, again as in \code{xgb}.
+#'   \code{"mse"} reports the prediction MSE \eqn{E[(\hat\theta-\theta)^2]} —
+#'   computed in transformed space and back-mapped via the delta method for the
+#'   unbenchmarked estimator, and directly in original space for the
+#'   benchmarked estimator — and uses a normal-approximation CI. \code{"mse"}
+#'   is generally wider than \code{"var"} because it includes the irreducible
+#'   variability of the random effect.
 #' @param B number of parametric bootstrap iterations for MSE estimation.
 #'   Defaults to \code{100}.
 #' @param bootstrap_cores number of cores for parallel bootstrap. \code{0} or
@@ -112,6 +169,10 @@ megb <- function(fixed,
                  domains,
                  transformation   = "no",
                  mse              = TRUE,
+                 mse_type         = c("var", "mse"),
+                 bootstrap_refit  = c("lmm_only", "full"),
+                 bench_target     = c("random", "fixed"),
+                 em_iterations    = 2,
                  B                = 100,
                  bootstrap_cores  = 0,
                  conf_level       = 0.95,
@@ -126,7 +187,13 @@ megb <- function(fixed,
                  cpus             = NULL,
                  ...) {
 
-  out_call <- match.call()
+  out_call        <- match.call()
+  mse_type        <- match.arg(mse_type)
+  bootstrap_refit <- match.arg(bootstrap_refit)
+  bench_target    <- match.arg(bench_target)
+
+  # Local %||% so the diagnostic message below isn't fragile to NULLs.
+  `%||%` <- function(a, b) if (is.null(a)) b else a
 
   if (!is.null(cpus)) bootstrap_cores <- cpus
 
@@ -148,6 +215,10 @@ megb <- function(fixed,
   )
 
   # ── 1b. Local benchmark helper ────────────────────────────────────────────────
+  # Route through benchmark_xgb_level for level-based benchmarking so megb
+  # supports the same benchmark_type set as xgb (notably "logit_raking",
+  # which benchmark_ebp_level does not implement and would silently return
+  # all-NA Mean_bench).
   add_benchmark_megb <- function(x, benchmark_level, fwk, fixed,
                                  benchmark, benchmark_type) {
     point_estim       <- list(ind = data.frame(Mean = x))
@@ -159,7 +230,7 @@ megb <- function(fixed,
         benchmark      = benchmark,
         benchmark_type = benchmark_type)
     } else {
-      point_estim$ind <- benchmark_ebp_level(
+      point_estim$ind <- benchmark_xgb_level(
         point_estim     = point_estim,
         framework       = fwk,
         fixed           = fixed,
@@ -226,6 +297,7 @@ megb <- function(fixed,
     seed            = seed,
     mse             = FALSE,
     gbm_engine      = gbm_engine,
+    em_iterations   = em_iterations,
     ...
   )
 
@@ -307,6 +379,22 @@ megb <- function(fixed,
       benchmark       = benchmark,
       benchmark_type  = benchmark_type
     )
+    # Guard against silent benchmark failures (unsupported benchmark_type,
+    # missing benchmark_level column, etc.) which previously surfaced as
+    # all-empty Mean_bench / Var_bench / Lower_bench columns in write.excel.
+    if (is.null(bench_vals) || length(bench_vals) != length(ind$Mean) ||
+        all(is.na(bench_vals))) {
+      stop(sprintf(
+        "Benchmarking returned %s. Common causes: benchmark_type '%s' is not supported by the level-benchmarker (supported: 'ratio', 'ratio_bound', 'ratio_complement', 'logit_raking'); benchmark_level '%s' missing from smp_data or pop_data; or fixed[2] '%s' missing from smp_data.",
+        if (is.null(bench_vals)) "NULL"
+          else if (all(is.na(bench_vals))) "all-NA"
+          else paste0("length ", length(bench_vals),
+                      " (expected ", length(ind$Mean), ")"),
+        as.character(benchmark_type),
+        as.character(benchmark_level),
+        as.character(fixed[[2]])
+      ))
+    }
     ind_bench <- data.frame(
       Domain = ind$Domain,
       Mean   = bench_vals,
@@ -315,23 +403,82 @@ megb <- function(fixed,
   }
 
   # ── 6c. Build benchmark_fn closure for the bootstrap ─────────────────────────
+  # When bench_target = "fixed" AND benchmark is character (internal), we
+  # precompute the target ONCE from the observed survey using the same
+  # survey-weighted-mean formula benchmark_xgb_level applies for internal
+  # benchmarking. The closure then uses this fixed value instead of
+  # recomputing from boot_smp_data$y_star each iteration, yielding a
+  # conditional bench variance Var(theta_hat_bench | target = observed)
+  # rather than the unconditional one that double-counts survey sampling
+  # uncertainty on the target side.
+  fixed_bm_val <- NULL
+  if (!is.null(benchmark) && mse && bench_target == "fixed" &&
+      !is.numeric(benchmark) && !is.data.frame(benchmark)) {
+    bench_w_var <- if (!is.null(fwk$benchmark_weights)) fwk$benchmark_weights
+                   else fwk$smp_weights
+    if (!is.null(benchmark_level)) {
+      grp_obs   <- fwk$smp_data[[benchmark_level]]
+      y_obs     <- fwk$Y_smp
+      w_obs     <- if (!is.null(bench_w_var)) fwk$smp_data[[bench_w_var]]
+                   else rep(1, length(y_obs))
+      lev_means <- tapply(seq_along(y_obs), grp_obs, function(idx)
+        sum(y_obs[idx] * w_obs[idx]) / sum(w_obs[idx]))
+      df <- data.frame(as.character(names(lev_means)),
+                       as.numeric(lev_means),
+                       stringsAsFactors = FALSE)
+      names(df) <- c(benchmark_level, "Mean")
+      fixed_bm_val <- df
+    } else {
+      # National-level internal benchmarking: scalar target.
+      w_obs <- if (!is.null(bench_w_var)) fwk$smp_data[[bench_w_var]]
+               else rep(1, length(fwk$Y_smp))
+      fixed_bm_val <- c(Mean = sum(fwk$Y_smp * w_obs) / sum(w_obs))
+    }
+  }
+
   if (!is.null(benchmark) && mse) {
     # Use a lean captured environment: explicit values only, parent = package ns.
     # This prevents serialising the full megb() scope to each parallel worker.
     benchmark_fn <- function(est_orig, boot_smp_data) {
+      # Branch order: explicit user-supplied target → precomputed fixed target
+      # (internal + bench_target="fixed") → recompute from bootstrap survey
+      # (random target).
+      # Random recompute MUST use the same survey-weighted mean as the point
+      # benchmark (benchmark_xgb_level uses w = framework$smp_weights). An
+      # unweighted mean would produce a different statistic and jitter far
+      # more than the weighted target under skewed survey weights, widening
+      # bench CIs spuriously.
       bm_val <- if (is.numeric(.bm) || is.data.frame(.bm)) {
         .bm
+      } else if (!is.null(.fixed_bm)) {
+        .fixed_bm
       } else if (is.null(.bm_level)) {
-        c(Mean = mean(.corr_bt(boot_smp_data$y_star)))
+        w_obs <- if (!is.null(.bm_w_var)) boot_smp_data[[.bm_w_var]]
+                 else rep(1, nrow(boot_smp_data))
+        y_bt  <- .corr_bt(boot_smp_data$y_star)
+        c(Mean = sum(y_bt * w_obs) / sum(w_obs))
       } else {
-        y_bt <- .corr_bt(boot_smp_data$y_star)
-        grp  <- boot_smp_data[[.bm_level]]
-        lev_means <- tapply(y_bt, grp, mean)
+        y_bt  <- .corr_bt(boot_smp_data$y_star)
+        grp   <- boot_smp_data[[.bm_level]]
+        w_obs <- if (!is.null(.bm_w_var)) boot_smp_data[[.bm_w_var]]
+                 else rep(1, length(y_bt))
+        lev_means <- tapply(seq_along(y_bt), grp, function(idx)
+          sum(y_bt[idx] * w_obs[idx]) / sum(w_obs[idx]))
         df <- data.frame(as.character(names(lev_means)),
                          as.numeric(lev_means),
                          stringsAsFactors = FALSE)
         names(df) <- c(.bm_level, "Mean")
         df
+      }
+      # benchmark_xgb_level discards non-numeric benchmark inputs and instead
+      # recomputes from framework$smp_data (because of an `if (!is.numeric)`
+      # branch upstream). For a data.frame target like our precomputed
+      # .fixed_bm or the per-iteration random target above, that means our
+      # value would be silently ignored. Convert to a named numeric vector,
+      # which goes through the branch that actually uses the input.
+      if (is.data.frame(bm_val) && !is.null(.bm_level)) {
+        bm_val <- stats::setNames(as.numeric(bm_val[["Mean"]]),
+                                  as.character(bm_val[[.bm_level]]))
       }
       .add_bm(
         x               = est_orig,
@@ -347,10 +494,13 @@ megb <- function(fixed,
         .bm       = benchmark,
         .bm_level = benchmark_level,
         .bm_type  = benchmark_type,
+        .bm_w_var = if (!is.null(fwk$benchmark_weights)) fwk$benchmark_weights
+                    else fwk$smp_weights,
         .fwk      = fwk,
         .fixed    = fixed,
         .corr_bt  = corrected_bt,
-        .add_bm   = add_benchmark_megb
+        .add_bm   = add_benchmark_megb,
+        .fixed_bm = fixed_bm_val
       ),
       parent = getNamespace("povmap")
     )
@@ -359,18 +509,31 @@ megb <- function(fixed,
   }
 
   # ── 6d. Parametric bootstrap MSE (now that corrected_bt/benchmark_fn are ready)
-  # pop_data_proc is one-hot encoded and lacks any benchmark_level column.
-  # Re-attach it from fwk$pop_data so bootstrap samples carry it.
+  # pop_data_proc / smp_data are one-hot encoded and lack the benchmark_level
+  # column. Re-attach it from fwk$pop_data and fwk$smp_data so the bootstrap
+  # samples (now derived from smp_data, not a pop subsample) carry it through
+  # to benchmark_fn, which calls tapply(y_bt, boot_smp_data[[bm_level]], ...).
   boot_pop_data <- megb_fit$pop_data_proc
-  if (!is.null(benchmark_level) && mse &&
-      !benchmark_level %in% colnames(boot_pop_data)) {
-    bm_col <- fwk$pop_data[[benchmark_level]]
-    if (!is.null(bm_col) && length(bm_col) == nrow(boot_pop_data))
-      boot_pop_data[[benchmark_level]] <- bm_col
-    else
-      warning("benchmark_level '", benchmark_level,
-              "' not found in pop_data or row count mismatch — ",
-              "benchmarked bootstrap MSE will be skipped.")
+  boot_smp_data <- megb_fit$inp_smp_data$smp_data
+  if (!is.null(benchmark_level) && mse) {
+    if (!benchmark_level %in% colnames(boot_pop_data)) {
+      bm_pop <- fwk$pop_data[[benchmark_level]]
+      if (!is.null(bm_pop) && length(bm_pop) == nrow(boot_pop_data))
+        boot_pop_data[[benchmark_level]] <- bm_pop
+      else
+        warning("benchmark_level '", benchmark_level,
+                "' not found in pop_data or row count mismatch — ",
+                "benchmarked bootstrap MSE will be skipped.")
+    }
+    if (!benchmark_level %in% colnames(boot_smp_data)) {
+      bm_smp <- fwk$smp_data[[benchmark_level]]
+      if (!is.null(bm_smp) && length(bm_smp) == nrow(boot_smp_data))
+        boot_smp_data[[benchmark_level]] <- bm_smp
+      else
+        warning("benchmark_level '", benchmark_level,
+                "' not found in smp_data or row count mismatch — ",
+                "benchmarked bootstrap MSE will be skipped.")
+    }
   }
 
   mse_estimated <- NULL
@@ -380,7 +543,7 @@ megb <- function(fixed,
       Y                      = megb_fit$inp_smp_data$target_var,
       X                      = megb_fit$X_proc,
       dom_name               = domains,
-      smp_data               = megb_fit$inp_smp_data$smp_data,
+      smp_data               = boot_smp_data,
       model                  = megb_fit$megb_model,
       error_sd               = megb_fit$megb_model$error_sd,
       pop_data               = boot_pop_data,
@@ -395,13 +558,23 @@ megb <- function(fixed,
       seed                   = seed,
       gbm_engine             = gbm_engine,
       unit_pred_smp          = megb_fit$unit_pred_smp,
+      gb_smp                 = megb_fit$gb_smp,
       unit_preds             = megb_fit$unit_preds_all,
+      bootstrap_refit        = bootstrap_refit,
       corrected_bt           = corrected_bt,
       benchmark_fn           = benchmark_fn
     )
   }
 
-  # ── 7. MSE, delta-method variance correction, and CI ─────────────────────────
+  # ── 7. Variance / MSE and CI ─────────────────────────────────────────────────
+  # mse_type = "var" (default, mirrors xgb): empirical bootstrap variance and
+  #   quantile-based CIs in original space. Benchmarked CIs use the centred
+  #   residual (boot_bench - boot_truth) recentred at the point benchmark, as
+  #   in xgb.R.
+  # mse_type = "mse": prediction MSE in original space. Unbenchmarked MSE is
+  #   computed in transformed space from the bootstrap and back-mapped via the
+  #   delta method; benchmarked MSE is computed directly in original space.
+  #   CIs use a normal approximation around the point estimate.
   var_df       <- NULL
   ci_df        <- NULL
   var_bench_df <- NULL
@@ -409,84 +582,146 @@ megb <- function(fixed,
 
   if (mse && !is.null(mse_estimated)) {
 
-    z_val <- qnorm(1 - (1 - conf_level) / 2)
+    alpha <- 1 - conf_level
+    z_val <- qnorm(1 - alpha / 2)
 
-    # ── 7a. Unbenchmarked MSE (delta-method from transformed-space bootstrap) ──
-    mse_raw        <- mse_estimated$MSE_estimates
-    colnames(mse_raw)[1] <- "Domain"
-    mse_raw$Domain <- as.character(mse_raw$Domain)
-    colnames(mse_raw)[2] <- "MSE_t"
-
-    mean_t        <- as.data.frame(megb_fit$Indicators)  # domain means in transformed space
-    colnames(mean_t)[colnames(mean_t) == "dom_name"] <- "Domain"
-    colnames(mean_t)[colnames(mean_t) == "Mean"]     <- "Mean_t"
-    mean_t$Domain <- as.character(mean_t$Domain)
-
-    ind$Domain <- as.character(ind$Domain)
-    merged     <- merge(ind,    mse_raw, by = "Domain")
-    merged     <- merge(merged, mean_t,  by = "Domain")
-
-    # Delta-method: Var(g^{-1}(theta_hat_t)) ≈ MSE_t * [d g^{-1}/dx]^2
-    delta_factor <- switch(transformation,
-      "no"        = rep(1, nrow(merged)),
-      "log"       = exp(merged$Mean_t)^2,
-      "log.shift" = exp(merged$Mean_t)^2,
-      "arcsin"    = sin(2 * merged$Mean_t)^2,
-      "logistic"  = { p <- back_transform_outcome(merged$Mean_t); (p * (1 - p))^2 },
-      "poisson"   = exp(merged$Mean_t)^2
-    )
-
-    merged$MSE_orig <- merged$MSE_t * delta_factor
-
-    var_df <- data.frame(Domain = merged$Domain, Mean = merged$MSE_orig,
-                         stringsAsFactors = FALSE)
-
-    ci_df <- data.frame(
-      Domain = merged$Domain,
-      Lower  = merged$Mean - z_val * sqrt(pmax(merged$MSE_orig, 0)),
-      Upper  = merged$Mean + z_val * sqrt(pmax(merged$MSE_orig, 0)),
-      stringsAsFactors = FALSE
-    )
-
-    if (transformation %in% c("arcsin", "logistic")) {
-      ci_df$Lower <- pmax(ci_df$Lower, 0); ci_df$Upper <- pmin(ci_df$Upper, 1)
-    } else if (transformation %in% c("poisson", "log", "log.shift")) {
-      ci_df$Lower <- pmax(ci_df$Lower, 0)
+    # Helper: clamp CIs to the valid outcome support for bounded transformations.
+    clamp_ci <- function(df) {
+      if (transformation %in% c("arcsin", "logistic")) {
+        df$Lower <- pmax(df$Lower, 0); df$Upper <- pmin(df$Upper, 1)
+      } else if (transformation %in% c("poisson", "log", "log.shift")) {
+        df$Lower <- pmax(df$Lower, 0)
+      }
+      df
     }
 
-    ind <- data.frame(Domain = merged$Domain, Mean = merged$Mean,
-                      stringsAsFactors = FALSE)
+    boot_domains <- as.character(mse_estimated$domains)
 
-    # ── 7b. Benchmarked MSE (bootstrap computed in original space, no delta) ──
-    if (!is.null(benchmark) && !is.null(mse_estimated$MSE_bench_estimates)) {
+    if (mse_type == "var") {
 
-      mse_bench_raw        <- mse_estimated$MSE_bench_estimates
-      colnames(mse_bench_raw)[1] <- "Domain"
-      mse_bench_raw$Domain <- as.character(mse_bench_raw$Domain)
-      colnames(mse_bench_raw)[2] <- "MSE_bench"
+      # ── 7a-var. Unbenchmarked: centred residuals of (boot - boot_truth) ──
+      # For a mixed-effects estimator the target of inference is the realised
+      # domain mean (which depends on u_d), so the natural uncertainty summary
+      # is the prediction error against the bootstrap truth, not the variance
+      # of the bootstrap estimates alone. This is symmetric with how the
+      # benchmarked CI is computed below and with the "mse" path.
+      tau_b_orig <- mse_estimated$tau_b_orig         # D × B' (original space)
+      truth_u    <- mse_estimated$tau_star_orig_unb  # truth restricted to same B'
 
-      ind_bench$Domain <- as.character(ind_bench$Domain)
-      merged_b <- merge(ind_bench, mse_bench_raw, by = "Domain")
+      resid_u <- tau_b_orig - truth_u
+      resid_u_centred <- resid_u - rowMeans(resid_u, na.rm = TRUE)
 
-      var_bench_df <- data.frame(Domain = merged_b$Domain, Mean = merged_b$MSE_bench,
-                                 stringsAsFactors = FALSE)
+      var_boot <- apply(resid_u_centred, 1, var,      na.rm = TRUE)
+      lo_boot  <- apply(resid_u_centred, 1, quantile, probs = alpha / 2,     na.rm = TRUE)
+      hi_boot  <- apply(resid_u_centred, 1, quantile, probs = 1 - alpha / 2, na.rm = TRUE)
 
-      ci_bench_df <- data.frame(
-        Domain = merged_b$Domain,
-        Lower  = merged_b$Mean - z_val * sqrt(pmax(merged_b$MSE_bench, 0)),
-        Upper  = merged_b$Mean + z_val * sqrt(pmax(merged_b$MSE_bench, 0)),
+      ind$Domain <- as.character(ind$Domain)
+      idx        <- match(ind$Domain, boot_domains)
+
+      var_df <- data.frame(Domain = ind$Domain, Mean = var_boot[idx],
+                           stringsAsFactors = FALSE)
+
+      ci_df <- data.frame(
+        Domain = ind$Domain,
+        Lower  = ind$Mean + lo_boot[idx],
+        Upper  = ind$Mean + hi_boot[idx],
         stringsAsFactors = FALSE
       )
+      ci_df <- clamp_ci(ci_df)
 
-      if (transformation %in% c("arcsin", "logistic")) {
-        ci_bench_df$Lower <- pmax(ci_bench_df$Lower, 0)
-        ci_bench_df$Upper <- pmin(ci_bench_df$Upper, 1)
-      } else if (transformation %in% c("poisson", "log", "log.shift")) {
-        ci_bench_df$Lower <- pmax(ci_bench_df$Lower, 0)
+      # ── 7b-var. Benchmarked: var/quantiles of (boot_bench - boot_truth) ──
+      # Both matrices are restricted to the same kept iterations by mse_megb,
+      # so column counts match without further index gymnastics.
+      if (!is.null(benchmark) && !is.null(mse_estimated$tau_b_bench) &&
+          !is.null(mse_estimated$tau_star_orig_bench)) {
+        tau_b_bench <- mse_estimated$tau_b_bench
+        truth_bench <- mse_estimated$tau_star_orig_bench
+        if (ncol(tau_b_bench) > 0L) {
+          resid_mat     <- tau_b_bench - truth_bench
+          row_means     <- rowMeans(resid_mat, na.rm = TRUE)
+          resid_centred <- resid_mat - row_means
+
+          var_bench_vec <- apply(resid_centred, 1, var,      na.rm = TRUE)
+          lo_bench_vec  <- apply(resid_centred, 1, quantile, probs = alpha / 2,     na.rm = TRUE)
+          hi_bench_vec  <- apply(resid_centred, 1, quantile, probs = 1 - alpha / 2, na.rm = TRUE)
+
+          ind_bench$Domain <- as.character(ind_bench$Domain)
+          idx_b <- match(ind_bench$Domain, boot_domains)
+
+          var_bench_df <- data.frame(Domain = ind_bench$Domain,
+                                     Mean   = var_bench_vec[idx_b],
+                                     stringsAsFactors = FALSE)
+          ci_bench_df <- data.frame(
+            Domain = ind_bench$Domain,
+            Lower  = ind_bench$Mean + lo_bench_vec[idx_b],
+            Upper  = ind_bench$Mean + hi_bench_vec[idx_b],
+            stringsAsFactors = FALSE
+          )
+          ci_bench_df <- clamp_ci(ci_bench_df)
+        }
       }
 
-      ind_bench <- data.frame(Domain = merged_b$Domain, Mean = merged_b$Mean,
-                               stringsAsFactors = FALSE)
+    } else {  # mse_type == "mse"
+
+      # ── 7a-mse. Unbenchmarked prediction MSE (delta-method back-map) ──
+      mse_raw              <- mse_estimated$MSE_estimates
+      colnames(mse_raw)[1] <- "Domain"
+      mse_raw$Domain       <- as.character(mse_raw$Domain)
+      colnames(mse_raw)[2] <- "MSE_t"
+
+      mean_t        <- as.data.frame(megb_fit$Indicators)
+      colnames(mean_t)[colnames(mean_t) == "dom_name"] <- "Domain"
+      colnames(mean_t)[colnames(mean_t) == "Mean"]     <- "Mean_t"
+      mean_t$Domain <- as.character(mean_t$Domain)
+
+      ind$Domain <- as.character(ind$Domain)
+      merged     <- merge(ind,    mse_raw, by = "Domain")
+      merged     <- merge(merged, mean_t,  by = "Domain")
+
+      delta_factor <- switch(transformation,
+        "no"        = rep(1, nrow(merged)),
+        "log"       = exp(merged$Mean_t)^2,
+        "log.shift" = exp(merged$Mean_t)^2,
+        "arcsin"    = sin(2 * merged$Mean_t)^2,
+        "logistic"  = { p <- back_transform_outcome(merged$Mean_t); (p * (1 - p))^2 },
+        "poisson"   = exp(merged$Mean_t)^2
+      )
+      merged$MSE_orig <- merged$MSE_t * delta_factor
+
+      var_df <- data.frame(Domain = merged$Domain, Mean = merged$MSE_orig,
+                           stringsAsFactors = FALSE)
+      ci_df <- data.frame(
+        Domain = merged$Domain,
+        Lower  = merged$Mean - z_val * sqrt(pmax(merged$MSE_orig, 0)),
+        Upper  = merged$Mean + z_val * sqrt(pmax(merged$MSE_orig, 0)),
+        stringsAsFactors = FALSE
+      )
+      ci_df <- clamp_ci(ci_df)
+      ind   <- data.frame(Domain = merged$Domain, Mean = merged$Mean,
+                          stringsAsFactors = FALSE)
+
+      # ── 7b-mse. Benchmarked prediction MSE (already in original space) ──
+      if (!is.null(benchmark) && !is.null(mse_estimated$MSE_bench_estimates)) {
+        mse_bench_raw              <- mse_estimated$MSE_bench_estimates
+        colnames(mse_bench_raw)[1] <- "Domain"
+        mse_bench_raw$Domain       <- as.character(mse_bench_raw$Domain)
+        colnames(mse_bench_raw)[2] <- "MSE_bench"
+
+        ind_bench$Domain <- as.character(ind_bench$Domain)
+        merged_b         <- merge(ind_bench, mse_bench_raw, by = "Domain")
+
+        var_bench_df <- data.frame(Domain = merged_b$Domain, Mean = merged_b$MSE_bench,
+                                   stringsAsFactors = FALSE)
+        ci_bench_df <- data.frame(
+          Domain = merged_b$Domain,
+          Lower  = merged_b$Mean - z_val * sqrt(pmax(merged_b$MSE_bench, 0)),
+          Upper  = merged_b$Mean + z_val * sqrt(pmax(merged_b$MSE_bench, 0)),
+          stringsAsFactors = FALSE
+        )
+        ci_bench_df <- clamp_ci(ci_bench_df)
+        ind_bench   <- data.frame(Domain = merged_b$Domain, Mean = merged_b$Mean,
+                                  stringsAsFactors = FALSE)
+      }
     }
   }
 
@@ -508,6 +743,61 @@ megb <- function(fixed,
     model_ref <- megb_fit$megb_model
   }
 
+  # ── 9b. Align result structure with xgb so shared write.excel/estimators logic works ──
+  # xgb stores Mean_bench as a column in $ind, Var_bench in $var, Lower/Upper_bench in $CI.
+  if (!is.null(ind_bench)) {
+    ind <- merge(
+      ind,
+      data.frame(Domain = ind_bench$Domain, Mean_bench = ind_bench$Mean,
+                 stringsAsFactors = FALSE),
+      by = "Domain", all.x = TRUE
+    )
+  }
+  if (!is.null(var_df) && !is.null(var_bench_df)) {
+    var_df <- merge(
+      var_df,
+      data.frame(Domain = var_bench_df$Domain, Var_bench = var_bench_df$Mean,
+                 stringsAsFactors = FALSE),
+      by = "Domain", all.x = TRUE
+    )
+  }
+  if (!is.null(ci_df) && !is.null(ci_bench_df)) {
+    ci_bench_renamed <- ci_bench_df
+    names(ci_bench_renamed)[names(ci_bench_renamed) == "Lower"] <- "Lower_bench"
+    names(ci_bench_renamed)[names(ci_bench_renamed) == "Upper"] <- "Upper_bench"
+    ci_df <- merge(ci_df, ci_bench_renamed, by = "Domain", all.x = TRUE)
+  }
+
+  # ── 9c. Bootstrap diagnostics ────────────────────────────────────────────────
+  # Surface boot_ran_eff_sd / boot_error_sd alongside their non-bootstrap
+  # counterparts so the caller can diagnose pathologies like "the EM in each
+  # bootstrap iteration collapses to ran_eff_sd ~ 0", which would inflate the
+  # prediction-MSE summary by removing the refit's ability to recover u_d*.
+  boot_diag <- NULL
+  if (!is.null(mse_estimated)) {
+    qsum <- function(x) {
+      x <- x[is.finite(x)]
+      if (length(x) == 0L) return(rep(NA_real_, 5L))
+      as.numeric(quantile(x, probs = c(0, 0.25, 0.5, 0.75, 1), na.rm = TRUE))
+    }
+    boot_diag <- list(
+      ran_eff_sd_orig    = megb_fit$megb_model$ran_eff_sd,
+      error_sd_orig      = megb_fit$megb_model$error_sd,
+      boot_ran_eff_sd    = mse_estimated$boot_ran_eff_sd_boot,
+      boot_error_sd      = mse_estimated$boot_error_sd,
+      boot_ran_eff_sd_q  = qsum(mse_estimated$boot_ran_eff_sd_boot),
+      boot_error_sd_q    = qsum(mse_estimated$boot_error_sd)
+    )
+    message(sprintf(
+      "Bootstrap diagnostics: original ran_eff_sd = %.4f, error_sd = %.4f.\n  Bootstrap ran_eff_sd quartiles (min,Q1,Q2,Q3,max) = %s\n  Bootstrap error_sd   quartiles                  = %s\n  Frac bootstrap iters with ran_eff_sd < 1e-4 = %.2f",
+      megb_fit$megb_model$ran_eff_sd %||% NA_real_,
+      megb_fit$megb_model$error_sd   %||% NA_real_,
+      paste(sprintf("%.4f", boot_diag$boot_ran_eff_sd_q), collapse = ", "),
+      paste(sprintf("%.4f", boot_diag$boot_error_sd_q),   collapse = ", "),
+      mean(boot_diag$boot_ran_eff_sd < 1e-4, na.rm = TRUE)
+    ))
+  }
+
   # ── 10. Assemble result ───────────────────────────────────────────────────────
   result <- list(
     ind            = ind,
@@ -523,7 +813,8 @@ megb <- function(fixed,
     smp_data       = smp_data,
     out_call       = out_call,
     transformation = transformation,
-    framework      = fwk
+    framework      = fwk,
+    boot_diag      = boot_diag
   )
 
   class(result) <- c("megb", "xgb", "povmap")

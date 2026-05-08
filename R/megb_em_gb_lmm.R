@@ -20,9 +20,18 @@ em_gb_lmm <- function(Y,
   continue_condition <- TRUE
   iterations        <- 0
   dom_name_effects  <- 0
-  adjusted_target   <- target - initial_random_effects
   old_log_lik       <- 0
   features_train    <- X
+
+  # Initialise the EM with a LMM-only fit on Y so the first GB iteration sees
+  # a domain-demeaned target rather than raw Y. Starting from zero random effects
+  # lets GB absorb domain means in iteration 1, after which lme4 finds no residual
+  # domain structure and the EM collapses to the trivial fixed point (ran_eff_sd=0).
+  formula_lmm_init <- as.formula(paste0("target ~ 1 + ", formula_random_effects))
+  suppressMessages(
+    lmefit_init <- lme4::lmer(formula_lmm_init, data = data, REML = FALSE)
+  )
+  adjusted_target <- target - (stats::predict(lmefit_init) - lme4::fixef(lmefit_init))
 
   while (continue_condition) {
     iterations <- iterations + 1

@@ -21,7 +21,10 @@ gbm_predict <- function(model, smp_data, pop_data, Y, dom_name, gbm_engine, cov_
       res           <- as.numeric(Y) - unit_pred_smp
       unit_preds    <- gb_pop + re_pop - fe
       list(unit_pred_smp = unit_pred_smp, res = res,
+           gb_smp        = gb_smp,
+           gb_pop        = gb_pop,
            unit_pred_pop = data.frame(unit_preds = unit_preds,
+                                      gb_pop     = gb_pop,
                                       dom_name   = pop_data[[dom_name]],
                                       row.names  = NULL))
     },
@@ -35,7 +38,10 @@ gbm_predict <- function(model, smp_data, pop_data, Y, dom_name, gbm_engine, cov_
       res           <- as.numeric(Y) - unit_pred_smp
       unit_preds    <- gb_pop + re_pop - fe
       list(unit_pred_smp = unit_pred_smp, res = res,
+           gb_smp        = gb_smp,
+           gb_pop        = gb_pop,
            unit_pred_pop = data.frame(unit_preds = unit_preds,
+                                      gb_pop     = gb_pop,
                                       dom_name   = pop_data[[dom_name]],
                                       row.names  = NULL))
     },
@@ -51,7 +57,10 @@ gbm_predict <- function(model, smp_data, pop_data, Y, dom_name, gbm_engine, cov_
       res           <- as.numeric(Y) - unit_pred_smp
       unit_preds    <- gb_pop + re_pop - fe
       list(unit_pred_smp = unit_pred_smp, res = res,
+           gb_smp        = gb_smp,
+           gb_pop        = gb_pop,
            unit_pred_pop = data.frame(unit_preds = unit_preds,
+                                      gb_pop     = gb_pop,
                                       dom_name   = pop_data[[dom_name]],
                                       row.names  = NULL))
     }

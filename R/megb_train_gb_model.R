@@ -11,6 +11,12 @@ train_gbmodel <- function(model_type, features_train, response_train,
                    else if (!is.null(params$nround)) params$nround
                    else 1000
       xgb_params <- params[setdiff(names(params), c("nrounds", "nround"))]
+      # Strip NULL / zero-length entries before they reach xgboost. Recent
+      # xgboost versions serialise an empty param to '{}' and reject it with
+      # "Invalid Parameter format for reg_alpha expect float but value='{}'",
+      # which surfaces here whenever a tune slot (e.g. all_tunes[[k]]$alpha)
+      # was saved as numeric(0) or NULL.
+      xgb_params <- xgb_params[lengths(xgb_params) > 0L]
 
       dtrain <- xgboost::xgb.DMatrix(data  = data.matrix(features_train),
                                       label = response_train)

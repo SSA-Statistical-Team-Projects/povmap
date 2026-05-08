@@ -1166,14 +1166,19 @@ add_pointests <- function(object, indicator, wb, headlines_cs,domain_names=domai
 }
 
 add_precisions <- function(object, indicator, MSE, wb, headlines_cs, CV) {
+  if (inherits(object, "xgb") || inherits(object, "ell"))
+    object$MSE <- object$var
   precisions <- mse_emdi(object = object, indicator = indicator, CV = TRUE)
 
+  var_sheet <- if (inherits(object, "xgb") || inherits(object, "ell"))
+    "Variance Estimators" else "MSE Estimators"
+
   if (MSE) {
-    addWorksheet(wb, sheetName = "MSE Estimators", gridLines = FALSE)
+    addWorksheet(wb, sheetName = var_sheet, gridLines = FALSE)
 
     writeDataTable(
       x = precisions$ind,
-      sheet = "MSE Estimators",
+      sheet = var_sheet,
       wb = wb,
       startRow = 1,
       startCol = 1,
@@ -1184,13 +1189,13 @@ add_precisions <- function(object, indicator, MSE, wb, headlines_cs, CV) {
     )
     setColWidths(
       wb = wb,
-      sheet = "MSE Estimators",
+      sheet = var_sheet,
       cols = seq_len(ncol(precisions$ind)),
       widths = "auto"
     )
     freezePane(
       wb = wb,
-      sheet = "MSE Estimators",
+      sheet = var_sheet,
       firstRow = TRUE,
       firstCol = TRUE
     )
@@ -1232,6 +1237,24 @@ add_estims <- function(object, indicator, wb, headlines_cs, MSE, CV,domain_names
     object = object, indicator = indicator,
     MSE = MSE, CV = CV
   )$ind
+
+  if (inherits(object, "xgb")) {
+    # Append CI bounds (Lower, Upper, and benchmarked equivalents if present)
+    if (!is.null(object$CI)) {
+      data <- merge(data, object$CI, by = "Domain", all.x = TRUE)
+    }
+    # Append population weight sums per domain
+    fwk <- object$framework
+    pop_source <- if (!is.null(fwk$X_pop)) fwk$X_pop else fwk$pop_data
+    if (!is.null(fwk$pop_weights) && !is.null(pop_source)) {
+      pop_sums <- tapply(pop_source[[fwk$pop_weights]],
+                         pop_source[[fwk$domains]], sum)
+      pop_df <- data.frame(Domain     = names(pop_sums),
+                           Population = as.numeric(pop_sums),
+                           stringsAsFactors = FALSE)
+      data <- merge(data, pop_df, by = "Domain", all.x = TRUE)
+    }
+  }
 
   if (!is.null(domain_names)) {
     data <- data.frame(domain_names,data)

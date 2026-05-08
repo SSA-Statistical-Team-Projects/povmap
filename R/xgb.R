@@ -144,6 +144,15 @@
 #' Vol.71, No. 5, 1865–1894.\cr \cr
 #' Merfeld, J. D., Dang, H., & Newhouse, D. (2025). Improving Estimates of Mean Welfare and Uncertainty
 #' in Developing Countries (No. 10348). The World Bank.
+#' @param perturb_benchmark logical. If \code{TRUE} and \code{benchmark_level}
+#'   is specified, the bootstrap benchmark target at each benchmark-level group
+#'   (e.g. state) is perturbed in every bootstrap iteration by adding
+#'   independent Gaussian noise whose standard deviation equals the
+#'   Horvitz-Thompson estimate of the direct-estimate standard error at that
+#'   group. This propagates the survey-sampling uncertainty of the benchmark
+#'   target into the benchmarked confidence intervals, correcting potential
+#'   undercoverage that arises when the bootstrap state mean is far more
+#'   stable than the real direct estimate. Defaults to \code{FALSE}.
 #' @importFrom purrr as_vector
 #' @importFrom collapse fmean
 #' @importFrom foreach foreach %dopar% %do%
@@ -185,6 +194,25 @@
 #'          map_dom_id = "PB")
 #'}
 
+# Horvitz-Thompson variance of a weighted mean for each group.
+# Returns a named numeric vector of variances (one entry per group).
+# Formula: V_HT(ȳ_g) = n_g / ((n_g-1) * (Σw)²) * Σ w²(y - ȳ)²
+# Equivalent to the with-replacement linearisation used by survey::svymean.
+ht_var_weighted_mean <- function(y, w, g) {
+  g <- as.character(g)
+  groups <- unique(g)
+  result <- setNames(numeric(length(groups)), groups)
+  for (grp in groups) {
+    idx  <- g == grp
+    y_g  <- y[idx];  w_g <- w[idx];  n_g <- sum(idx)
+    if (n_g < 2L) { result[grp] <- NA_real_; next }
+    ybar_g      <- sum(w_g * y_g) / sum(w_g)
+    result[grp] <- (n_g / ((n_g - 1L) * sum(w_g)^2)) *
+                    sum(w_g^2 * (y_g - ybar_g)^2)
+  }
+  result
+}
+
 xgb <- function(fixed,
                 smp_data,
                 smp_weights = NULL,
@@ -224,18 +252,19 @@ xgb <- function(fixed,
                 center_residuals = F,
                 variance_y = NULL,
                 rescale_weights = TRUE,
+                perturb_benchmark = FALSE,
+                verbose = FALSE,
                 ...){
 
   #1. Initialize
   out_call <- match.call()
-
+  # default to using sample weights for benchmarking if internal benchmarking
   if (is.null(benchmark_weights) & !is.null(smp_weights)) {
     benchmark_weights <- smp_weights
   }
   collapse:::set_collapse(sort = FALSE)
 
-
-    # 1. Framework for xgb
+  # 1. Framework for xgb
   #_____________________________________________________________________________
   fwk <- framework_xgb(fixed = fixed,
                        smp_data = smp_data,
@@ -292,9 +321,9 @@ xgb <- function(fixed,
 
   # Create a dataframe with sub_domains data
   sub_domains_direct <- data.frame(fwk$Y_smp,
-                                         fwk$X_smp[sub_domains],
-                                         fwk$X_smp[domains],
-                                         fwk$smp_weights_vec)
+                                   fwk$X_smp[sub_domains],
+                                   fwk$X_smp[domains],
+                                   fwk$smp_weights_vec)
   colnames(sub_domains_direct) <- c("outcome", sub_domains, "domains","smp_weights")
 
 
@@ -331,7 +360,7 @@ xgb <- function(fixed,
     smp_weights_rescaled <- fwk$smp_weights_vec
   }
 
-# Estimate model
+  # Estimate model
   xgb_model <- point_estim_xgb(params=params,smp_X=X_smp_xgb,
                                smp_Y=sub_domains_direct$outcome,
                                smp_weight= smp_weights_rescaled/mean(smp_weights_rescaled),
@@ -357,9 +386,9 @@ xgb <- function(fixed,
 
 
 
-#browser()
+  #browser()
   #4. benchmark area-level estimates and transform these if option is selected, so bootstrap can draw from the residuals of the benchmarked estimates
-    if (!is.null(benchmark)) {
+  if (!is.null(benchmark)) {
     domains_pred$hat_bench <- add_benchmark(x=domains_pred$hat,benchmark_level=benchmark_level,
                                             fwk=fwk,fixed=fixed,benchmark=benchmark,benchmark_type=benchmark_type)
     domains_pred$hat_bench_t <- transform_outcome(domains_pred$hat_bench)$y
@@ -369,7 +398,7 @@ xgb <- function(fixed,
     domains_direct_t <- dplyr:::inner_join(domains_direct_t,domains_pred,by="domains")
     domains_direct_t_union <- domains_direct_t[domains_direct_t$domains %in% xgb_model$domains,] # limit to domains contains in sample and population
     resid_domains_bench <-  domains_direct_t_union$domains_direct_t - domains_direct_t_union$hat_bench_t
-    }
+  }
 
   # Bootstrap
   #_____________________________________________________________________________
@@ -395,311 +424,402 @@ xgb <- function(fixed,
 
   B_sub <- xgb_model$sub_predictions
 
-
-
-if (bootstrap==T) {
-
-  if (center_residuals==T) {
-    resid_sub_domains <- resid_sub_domains-weighted.mean(resid_sub_domains,w=pop_subarea_d)
-    resid_domains <- resid_domains-weighted.mean(resid_domains,w=pop_area_d)
-    #resid_sub_domains_rescaled <- resid_sub_domains_rescaled-weighted.mean(resid_sub_domains_rescaled,w=pop_subarea_d)
-    #resid_domains_rescaled <- resid_domains_rescaled-weighted.mean(resid_domains_rescaled,w=pop_area_d)
-    if (!is.null(benchmark)) {
-      resid_domains_bench <- resid_domains_bench - weighted.mean(resid_domains_bench,w=pop_area_d)
+  # Pre-compute Horvitz-Thompson SE of the state-level (benchmark_level) direct
+  # estimate, then pre-generate all B perturbations as a named matrix so that
+  # parallel foreach workers receive a simple object (no rnorm inside workers).
+  if (perturb_benchmark && !is.null(benchmark_level)) {
+    bm_ht_var <- ht_var_weighted_mean(
+      y = fwk$smp_data[[fwk$outcome]],
+      w = fwk$smp_data[[benchmark_weights]],
+      g = fwk$smp_data[[benchmark_level]]
+    )
+    bm_ht_se <- sqrt(bm_ht_var)
+    if (any(is.na(bm_ht_se))) {
+      warning("perturb_benchmark: some benchmark groups have n < 2; HT SE set to 0 for those groups.")
+      bm_ht_se[is.na(bm_ht_se)] <- 0
     }
-  }
-
- if (!is.null(fwk$variance_y)) {
-  het_correction <- fwk$smp_data[,fwk$variance_y]^-0.5
-}
-else {
-  het_correction <- rep(1,length(fwk$smp_weights_vec))
-}
-
-
-  clusters <- unique(smp_data[,fwk$domains])
-  if (cpus>1) {
-    cl <- parallel::makeCluster(cpus)
-    doSNOW::registerDoSNOW(cl)
-  }
-  else {
-    foreach::registerDoSEQ()
-  }
-
-
-cat("Beginning bootstrap \n")
-  #for (j in 1:B){
-
-pb <- txtProgressBar(max = B, style = 3)
-progress <- function(n) setTxtProgressBar(pb, n)
-
-#browser()
-B_results_list <- foreach(j = 1:B,
-                          .combine = rbind,
-                          .errorhandling = "stop",
-                          .packages = c("xgboost"),
-                          .options.snow = list(progress = progress)) %dopar% {
-
-
-    #displayevery = max(round(B/10,0),1)
-
-    #if (j %% displayevery==0) {
-      #cat(paste0("replication ",j," of ",B,"\n"))
-    #}
-
-    if (bootstrap_type=="residual") {
-      # First implement a standard residual bootstrap
-      # randomly sample residuals USING THE WEIGHTS CALCULATED ABOVE if weighted_BS==TRUE
-      sub_domains_draw <- resid_sub_domains[sample(1:length(resid_sub_domains),nrow(B_sub), prob=pop_subarea_d,
-                                                                               replace = TRUE)]
-      # This undoes rescaling of subarea residuals if variance_y is specified
-      #if (!is.null(variance_y)) {
-      #sub_domains_draw <- sub_domains_draw*(B_sub[,fwk$pop_weights]^-0.5)
-      #}
-
-      B_sub$sim_t <- as.numeric(B_sub$hat_t) + sub_domains_draw
-      # aggregate to area
-      B_domains <- collapse:::fmean(x=B_sub$sim_t,g=B_sub[,fwk$domains],w=B_sub[,fwk$pop_weights])
-
-      B_domains <- data.frame("domains" = names(B_domains),"sim_t" = B_domains)
-      if (!is.null(benchmark_level)) {
-      B_domains[,benchmark_level]<-collapse:::ffirst(x=B_sub[,benchmark_level],g=B_sub[,fwk$domains])
-      }
-      B_domains$hat_t <- collapse:::fmean(x=B_sub$hat_t,g=B_sub$domains,w=B_sub$wts)
-
-      #B_domains <- data.frame("domains" = unique(B_sub$domains),"sim" = B_domains)
-      area_draw <- data.frame(domains=B_domains$domains,area_draw=resid_domains[sample(1:length(resid_domains),
-                                                                                        nrow(B_domains), prob=pop_area_d,
-                                                                                        replace = TRUE)])
-      B_domains <- left_join(B_domains,area_draw,by="domains")
-
-      # Add bootstrapped area residual and back transform
-      B_domains$sim_t_plus_area <- B_domains$sim_t +B_domains$area_draw
-      B_domains$sim_plus_area <- back_transform_outcome(B_domains$sim_t_plus_area)
-
-
-
-      if (!is.null(benchmark)) {
-        # Benchmarking requires a different bootstrapping procedure because the residuals are no longer independent.
-        # We implement the same type of approach used in parametric bootstraps
-      # 1. Redraw areas from benchmarked area distribution and calculate simulated "truth" mean for each domain
-
-      area_draws_bench <- data.frame(domains=B_domains$domains,area_draw=resid_domains_bench[sample(1:length(resid_domains_bench),
-                                                                                              nrow(B_domains), prob=pop_area_d,
-                                                                                              replace = TRUE)])
-
-      colnames(area_draws_bench)[1]=fwk$domains
-      B_sub <- dplyr:::left_join(B_sub,area_draws_bench,by=fwk$domains)
-      B_sub$sim_t_plus_area <- B_sub$sim_t+B_sub$area_draw
-      B_sub$sim_plus_area <- back_transform_outcome(B_sub$sim_t_plus_area)
-      B_sub$area_draw <- NULL
-
-      B_domains$sim_truth <- collapse:::fmean(B_sub$sim_plus_area,g=B_sub$domains,w=B_sub$wts)
-
-      # 2. Extract sample observations from new population
-      covariates_no_popwt <- setdiff(fwk$covariates, fwk$pop_weights)
-      B_sample <- dplyr:::inner_join(smp_data[, c(fwk$sub_domains, covariates_no_popwt, fwk$smp_weights, fwk$variance_y)]
-                                    , B_sub, by=fwk$sub_domains)
-      #B_sample$sim_plus_area <- back_transform_outcome(B_sample$sim_t_plus_area)
-
-      #2.5 Truncate new dependent variable if necessary
-      if ((!is.null(list(...)$objective) && list(...)$objective=="reg:logistic") & transformation=="no") {
-      B_sample$sim_t_plus_area <- pmax(0, pmin(1, B_sample$sim_t_plus_area))
-      }
-      else if (!is.null(list(...)$objective) && list(...)$objective=="reg:gamma" && bootstrap_type=="residual") {
-        B_sample$sim_t_plus_area <- pmax(1e-5, B_sample$sim_t_plus_area)
-      }
-      else if (transformation=="arcsin") {
-        # Clamp to [0, 1] to prevent NaN from arcsin transform of out-of-range values
-        B_sample$sim_plus_area <- pmax(0, pmin(1, B_sample$sim_plus_area))
-      }
-      else if (transformation=="log") {
-        # Ensure positive values for log transform
-        B_sample$sim_plus_area <- pmax(1e-10, B_sample$sim_plus_area)
-      }
-      else if (transformation=="log.shift") {
-        # Ensure y + ls_lambda > 0 for log(y + ls_lambda)
-        B_sample$sim_plus_area <- pmax(-ls_lambda + 1e-10, B_sample$sim_plus_area)
-      }
-
-      # Guard: error if any NaN/Inf in the bootstrap dependent variable before re-estimation
-      boot_y <- if (transformation == "arcsin") B_sample$sim_plus_area else B_sample$sim_t_plus_area
-      bad_vals <- is.nan(boot_y) | is.infinite(boot_y)
-      if (any(bad_vals)) {
-        stop(sprintf("Bootstrap iteration produced %d NaN/Inf values in simulated outcome. This may indicate that benchmarking is producing out-of-range estimates.", sum(bad_vals)))
-      }
-
-        X_smp_boot <- B_sample[,fwk$covariates]
-        if (!is.null(fwk$variance_y)) {
-          boot_het <- B_sample[,fwk$variance_y]^-0.5
-        } else {
-          boot_het <- 1
-        }
-        boot_weights <- B_sample[,fwk$smp_weights] * boot_het
-        # Rescale weights within each domain so they sum to the domain sample size
-        if (rescale_weights) {
-          boot_domain_sum_wts <- ave(boot_weights, B_sample[,fwk$domains], FUN = sum)
-          boot_domain_n <- ave(boot_weights, B_sample[,fwk$domains], FUN = length)
-          boot_weights <- boot_weights * boot_domain_n / boot_domain_sum_wts
-        }
-        boot_weights <- boot_weights / mean(boot_weights)
-
-      # 3. Generate predictions using new sample values in arcsin space
-      predictions  <- point_estim_xgb(params=params,smp_X=X_smp_boot,
-                                   smp_Y=B_sample$sim_plus_area,
-                                   smp_weight= boot_weights,
-                                   pop_X=X_pop_xgb,
-                                   sub_domains=sub_domains,
-                                   nrounds=nrounds,
-                                   fwk=fwk,
-                                   transform_outcome=transform_outcome,
-                                   back_transform_outcome=back_transform_outcome,
-                                   L=L,variance_y=NULL)$predictions
-
-
-
-      # benchmark predictions to the collapsed simulated sample in probability space
-      # First calculate weighted mean of sample to benchmark, for each benchmark_level
-      B_sample_bm <- data.frame(sample_bm = collapse:::fmean(x=B_sample$sim_plus_area,g=B_sample[,benchmark_level],w=B_sample[,benchmark_weights]))
-      B_sample_bm[,benchmark_level] <- rownames(B_sample_bm)
-
-
-      #B_domains <- dplyr:::left_join(B_domains,domains_pred[,c("domains","hat_bench","weight")],by="domains")
-      #B_domains$mean_sim_plus_area <- collapse:::fmean(B_domains$sim_plus_area,g=B_domains[,benchmark_level],w=B_domains$weight,TRA=1)
-      #B_domains <- dplyr:::left_join(B_domains,B_sample_bm,by=benchmark_level)
-
-      bm_vec <- setNames(B_sample_bm$sample_bm, B_sample_bm[,benchmark_level])
-      B_domains$sim_bench <- add_benchmark(predictions$hat,benchmark_level=benchmark_level,benchmark=bm_vec,fwk=fwk,
-                                 fixed=fixed,benchmark_type=benchmark_type)
-      } # close additional benchmarking bootstrap code
-      } # close residual bootstrap code to produce B_domains_sim
-
-    # case resampling bootstrap
-      else if (bootstrap_type=="case") {
-        # Resample of clusters with replacement
-        #browser()
-        boot_clusters <- sample(clusters, replace = TRUE)
-        # Get all observations from sampled clusters
-        boot_data <- do.call(rbind, lapply(boot_clusters, function(clust) {
-          smp_data[smp_data[,fwk$domains] == clust, ]}))
-          X_smp_boot <- boot_data[fwk$covariates]
-          # Rescale weights within each domain so they sum to the domain sample size
-          case_wts <- boot_data[,smp_weights]
-          if (rescale_weights) {
-            case_domain_sum_wts <- ave(case_wts, boot_data[,fwk$domains], FUN = sum)
-            case_domain_n <- ave(case_wts, boot_data[,fwk$domains], FUN = length)
-            case_wts <- case_wts * case_domain_n / case_domain_sum_wts
-          }
-          #Estimate model
-          dtrain <- xgboost::xgb.DMatrix(
-            data = as.matrix(X_smp_boot),
-            label = transform_outcome(boot_data[,fwk$outcome])$y,
-            weight = (case_wts/mean(case_wts))
-          )
-          xgb_fit <- xgboost::xgb.train(
-            data               = dtrain,
-            params             = params,
-            nrounds            = nrounds,
-            verbose            = 0
-          )
-         # Obtain predictions
-           B_sub$sim <-
-            back_transform_outcome(predict(xgb_fit, as.matrix(X_pop_xgb))
-          )
-          B_domains <- collapse:::fmean(x=B_sub$sim,g=B_sub$domains,w=B_sub$wts)
-          B_domains <- data.frame("domains" = names(B_domains),"sim" = B_domains)
-        B_domains$sim_plus_area <- B_domains$sim
-        B_domains$sim_bench <- NULL
-        B_domains$sim_truth <- NULL
-      }
-
-
-        # Return a single-row data frame with list-columns
-              data.frame(
-                                B_results = I(list(B_domains$sim_plus_area)),      # I() prevents unlisting
-                                B_results_bench = I(list(B_domains$sim_bench)),
-                                B_results_truth = I(list(B_domains$sim_truth)),
-                                B_domains = I(list(B_domains$domains)),
-                                stringsAsFactors = FALSE)
-
-                          } # close bootstrap loop
-
-close(pb)
-
-if (cpus>1) {
-parallel::stopCluster(cl)
-}
-
-# Extract and combine from list
-
-B_results <- do.call(rbind, B_results_list$B_results)
-B_results_bench <- do.call(rbind, B_results_list$B_results_bench)
-B_results_truth <- do.call(rbind, B_results_list$B_results_truth)
-B_results_domains <-  B_results_list$B_domains[[1]]
-
-
-#browser()
-# This procedure resorts the data when using multiple cores, so we will undo the resorting
-original_domain_order <- unique(fwk$pop_domains_vec)
-row_reorder <- match(original_domain_order, B_results_domains)
-B_results <- B_results[,row_reorder]
-if (!is.null(benchmark)) {
-  B_results_bench <- B_results_bench[,row_reorder]
-B_results_truth <- B_results_truth[,row_reorder]
-}
-B_results_domains <- B_results_domains[row_reorder]
-#tail(domains_pred)
-#tail(B_results_domains)
-
-  # Prepare results
-  #_____________________________________________________________________________
-  #results <- NULL
-  results <- data.frame(domains = B_results_domains)
-  results$Mean_boot <- NA
-  results$Lower_boot <- NA
-  results$Upper_boot <- NA
-  results$Var_boot <- NA
-  results$Mean_boot_bench <- NA
-  results$Lower_bench <- NA
-  results$Upper_bench <- NA
-
-  if (!is.null(benchmark)) {
-  results <- left_join (results, domains_pred[, c("hat","hat_bench","domains")],by="domains")
+    if (verbose) message(sprintf(
+      "perturb_benchmark: HT SE at benchmark level — median %.4f, range [%.4f, %.4f]",
+      median(bm_ht_se), min(bm_ht_se), max(bm_ht_se)
+    ))
+    # B x n_groups matrix: row j gives the noise to add in bootstrap iteration j.
+    # Pre-generating avoids rnorm() inside parallel workers (unpredictable RNG state)
+    # and makes the draws reproducible given the outer seed.
+    bm_perturbations <- matrix(
+      rnorm(B * length(bm_ht_se), mean = 0, sd = rep(bm_ht_se, each = B)),
+      nrow = B, ncol = length(bm_ht_se),
+      dimnames = list(NULL, names(bm_ht_se))
+    )
   } else {
-    results <- left_join (results, domains_pred[, c("hat","domains")],by="domains")
+    bm_perturbations <- NULL
   }
 
-  colnames(results)[1] <- "Domain"
-  #browser()
+  if (bootstrap==T) {
 
-  for (l in 1:ncol(B_results)){
+    if (center_residuals==T) {
+      resid_sub_domains <- resid_sub_domains-weighted.mean(resid_sub_domains,w=pop_subarea_d)
+      resid_domains <- resid_domains-weighted.mean(resid_domains,w=pop_area_d)
+      #resid_sub_domains_rescaled <- resid_sub_domains_rescaled-weighted.mean(resid_sub_domains_rescaled,w=pop_subarea_d)
+      #resid_domains_rescaled <- resid_domains_rescaled-weighted.mean(resid_domains_rescaled,w=pop_area_d)
+      if (!is.null(benchmark)) {
+        resid_domains_bench <- resid_domains_bench - weighted.mean(resid_domains_bench,w=pop_area_d)
+      }
+    }
 
-    temp <- B_results[,l]
+    if (!is.null(fwk$variance_y)) {
+      het_correction <- fwk$smp_data[,fwk$variance_y]^-0.5
+    }
+    else {
+      het_correction <- rep(1,length(fwk$smp_weights_vec))
+    }
 
-    # if (transformation=="arcsin"){
-    #   temp <- ifelse(temp>asin(1), asin(1), temp)
-    #   temp <- ifelse(temp<asin(0), asin(0), temp)
-    #   temp <- sin(temp)^2
-    # }
-    # if (transformation=="log"){
-    #   temp <- exp(temp)
-    # }
-    results$Mean_boot[l] <- mean(temp)
-    results$Lower_boot[l] <- quantile(temp, probs = (1-conf_level)/2)
-    results$Upper_boot[l] <- quantile(temp, probs = 1-(1-conf_level)/2)
-    results$Var_boot[l] <- var(temp)
+
+    clusters <- unique(smp_data[,fwk$domains])
+    if (cpus>1) {
+      cl <- parallel::makeCluster(cpus)
+      doSNOW::registerDoSNOW(cl)
+    }
+    else {
+      foreach::registerDoSEQ()
+    }
+
+
+    cat("Beginning bootstrap \n")
+    #for (j in 1:B){
+
+    pb <- txtProgressBar(max = B, style = 3)
+    progress <- function(n) setTxtProgressBar(pb, n)
+
+    #browser()
+    B_results_list <- foreach(j = 1:B,
+                              .combine = rbind,
+                              .errorhandling = "stop",
+                              .packages = c("xgboost"),
+                              .options.snow = list(progress = progress)) %dopar% {
+
+
+                                #displayevery = max(round(B/10,0),1)
+
+                                #if (j %% displayevery==0) {
+                                #cat(paste0("replication ",j," of ",B,"\n"))
+                                #}
+
+                                if (bootstrap_type=="residual") {
+                                  # First implement a standard residual bootstrap
+                                  # randomly sample residuals USING THE WEIGHTS CALCULATED ABOVE if weighted_BS==TRUE
+                                  sub_domains_draw <- resid_sub_domains[sample(1:length(resid_sub_domains),nrow(B_sub), prob=pop_subarea_d,
+                                                                               replace = TRUE)]
+                                  # This undoes rescaling of subarea residuals if variance_y is specified
+                                  #if (!is.null(variance_y)) {
+                                  #sub_domains_draw <- sub_domains_draw*(B_sub[,fwk$pop_weights]^-0.5)
+                                  #}
+
+                                  B_sub$sim_t <- as.numeric(B_sub$hat_t) + sub_domains_draw
+                                  # aggregate to area
+                                  B_domains <- collapse:::fmean(x=B_sub$sim_t,g=B_sub[,fwk$domains],w=B_sub[,fwk$pop_weights])
+
+                                  B_domains <- data.frame("domains" = names(B_domains),"sim_t" = B_domains)
+                                  if (!is.null(benchmark_level)) {
+                                    B_domains[,benchmark_level]<-collapse:::ffirst(x=B_sub[,benchmark_level],g=B_sub[,fwk$domains])
+                                  }
+                                  B_domains$hat_t <- collapse:::fmean(x=B_sub$hat_t,g=B_sub$domains,w=B_sub$wts)
+
+                                  #B_domains <- data.frame("domains" = unique(B_sub$domains),"sim" = B_domains)
+                                  area_draw <- data.frame(domains=B_domains$domains,area_draw=resid_domains[sample(1:length(resid_domains),
+                                                                                                                   nrow(B_domains), prob=pop_area_d,
+                                                                                                                   replace = TRUE)])
+                                  B_domains <- left_join(B_domains,area_draw,by="domains")
+
+                                  # Add bootstrapped area residual and back transform
+                                  B_domains$sim_t_plus_area <- B_domains$sim_t +B_domains$area_draw
+                                  B_domains$sim_plus_area <- back_transform_outcome(B_domains$sim_t_plus_area)
+
+
+
+                                  if (!is.null(benchmark)) {
+                                    # Benchmarking requires a different bootstrapping procedure because the residuals are no longer independent.
+                                    # We implement the same type of approach used in parametric bootstraps
+                                    # 1. Redraw areas from benchmarked area distribution and calculate simulated "truth" mean for each domain
+
+                                    # Draw from resid_domains (model-based area residuals) rather than resid_domains_bench.
+                                    # resid_domains_bench is (direct estimate - benchmarked model prediction) and is dominated
+                                    # by sampling error in the direct estimate, not by the area random effect. The bootstrap
+                                    # population should reflect the model's data-generating process, which uses resid_domains.
+                                    area_draws_bench <- data.frame(domains=B_domains$domains,area_draw=resid_domains[sample(1:length(resid_domains),
+                                                                                                                            nrow(B_domains), prob=pop_area_d,
+                                                                                                                            replace = TRUE)])
+
+                                    colnames(area_draws_bench)[1]=fwk$domains
+                                    B_sub <- dplyr:::left_join(B_sub,area_draws_bench,by=fwk$domains)
+                                    B_sub$sim_t_plus_area <- B_sub$sim_t+B_sub$area_draw
+                                    B_sub$sim_plus_area <- back_transform_outcome(B_sub$sim_t_plus_area)
+                                    B_sub$area_draw <- NULL
+
+                                    B_domains$sim_truth <- collapse:::fmean(B_sub$sim_plus_area,g=B_sub$domains,w=B_sub$wts)
+
+                                    # 2. Extract sample observations from new population
+                                    covariates_no_popwt <- setdiff(fwk$covariates, fwk$pop_weights)
+                                    B_sample <- dplyr:::inner_join(smp_data[, c(fwk$sub_domains, covariates_no_popwt, fwk$smp_weights, fwk$variance_y)]
+                                                                   , B_sub, by=fwk$sub_domains)
+                                    #B_sample$sim_plus_area <- back_transform_outcome(B_sample$sim_t_plus_area)
+
+                                    #2.5 Truncate new dependent variable if necessary
+                                    if ((!is.null(list(...)$objective) && list(...)$objective=="reg:logistic") & transformation=="no") {
+                                      B_sample$sim_t_plus_area <- pmax(0, pmin(1, B_sample$sim_t_plus_area))
+                                    }
+                                    else if (!is.null(list(...)$objective) && list(...)$objective=="reg:gamma" && bootstrap_type=="residual") {
+                                      B_sample$sim_t_plus_area <- pmax(1e-5, B_sample$sim_t_plus_area)
+                                    }
+                                    else if (transformation=="arcsin") {
+                                      # Clamp to [0, 1] to prevent NaN from arcsin transform of out-of-range values
+                                      B_sample$sim_plus_area <- pmax(0, pmin(1, B_sample$sim_plus_area))
+                                    }
+                                    else if (transformation=="log") {
+                                      # Ensure positive values for log transform
+                                      B_sample$sim_plus_area <- pmax(1e-10, B_sample$sim_plus_area)
+                                    }
+                                    else if (transformation=="log.shift") {
+                                      # Ensure y + ls_lambda > 0 for log(y + ls_lambda)
+                                      B_sample$sim_plus_area <- pmax(-ls_lambda + 1e-10, B_sample$sim_plus_area)
+                                    }
+
+                                    # Guard: error if any NaN/Inf in the bootstrap dependent variable before re-estimation
+                                    boot_y <- if (transformation == "arcsin") B_sample$sim_plus_area else B_sample$sim_t_plus_area
+                                    bad_vals <- is.nan(boot_y) | is.infinite(boot_y)
+                                    if (any(bad_vals)) {
+                                      stop(sprintf("Bootstrap iteration produced %d NaN/Inf values in simulated outcome. This may indicate that benchmarking is producing out-of-range estimates.", sum(bad_vals)))
+                                    }
+
+                                    X_smp_boot <- B_sample[,fwk$covariates]
+                                    if (!is.null(fwk$variance_y)) {
+                                      boot_het <- B_sample[,fwk$variance_y]^-0.5
+                                    } else {
+                                      boot_het <- 1
+                                    }
+                                    boot_weights <- B_sample[,fwk$smp_weights] * boot_het
+                                    # Rescale weights within each domain so they sum to the domain sample size
+                                    if (rescale_weights) {
+                                      boot_domain_sum_wts <- ave(boot_weights, B_sample[,fwk$domains], FUN = sum)
+                                      boot_domain_n <- ave(boot_weights, B_sample[,fwk$domains], FUN = length)
+                                      boot_weights <- boot_weights * boot_domain_n / boot_domain_sum_wts
+                                    }
+                                    boot_weights <- boot_weights / mean(boot_weights)
+
+                                    # 3. Generate predictions using new sample values in arcsin space
+                                    predictions  <- point_estim_xgb(params=params,smp_X=X_smp_boot,
+                                                                    smp_Y=B_sample$sim_plus_area,
+                                                                    smp_weight= boot_weights,
+                                                                    pop_X=X_pop_xgb,
+                                                                    sub_domains=sub_domains,
+                                                                    nrounds=nrounds,
+                                                                    fwk=fwk,
+                                                                    transform_outcome=transform_outcome,
+                                                                    back_transform_outcome=back_transform_outcome,
+                                                                    L=L,variance_y=NULL)$predictions
+
+
+
+                                    # benchmark predictions to the collapsed simulated sample in probability space
+                                    # First calculate weighted mean of sample to benchmark, for each benchmark_level
+                                    B_sample_bm <- data.frame(sample_bm = collapse:::fmean(x=B_sample$sim_plus_area,g=B_sample[,benchmark_level],w=B_sample[,benchmark_weights]))
+                                    B_sample_bm[,benchmark_level] <- rownames(B_sample_bm)
+
+                                    # (benchmark-target perturbation is applied post-loop in the main process)
+
+                                    #B_domains <- dplyr:::left_join(B_domains,domains_pred[,c("domains","hat_bench","weight")],by="domains")
+                                    #B_domains$mean_sim_plus_area <- collapse:::fmean(B_domains$sim_plus_area,g=B_domains[,benchmark_level],w=B_domains$weight,TRA=1)
+                                    #B_domains <- dplyr:::left_join(B_domains,B_sample_bm,by=benchmark_level)
+
+                                    bm_vec <- setNames(B_sample_bm$sample_bm, B_sample_bm[,benchmark_level])
+                                    B_domains$sim_bench <- add_benchmark(predictions$hat,benchmark_level=benchmark_level,benchmark=bm_vec,fwk=fwk,
+                                                                         fixed=fixed,benchmark_type=benchmark_type)
+                                  } # close additional benchmarking bootstrap code
+                                } # close residual bootstrap code to produce B_domains_sim
+
+                                # case resampling bootstrap
+                                else if (bootstrap_type=="case") {
+                                  # Resample of clusters with replacement
+                                  #browser()
+                                  boot_clusters <- sample(clusters, replace = TRUE)
+                                  # Get all observations from sampled clusters
+                                  boot_data <- do.call(rbind, lapply(boot_clusters, function(clust) {
+                                    smp_data[smp_data[,fwk$domains] == clust, ]}))
+                                  X_smp_boot <- boot_data[fwk$covariates]
+                                  # Rescale weights within each domain so they sum to the domain sample size
+                                  case_wts <- boot_data[,smp_weights]
+                                  if (rescale_weights) {
+                                    case_domain_sum_wts <- ave(case_wts, boot_data[,fwk$domains], FUN = sum)
+                                    case_domain_n <- ave(case_wts, boot_data[,fwk$domains], FUN = length)
+                                    case_wts <- case_wts * case_domain_n / case_domain_sum_wts
+                                  }
+                                  #Estimate model
+                                  dtrain <- xgboost::xgb.DMatrix(
+                                    data = as.matrix(X_smp_boot),
+                                    label = transform_outcome(boot_data[,fwk$outcome])$y,
+                                    weight = (case_wts/mean(case_wts))
+                                  )
+                                  xgb_fit <- xgboost::xgb.train(
+                                    data               = dtrain,
+                                    params             = params,
+                                    nrounds            = nrounds,
+                                    verbose            = 0
+                                  )
+                                  # Obtain predictions
+                                  B_sub$sim <-
+                                    back_transform_outcome(predict(xgb_fit, as.matrix(X_pop_xgb))
+                                    )
+                                  B_domains <- collapse:::fmean(x=B_sub$sim,g=B_sub$domains,w=B_sub$wts)
+                                  B_domains <- data.frame("domains" = names(B_domains),"sim" = B_domains)
+                                  B_domains$sim_plus_area <- B_domains$sim
+                                  B_domains$sim_bench <- NULL
+                                  B_domains$sim_truth <- NULL
+                                }
+
+
+                                # Return a single-row data frame with list-columns
+                                data.frame(
+                                  B_results = I(list(B_domains$sim_plus_area)),      # I() prevents unlisting
+                                  B_results_bench = I(list(B_domains$sim_bench)),
+                                  B_results_truth = I(list(B_domains$sim_truth)),
+                                  B_domains = I(list(B_domains$domains)),
+                                  stringsAsFactors = FALSE)
+
+                              } # close bootstrap loop
+
+    close(pb)
+
+    if (cpus>1) {
+      parallel::stopCluster(cl)
+    }
+
+    # Extract and combine from list
+
+    B_results <- do.call(rbind, B_results_list$B_results)
+    B_results_bench <- do.call(rbind, B_results_list$B_results_bench)
+    B_results_truth <- do.call(rbind, B_results_list$B_results_truth)
+    B_results_domains <-  B_results_list$B_domains[[1]]
+
+
+    #browser()
+    # This procedure resorts the data when using multiple cores, so we will undo the resorting
+    original_domain_order <- unique(fwk$pop_domains_vec)
+    row_reorder <- match(original_domain_order, B_results_domains)
+    B_results <- B_results[,row_reorder]
     if (!is.null(benchmark)) {
-      resid <- B_results_bench[,l]-B_results_truth[,l]
-      results$MSE_bench[l] <- mean(resid^2)
-      resid <- resid - mean(resid)
-      temp_bench <- B_results_bench[,l]
-      results$Mean_boot_bench[l] <- mean(temp_bench)
-      results$Lower_bench[l] <- results$hat_bench[l] + quantile(resid, probs = (1-conf_level)/2)
-      results$Upper_bench[l] <- results$hat_bench[l] + quantile(resid, probs = 1-(1-conf_level)/2)
-    } # Close benchmark
-  } # close loop over areas
+      B_results_bench <- B_results_bench[,row_reorder]
+      B_results_truth <- B_results_truth[,row_reorder]
+    }
+    B_results_domains <- B_results_domains[row_reorder]
+    #tail(domains_pred)
+    #tail(B_results_domains)
 
-} # close if bootstrap branch
+    # Post-loop benchmark-target perturbation (runs in main process — no parallel
+    # scoping issues). For each state s and each bootstrap iteration j, adds the
+    # pre-generated noise δ[j,s] to the benchmarked replicate of every ward in s.
+    # This propagates survey-sampling uncertainty of the state direct estimate into
+    # the benchmarked CIs. Equivalent to within-loop perturbation of B_sample_bm
+    # under the linear approximation that the benchmark adjusts wards additively.
+    if (!is.null(bm_perturbations) && !is.null(benchmark)) {
+      # Save unperturbed per-ward Var_bench BEFORE adding noise / clipping, so it
+      # is not censored by the [0,1] clip applied to perturbed replicates below.
+      # Useful for ward-vs-ward comparisons where the state-level shift cancels.
+      var_bench_unperturbed <- apply(B_results_bench - B_results_truth, 2, var)
+
+      # Build ward → benchmark-group (state) lookup from B_sub (has both columns)
+      grp_raw   <- collapse:::ffirst(x = B_sub[[benchmark_level]], g = B_sub[[fwk$domains]])
+      dom_to_grp <- setNames(as.character(grp_raw), names(grp_raw))
+      grp_per_col <- dom_to_grp[as.character(B_results_domains)]  # one entry per column
+
+      if (verbose) {
+        var_before <- mean(apply(B_results_bench, 2, var), na.rm = TRUE)
+        n_matched  <- sum(!is.na(grp_per_col) & grp_per_col %in% colnames(bm_perturbations))
+        message(sprintf(
+          "perturb_benchmark DIAG: %d/%d columns matched to a benchmark group; mean col-var BEFORE = %.6f",
+          n_matched, ncol(B_results_bench), var_before
+        ))
+      }
+
+      for (grp in unique(grp_per_col[!is.na(grp_per_col)])) {
+        if (!grp %in% colnames(bm_perturbations)) next
+        cols <- which(grp_per_col == grp)
+        # bm_perturbations[, grp] is length-B; R broadcasts it across all cols
+        B_results_bench[, cols] <- B_results_bench[, cols] + bm_perturbations[, grp]
+        if (transformation == "arcsin")
+          B_results_bench[, cols] <- pmax(0, pmin(1, B_results_bench[, cols]))
+        else if (transformation %in% c("log", "log.shift", "poisson"))
+          B_results_bench[, cols] <- pmax(1e-10, B_results_bench[, cols])
+      }
+
+      if (verbose) {
+        var_after <- mean(apply(B_results_bench, 2, var), na.rm = TRUE)
+        message(sprintf(
+          "perturb_benchmark DIAG: mean col-var AFTER  = %.6f  (delta = %+.6f, expected approx %.6f)",
+          var_after, var_after - var_before, mean(bm_ht_se^2)
+        ))
+      }
+    } else {
+      var_bench_unperturbed <- NULL
+      if (verbose) message(sprintf(
+        "perturb_benchmark DIAG: SKIPPED — bm_perturbations is %s, benchmark is %s",
+        ifelse(is.null(bm_perturbations), "NULL", "set"),
+        ifelse(is.null(benchmark), "NULL", "set")
+      ))
+    }
+
+    # Prepare results
+    #_____________________________________________________________________________
+    #results <- NULL
+    results <- data.frame(domains = B_results_domains)
+    results$Mean_boot <- NA
+    results$Lower_boot <- NA
+    results$Upper_boot <- NA
+    results$Var_boot <- NA
+    results$Mean_boot_bench <- NA
+    results$Lower_bench <- NA
+    results$Upper_bench <- NA
+
+    if (!is.null(benchmark)) {
+      results <- left_join (results, domains_pred[, c("hat","hat_bench","domains")],by="domains")
+    } else {
+      results <- left_join (results, domains_pred[, c("hat","domains")],by="domains")
+    }
+
+    colnames(results)[1] <- "Domain"
+    #browser()
+
+    for (l in 1:ncol(B_results)){
+
+      temp <- B_results[,l]
+
+      # if (transformation=="arcsin"){
+      #   temp <- ifelse(temp>asin(1), asin(1), temp)
+      #   temp <- ifelse(temp<asin(0), asin(0), temp)
+      #   temp <- sin(temp)^2
+      # }
+      # if (transformation=="log"){
+      #   temp <- exp(temp)
+      # }
+      results$Mean_boot[l] <- mean(temp)
+      results$Lower_boot[l] <- quantile(temp, probs = (1-conf_level)/2)
+      results$Upper_boot[l] <- quantile(temp, probs = 1-(1-conf_level)/2)
+      results$Var_boot[l] <- var(temp)
+      if (!is.null(benchmark)) {
+        resid <- B_results_bench[,l]-B_results_truth[,l]
+        resid <- resid - mean(resid)
+        # Report var(resid) after centering rather than mean(resid^2). The squared bias term
+        # in mean(resid^2) is dominated by a structural offset between the simulated truth and
+        # the benchmarked estimator (the truth aggregates raw model predictions plus residuals,
+        # while the estimator applies a multiplicative benchmark adjustment), not by real
+        # estimator bias. var(resid) gives a variance summary consistent with the CI quantiles below.
+        results$Var_bench[l] <- var(resid)
+        temp_bench <- B_results_bench[,l]
+        results$Mean_boot_bench[l] <- mean(temp_bench)
+        results$Lower_bench[l] <- results$hat_bench[l] + quantile(resid, probs = (1-conf_level)/2)
+        results$Upper_bench[l] <- results$hat_bench[l] + quantile(resid, probs = 1-(1-conf_level)/2)
+      } # Close benchmark
+    } # close loop over areas
+
+  } # close if bootstrap branch
 
   #browser()
   sub_domains_direct$outcome_t <- transform_outcome(sub_domains_direct$outcome)$y
@@ -709,44 +829,44 @@ B_results_domains <- B_results_domains[row_reorder]
 
   #sub_domains_direct$hat <- back_transform_outcome(sub_domains_direct$outcome_t-xgb_model$resid_total)
 
-if (bootstrap==T) {
- result <- list(
-    ind = data.frame(Domain = results$Domain, Mean = results$hat),
-    var = data.frame(Domain = results$Domain, Mean = results$Var_boot),
-    CI  = data.frame(Domain = results$Domain,
-                           Lower = results$Lower_boot+results$hat-results$Mean_boot,
-                           Upper = results$Upper_boot+results$hat-results$Mean_boot),
-    yhat=data.frame(sub_domains_direct[,c(sub_domains,"hat")]),
-    model = xgb_fit,
-    smp_data =  smp_data,
-    out_call = out_call,
-    transformation = transformation,
-    framework = fwk
-  )
+  if (bootstrap==T) {
+    result <- list(
+      ind = data.frame(Domain = results$Domain, Mean = results$hat),
+      var = data.frame(Domain = results$Domain, Mean = results$Var_boot),
+      CI  = data.frame(Domain = results$Domain,
+                       Lower = results$Lower_boot+results$hat-results$Mean_boot,
+                       Upper = results$Upper_boot+results$hat-results$Mean_boot),
+      yhat=data.frame(sub_domains_direct[,c(sub_domains,"hat")]),
+      model = xgb_fit,
+      smp_data =  smp_data,
+      out_call = out_call,
+      transformation = transformation,
+      framework = fwk
+    )
 
 
-  if (boot_estimates==T)  {
-    result$ind[,2] <- results["Mean_boot"]
-    result$CI$Lower <- result$CI$Lower+results["Mean_boot"]-results["hat"]
-    result$CI$Upper <- result$CI$Upper+results["Mean_boot"]-results["hat"]
-  } # close use boot estimates
- colnames(result$var)[2]="Mean"
-  colnames(result$ind)[2]="Mean"
+    if (boot_estimates==T)  {
+      result$ind[,2] <- results["Mean_boot"]
+      result$CI$Lower <- result$CI$Lower+results["Mean_boot"]-results["hat"]
+      result$CI$Upper <- result$CI$Upper+results["Mean_boot"]-results["hat"]
+    } # close use boot estimates
+    colnames(result$var)[2]="Mean"
+    colnames(result$ind)[2]="Mean"
   } # close bootstrap==T
-else {
+  else {
     # Bootstrap not selected
     result <- list(
-    ind = data.frame(Domain = domains_pred[,"domains"], Mean = domains_pred[,"hat"]),
-    yhat=data.frame(sub_domains_direct[,c(sub_domains,"hat")]),
-    model = xgb_fit,
-    smp_data =  smp_data,
-    out_call = out_call,
-    transformation = transformation,
-    framework = fwk
+      ind = data.frame(Domain = domains_pred[,"domains"], Mean = domains_pred[,"hat"]),
+      yhat=data.frame(sub_domains_direct[,c(sub_domains,"hat")]),
+      model = xgb_fit,
+      smp_data =  smp_data,
+      out_call = out_call,
+      transformation = transformation,
+      framework = fwk
     )
   } # close bootstrap not selected
 
- if (!is.null(benchmark)) {
+  if (!is.null(benchmark)) {
     if (bootstrap==T) {
       result$ind$Mean_bench <- results$hat_bench
       result$CI$Lower_bench <- results$Lower_bench
@@ -756,18 +876,34 @@ else {
         result$CI$Lower_bench <- results$Lower_bench-results["hat_bench"]-results["Mean_boot_bench"]
         result$CI$Upper_bench <- results$Upper_bench-results["hat_bench"]-results["Mean_boot_bench"]
       }
-      result$var$MSE_bench <- results$MSE_bench
+      result$var$Var_bench <- results$Var_bench
       if (!is.null(result$var)) {
-        colnames(result$var)[ncol(result$var)] <- "MSE_bench"
+        colnames(result$var)[ncol(result$var)] <- "Var_bench"
       }
     } else {
       # Add benchmarked estimates even without bootstrap
       result$ind$Mean_bench <- domains_pred$hat_bench
     }
-} # close benchmark
+    # Per-ward Var_bench computed BEFORE benchmark-target perturbation/clipping.
+    # Use this for ward-vs-ward comparisons (the additive state-level perturbation
+    # cancels in within-state contrasts). Stored in its own slot rather than in
+    # result$var so it does not break downstream CV/MSE machinery that expects
+    # result$var and result$ind to have matching column counts.
+    # NULL when perturb_benchmark=FALSE.
+    if (bootstrap == TRUE && !is.null(var_bench_unperturbed)) {
+      result$Var_bench_unperturbed <- data.frame(
+        Domain = result$var$Domain,
+        Var_bench_unperturbed = var_bench_unperturbed[
+          match(result$var$Domain, B_results_domains)
+        ]
+      )
+    } else {
+      result$Var_bench_unperturbed <- NULL
+    }
+  } # close benchmark
 
-# Truncation — applied whenever bootstrap CIs exist
-if (bootstrap==T) {
+  # Truncation — applied whenever bootstrap CIs exist
+  if (bootstrap==T) {
     if (transformation=="arcsin" | (!is.null(list(...)$objective) && list(...)$objective=="reg:logistic")) {
       result$CI$Lower <- pmax(result$CI$Lower, 0)
       result$CI$Upper <- pmin(result$CI$Upper, 1)
@@ -782,7 +918,7 @@ if (bootstrap==T) {
         result$CI$Lower_bench <- pmax(result$CI$Lower_bench, 0)
       }
     }
-}
+  }
 
 
   class(result) <- c("xgb","povmap")
@@ -795,12 +931,12 @@ point_estim_xgb <- function(params, smp_X, smp_Y, smp_weight, pop_X, sub_domains
 
   smp_Y_t <- transform_outcome(smp_Y)$y
 
-if (!is.null(variance_y)) {
-  het_correction <- fwk$smp_data[,variance_y]^-0.5
-}
-else {
-  het_correction <- rep(1,length(smp_weight))
-}
+  if (!is.null(variance_y)) {
+    het_correction <- fwk$smp_data[,variance_y]^-0.5
+  }
+  else {
+    het_correction <- rep(1,length(smp_weight))
+  }
 
   dtrain <- xgboost:::xgb.DMatrix(
     data = as.matrix(smp_X),
@@ -873,8 +1009,8 @@ else {
 
   for (l in 1:L) {
     sub_pred_t$sim_t <- as.numeric(sub_pred_t$hat_t) + resid_sub_domains[sample(1:length(resid_sub_domains),
-                                                                      nrow(sub_pred_t), prob=1/sample[,fwk$smp_weights],
-                                                                      replace = TRUE)]
+                                                                                nrow(sub_pred_t), prob=1/sample[,fwk$smp_weights],
+                                                                                replace = TRUE)]
     B_domains <- collapse:::fmean(x=sub_pred_t$sim_t,g=sub_pred_t[,fwk$domains],w=sub_pred_t[,fwk$pop_weights])
     B_domains <- data.frame("domains" = names(B_domains),"sim_t" = B_domains)
     B_domains <-data.frame(B_domains,wts=collapse:::fsum(x=sub_pred_t[,fwk$pop_weights],g=sub_pred_t[,fwk$domains]))
@@ -895,40 +1031,39 @@ else {
   } # end back-transformation loop to calculate mean of simulations through back-transformation
 
   # generate point estimates
-    MC_results <-  data.frame(B_domains["domains"],
-                              hat=mean_sim)
-    sub_pred_t$sim_t <- NULL
+  MC_results <-  data.frame(B_domains["domains"],
+                            hat=mean_sim)
+  sub_pred_t$sim_t <- NULL
 
 
   return(list(predictions=MC_results,sub_predictions = sub_pred_t, model=xgb_fit,resid_sub_domains=resid_sub_domains,
-    resid_domains=resid_domains, resid_total=resid_total,wt_sub_domains=wt_sub_domains,
-    wt_domains=sample_domains$wts,domains=rownames(sample_domains)))
+              resid_domains=resid_domains, resid_total=resid_total,wt_sub_domains=wt_sub_domains,
+              wt_domains=sample_domains$wts,domains=rownames(sample_domains)))
 }
 
 
 
 
-  add_benchmark <- function(x, benchmark_level,fwk,fixed,benchmark,benchmark_type) {
-    point_estim <- NULL
-    point_estim$ind <- data.frame(Mean = x)
+add_benchmark <- function(x, benchmark_level,fwk,fixed,benchmark,benchmark_type) {
+  point_estim <- NULL
+  point_estim$ind <- data.frame(Mean = x)
 
-    if (is.null(benchmark_level)) {
-      point_estim$ind <- benchmark_ebp_national(
-        point_estim = point_estim,
-        framework = fwk,
-        fixed = fixed,
-        benchmark = benchmark,
-        benchmark_type = benchmark_type)
-    } else {
-      point_estim$ind <- benchmark_xgb_level(
-        point_estim = point_estim,
-        framework = fwk,
-        fixed = fixed,
-        benchmark = benchmark,
-        benchmark_type = benchmark_type,
-        benchmark_level = benchmark_level)
-    }
-    bench <- point_estim$ind$Mean_bench
-    return(bench)
+  if (is.null(benchmark_level)) {
+    point_estim$ind <- benchmark_ebp_national(
+      point_estim = point_estim,
+      framework = fwk,
+      fixed = fixed,
+      benchmark = benchmark,
+      benchmark_type = benchmark_type)
+  } else {
+    point_estim$ind <- benchmark_xgb_level(
+      point_estim = point_estim,
+      framework = fwk,
+      fixed = fixed,
+      benchmark = benchmark,
+      benchmark_type = benchmark_type,
+      benchmark_level = benchmark_level)
   }
-
+  bench <- point_estim$ind$Mean_bench
+  return(bench)
+}
