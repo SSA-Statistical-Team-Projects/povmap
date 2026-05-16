@@ -100,7 +100,6 @@ megb_em <- function(Y, X, dom_name, smp_data, pop_data,
                     B                = 100,
                     bootstrap_cores  = 0,
                     gbm_engine       = "xgboost",
-                    em_iterations    = 2,
                     ...) {
 
   call       <- match.call()
@@ -156,7 +155,7 @@ megb_em <- function(Y, X, dom_name, smp_data, pop_data,
     gradient_params        = gradient_params,
     data                   = smp_data,
     initial_random_effects = 0,
-    max_iterations         = em_iterations,
+    max_iterations         = 25,
     error_tolerance        = 1e-04,
     dom_name               = dom_name,
     cov_names              = cov_names,

@@ -199,6 +199,10 @@
 # Formula: V_HT(ȳ_g) = n_g / ((n_g-1) * (Σw)²) * Σ w²(y - ȳ)²
 # Equivalent to the with-replacement linearisation used by survey::svymean.
 ht_var_weighted_mean <- function(y, w, g) {
+  # Horvitz-Thompson variance of a weighted mean under Poisson sampling:
+  #   sigma_hat^2 = (1 / (sum w)^2) * sum_i w_i (w_i - 1) y_i^2
+  # See Annex 2 of the Nigeria SAE report for derivation. This matches the
+  # direct-estimate variance used elsewhere in the project.
   g <- as.character(g)
   groups <- unique(g)
   result <- setNames(numeric(length(groups)), groups)
@@ -206,9 +210,7 @@ ht_var_weighted_mean <- function(y, w, g) {
     idx  <- g == grp
     y_g  <- y[idx];  w_g <- w[idx];  n_g <- sum(idx)
     if (n_g < 2L) { result[grp] <- NA_real_; next }
-    ybar_g      <- sum(w_g * y_g) / sum(w_g)
-    result[grp] <- (n_g / ((n_g - 1L) * sum(w_g)^2)) *
-                    sum(w_g^2 * (y_g - ybar_g)^2)
+    result[grp] <- sum(w_g * (w_g - 1) * y_g^2) / sum(w_g)^2
   }
   result
 }

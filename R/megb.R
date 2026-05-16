@@ -36,18 +36,15 @@
 #' @param mse logical. If \code{TRUE} (default), runs the parametric bootstrap
 #'   to quantify uncertainty. The form of the resulting summary is controlled
 #'   by \code{mse_type}.
-#' @param em_iterations integer, number of EM refinement iterations run
-#'   after the lme4 init step. Default \code{2}. Higher values drift
-#'   \eqn{\sigma_u} toward zero whenever the gradient-boosting features
-#'   carry strong area-level signal: each subsequent EM iteration leaks a
-#'   little of the lme4 BLUP back into the booster's target via the
-#'   shrinkage residual, the booster absorbs more between-area variance,
-#'   and lme4's \eqn{\sigma_u} shrinks. With many strong area-aggregate
-#'   predictors this can collapse \eqn{\sigma_u} to zero entirely, removing
-#'   shrinkage. \code{em_iterations = 1} is the most conservative;
-#'   \code{em_iterations = 2} usually balances stability against collapse.
-#'   Larger values are appropriate only when area-level X signal is weak
-#'   and you want the EM to fully iterate.
+#'   The EM loop runs to convergence (relative log-likelihood change <
+#'   1e-04) or for at most 25 iterations, whichever comes first. If
+#'   \eqn{\sigma_u} collapses toward zero, that typically reflects
+#'   identifiability between area-level covariates (which are constant
+#'   within an area, and so collinear with the area indicator) and the
+#'   area random effect, rather than a failure of EM. Diagnose by
+#'   comparing specifications with and without the area-level covariates
+#'   and by leave-areas-out cross-validation, rather than by truncating
+#'   the EM loop.
 #' @param bench_target one of \code{"random"} (default) or \code{"fixed"}.
 #'   Controls how the benchmark target is treated *inside the bootstrap*. Only
 #'   matters when \code{benchmark} is character (internal, survey-derived
@@ -172,7 +169,6 @@ megb <- function(fixed,
                  mse_type         = c("var", "mse"),
                  bootstrap_refit  = c("lmm_only", "full"),
                  bench_target     = c("random", "fixed"),
-                 em_iterations    = 2,
                  B                = 100,
                  bootstrap_cores  = 0,
                  conf_level       = 0.95,
@@ -297,7 +293,6 @@ megb <- function(fixed,
     seed            = seed,
     mse             = FALSE,
     gbm_engine      = gbm_engine,
-    em_iterations   = em_iterations,
     ...
   )
 
