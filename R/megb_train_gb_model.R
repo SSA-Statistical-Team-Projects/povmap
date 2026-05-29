@@ -2,7 +2,10 @@
 #' @importFrom xgboost xgb.train xgb.cv xgb.DMatrix
 
 train_gbmodel <- function(model_type, features_train, response_train,
-                           params, cat_idx0 = integer(0), ...) {
+                           params, cat_idx0 = integer(0),
+                           weights = NULL, ...) {
+  # weights: numeric vector of observation weights, length = nrow(features_train).
+  # When NULL or all 1s, behaviour is unchanged from the historical default.
   switch(
     model_type,
 
@@ -20,6 +23,7 @@ train_gbmodel <- function(model_type, features_train, response_train,
 
       dtrain <- xgboost::xgb.DMatrix(data  = data.matrix(features_train),
                                       label = response_train)
+      if (!is.null(weights)) xgboost::setinfo(dtrain, "weight", as.numeric(weights))
 
       cv <- xgboost::xgb.cv(
         params                = xgb_params,
@@ -55,7 +59,8 @@ train_gbmodel <- function(model_type, features_train, response_train,
       if (!requireNamespace("lightgbm", quietly = TRUE))
         stop("Package 'lightgbm' is required for gbm_engine = 'lightgbm'.")
       nrounds <- if (!is.null(params$nrounds)) params$nrounds else 1000
-      dtrain  <- lightgbm::lgb.Dataset(data.matrix(features_train), label = response_train)
+      dtrain  <- lightgbm::lgb.Dataset(data.matrix(features_train), label = response_train,
+                                       weight = if (!is.null(weights)) as.numeric(weights) else NULL)
 
       cv <- lightgbm::lgb.cv(
         params                = params,
@@ -94,7 +99,8 @@ train_gbmodel <- function(model_type, features_train, response_train,
     "catboost" = {
       if (!requireNamespace("catboost", quietly = TRUE))
         stop("Package 'catboost' is required for gbm_engine = 'catboost'.")
-      train_pool <- catboost::catboost.load_pool(data = features_train, label = response_train)
+      train_pool <- catboost::catboost.load_pool(data = features_train, label = response_train,
+                                                 weight = if (!is.null(weights)) as.numeric(weights) else NULL)
 
       cv <- catboost::catboost.cv(pool = train_pool, params = params,
                                    early_stopping_rounds = 10, ...)

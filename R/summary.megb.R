@@ -46,14 +46,40 @@ summary.megb <- function(object, ...) {
     r_squared <- tryCatch(cor(Y_actual, Y_hat)^2,    error = function(e) NA)
     mae       <- mean(abs(Y_actual - Y_hat))
     rank_cor  <- tryCatch(cor(Y_actual, Y_hat, method = "spearman"), error = function(e) NA)
+
+    # Area-level metrics: weighted-mean of (Y_actual, Y_hat) within each domain,
+    # then correlation / MAE across area means. Mirrors summary.xgb.
+    dom_vec <- object$framework$smp_data[[object$framework$domains]]
+    w_vec   <- object$framework$smp_weights_vec
+    if (is.null(w_vec)) w_vec <- rep(1, length(Y_actual))
+    yyhat   <- data.frame(Y = Y_actual, hat = Y_hat)
+    area_means <- tryCatch(
+      collapse::fmean(x = yyhat, g = dom_vec, w = w_vec),
+      error = function(e) NULL
+    )
+    if (!is.null(area_means) && nrow(area_means) >= 2) {
+      area_r_squared <- tryCatch(cor(area_means$Y, area_means$hat)^2,
+                                 error = function(e) NA)
+      area_mae       <- mean(abs(area_means$Y - area_means$hat))
+      area_rank_cor  <- tryCatch(
+        cor(area_means$Y, area_means$hat, method = "spearman"),
+        error = function(e) NA
+      )
+    } else {
+      area_r_squared <- NA; area_mae <- NA; area_rank_cor <- NA
+    }
   } else {
     r_squared <- NA; mae <- NA; rank_cor <- NA
+    area_r_squared <- NA; area_mae <- NA; area_rank_cor <- NA
   }
 
   coeff_det <- data.frame(
-    R2       = r_squared,
-    MAE      = mae,
-    Rank_cor = rank_cor,
+    R2            = r_squared,
+    MAE           = mae,
+    Rank_cor      = rank_cor,
+    Area_R2       = area_r_squared,
+    Area_MAE      = area_mae,
+    Area_Rank_cor = area_rank_cor,
     row.names = ""
   )
 

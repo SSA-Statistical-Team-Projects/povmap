@@ -100,7 +100,12 @@ megb_em <- function(Y, X, dom_name, smp_data, pop_data,
                     B                = 100,
                     bootstrap_cores  = 0,
                     gbm_engine       = "xgboost",
+                    smp_weights_vec  = NULL,
                     ...) {
+  # smp_weights_vec: numeric vector of observation weights for smp_data rows,
+  # aligned to the same indexing as Y / X / smp_data. Forwarded to em_gb_lmm
+  # (and thence to the gradient booster and lme4::lmer). When NULL, all
+  # observations are treated equally (historical behaviour).
 
   call       <- match.call()
   ts_gradient <- Sys.time()
@@ -121,6 +126,7 @@ megb_em <- function(Y, X, dom_name, smp_data, pop_data,
     smp_data <- smp_data[comp_smp, ]
     Y        <- Y[comp_smp]
     X        <- X[comp_smp, , drop = FALSE]
+    if (!is.null(smp_weights_vec)) smp_weights_vec <- smp_weights_vec[comp_smp]
   }
 
   formula_random_effects <- paste0("(1|", dom_name, ")")
@@ -160,6 +166,7 @@ megb_em <- function(Y, X, dom_name, smp_data, pop_data,
     dom_name               = dom_name,
     cov_names              = cov_names,
     gbm_engine             = gbm_engine,
+    weights                = smp_weights_vec,
     ...
   )
 

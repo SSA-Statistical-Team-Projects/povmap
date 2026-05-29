@@ -9,10 +9,27 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
                      cov_names, gradient_params = list(), formula_random_effects,
                      bootstrap_cores, seed, gbm_engine,
                      unit_pred_smp, gb_smp = NULL, unit_preds,
-                     bootstrap_refit = "lmm_only",
+                     bootstrap_refit = "leaves_only",
                      corrected_bt = NULL,
                      benchmark_fn = NULL,
+                     smp_weights_col = NULL,
+                     weightedBS = TRUE,
                      ...) {
+  # smp_weights_col: name of a column on smp_data containing observation
+  #   weights. Pulling weights from a column (rather than passing a vector)
+  #   guarantees row alignment under any sorting / subsetting smp_data
+  #   undergoes within this function. When NULL (or the column doesn't exist),
+  #   the bootstrap operates as if all observations are equally weighted.
+  # weightedBS: when TRUE and smp_weights_col is supplied, residual sampling
+  #   (both level-1 in block_sample and level-2 for u_d* draws) uses
+  #   probabilities proportional to weights. Mirrors xgb's weightedBS arg.
+
+  # smp_weights_vec is extracted from the column AFTER the domain sort below
+  # to guarantee alignment with smp_data row order.
+
+  # Function-scoped definition so any branch that references collect_diag has
+  # it in scope; branches that don't use it just leave it FALSE.
+  collect_diag <- !is.null(getOption("povmap.leaves_only.diag_env"))
 
   # The bootstrap is an EBLUP-style parametric residual bootstrap, refit on
   # the *original* smp_data (with bootstrapped y) — not on a pop_data subsample.
@@ -25,8 +42,37 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
   sort_smp <- order(as.character(smp_data[[dom_name]]))
   smp_data <- smp_data[sort_smp, , drop = FALSE]
   Y        <- Y[sort_smp]
-  if (!is.null(unit_pred_smp)) unit_pred_smp <- unit_pred_smp[sort_smp]
-  if (!is.null(gb_smp))        gb_smp        <- gb_smp[sort_smp]
+  if (!is.null(unit_pred_smp))   unit_pred_smp   <- unit_pred_smp[sort_smp]
+  if (!is.null(gb_smp))          gb_smp          <- gb_smp[sort_smp]
+  # Re-extract weights from the (now-sorted) column to guarantee alignment.
+  smp_weights_vec <- if (!is.null(smp_weights_col) &&
+                         smp_weights_col %in% colnames(smp_data)) {
+    as.numeric(smp_data[[smp_weights_col]])
+  } else NULL
+
+  # Defensive: if for any reason the extracted vector still doesn't match the
+  # smp_data row count, disable weighting rather than crash.
+  if (!is.null(smp_weights_vec) && length(smp_weights_vec) != nrow(smp_data)) {
+    warning("smp_weights_col '", smp_weights_col, "' length (",
+            length(smp_weights_vec), ") != nrow(smp_data) (",
+            nrow(smp_data), "). Disabling weighted bootstrap.")
+    smp_weights_vec <- NULL
+  }
+
+  # Normalize weights to mean = 1 for numerical stability in lme4 / xgboost.
+  # Mirrors em_gb_lmm's normalization so bootstrap LMM refits behave the same
+  # as the original fit. Relative ratios preserved; estimator unchanged.
+  if (!is.null(smp_weights_vec)) {
+    mw <- mean(smp_weights_vec, na.rm = TRUE)
+    if (is.finite(mw) && mw > 0) smp_weights_vec <- smp_weights_vec / mw
+    # Also drop any NAs - replace with 1 (= mean after rescaling) so we never
+    # leak NAs into prob vectors or LMM weight arguments.
+    if (any(is.na(smp_weights_vec))) {
+      warning("smp_weights had ", sum(is.na(smp_weights_vec)),
+              " NA values; replacing with 1.")
+      smp_weights_vec[is.na(smp_weights_vec)] <- 1
+    }
+  }
 
   sort_pop   <- order(as.character(pop_data[[dom_name]]))
   pop_data   <- pop_data[sort_pop, , drop = FALSE]
@@ -59,11 +105,13 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
   ran_obj  <- ran_comp(
     Y = Y, smp_data = smp_data, unit_pred_smp = unit_pred_smp,
     error_sd = error_sd, dom_name = dom_name,
-    cov_names = cov_names, model = model
+    cov_names = cov_names, model = model,
+    weights = smp_weights_vec
   )
   ran_effs <- ran_obj$ran_effs
   gb_res   <- ran_obj$gb_res
   smp_data <- ran_obj$smp_data
+  area_w   <- ran_obj$area_w  # per-domain summed weights (or NULL)
 
   # ── y_star at SMP level: y_star_smp = gb_smp + u_d*[d, b] + e_ij*[i, b] ──
   # u_d* is sampled with replacement once per area per iteration, then
@@ -75,11 +123,16 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
   # so block_sample yields sum(smp_data[d] == d) draws per in-sample domain.
   block_sample_e_smp <- function(x) {
     block_sample(domains = domains, in_samp = in_samp, smp_data = smp_data,
-                 dom_name = dom_name, pop_data = smp_data, gb_res = gb_res)
+                 dom_name = dom_name, pop_data = smp_data, gb_res = gb_res,
+                 weights = smp_weights_vec, weightedBS = weightedBS)
   }
 
   # u_d* sampler: one fresh draw per domain per iteration, length D.
-  sample_ud <- function(x) sample(ran_effs, size = length(domains), replace = TRUE)
+  # When weightedBS + smp_weights_vec are supplied, sample with probability
+  # proportional to area-summed weights (matching xgb's pop_area_d treatment).
+  ud_prob <- if (!is.null(area_w) && isTRUE(weightedBS)) area_w / sum(area_w) else NULL
+  sample_ud <- function(x) sample(ran_effs, size = length(domains), replace = TRUE,
+                                  prob = ud_prob)
 
   e_smp    <- apply(matrix(NA, nrow = length(gb_smp), ncol = B), 2, block_sample_e_smp)
   u_d_star <- apply(matrix(NA, nrow = length(domains), ncol = B), 2, sample_ud)
@@ -110,8 +163,8 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
     boots_sample[[i]] <- bs
   }
 
-  # ── Branch: lmm_only vs full bootstrap refit ────────────────────────────────
-  # bootstrap_refit = "lmm_only" (default): treat the gradient booster as fixed
+  # ── Branch: lmm_only / leaves_only / full bootstrap refit ───────────────────
+  # bootstrap_refit = "lmm_only": treat the gradient booster as fixed
   # across iterations and refit only the linear mixed model on bootstrap
   # residuals r = u_d* + e_smp* = y_star_smp - gb_smp. This is the standard
   # EBLUP parametric bootstrap (Prasad–Rao, Hall–Maiti, Pfeffermann–Tiller),
@@ -130,7 +183,6 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
     if (is.factor(smp_data[[dom_name]])) {
       newdat_d[[dom_name]] <- factor(domains, levels = levels(smp_data[[dom_name]]))
     }
-
     boots_models <- vector("list", B)
     fit_data     <- smp_data       # we just append/overwrite the `r` column
     for (i in seq_len(B)) {
@@ -139,10 +191,14 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
 
       # Residual = y_star_smp - gb_smp = u_smp[, i] + e_smp[, i] (saves an add).
       fit_data$r <- u_smp[, i] + e_smp[, i]
+      if (!is.null(smp_weights_vec)) fit_data$.megb_w <- smp_weights_vec
 
       lmer_boot <- tryCatch(
         suppressMessages(suppressWarnings(
-          lme4::lmer(lmm_formula, data = fit_data, REML = TRUE)
+          lme4::lmer(
+            lmm_formula, data = fit_data, REML = TRUE,
+            weights = if (!is.null(smp_weights_vec)) fit_data$.megb_w else NULL
+          )
         )),
         error = function(e) NULL
       )
@@ -189,6 +245,183 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
     ))
   }
 
+  if (bootstrap_refit == "leaves_only") {
+    if (gbm_engine != "xgboost") {
+      warning("bootstrap_refit='leaves_only' currently supports xgboost only; ",
+              "falling back to 'full' for gbm_engine='", gbm_engine, "'.")
+      # Falls through to the legacy full-refit block below. We DO NOT call
+      # the .mse_megb_collate here; control returns to the wider function flow.
+    } else {
+
+      # Original booster.
+      orig_booster <- model$boosting
+
+      # Refresh updater nrounds: default to the model's original training
+      # nrounds (refresh each tree in the ensemble once, in sequence).
+      #
+      # NOTE: xgboost's refresh updater is cascading - each tree's leaf
+      # refresh uses residuals from the previously-refreshed earlier trees,
+      # so leaf perturbations compound multiplicatively across the ensemble.
+      # A diagnostic sweep (see diagnose_refresh_nrounds_sweep.R) showed
+      # that the resulting MSE varies non-monotonically with nrounds: small
+      # values under-estimate by failing to capture GB-refit variance
+      # (the GB barely moves, the LMM trivially recovers the known u_d*
+      # perturbation it was just handed), while large values over-estimate
+      # via cascade artifact. The model's original nrounds is the most
+      # defensible structural default - it matches what a naive reader of
+      # the published REBB procedure (Messer & Schmid 2024) would expect -
+      # but the variance estimate it produces may be inflated. Users
+      # investigating uncertainty for sparse outcomes should consider this
+      # an open methodological question and may wish to override via
+      #   options(povmap.leaves_only.refresh_nrounds = N).
+      .refresh_n_override <- getOption("povmap.leaves_only.refresh_nrounds")
+      orig_nrounds <- if (!is.null(.refresh_n_override)) {
+        as.integer(.refresh_n_override)
+      } else {
+        tryCatch(
+          xgboost::xgb.get.num.boosted.rounds(orig_booster),
+          error = function(e) {
+            n <- gradient_params$nround
+            if (is.null(n)) n <- gradient_params$nrounds
+            if (is.null(n)) stop("Could not determine original nrounds for refresh.")
+            n
+          }
+        )
+      }
+
+      # Feature matrices (numeric). cov_names was used by the original fit, so
+      # column ordering will match.
+      X_smp_mat <- as.matrix(smp_data[, cov_names, drop = FALSE])
+      X_pop_mat <- as.matrix(pop_data[, cov_names, drop = FALSE])
+
+      # LMM scaffolding (same as lmm_only branch).
+      lmm_formula <- stats::as.formula(paste0("r ~ 1 + ", formula_random_effects))
+      newdat_d    <- stats::setNames(
+        data.frame(domains, stringsAsFactors = FALSE), dom_name
+      )
+      if (is.factor(smp_data[[dom_name]])) {
+        newdat_d[[dom_name]] <- factor(domains, levels = levels(smp_data[[dom_name]]))
+      }
+      fit_data <- smp_data
+
+      # collect_diag is defined at function scope at the top of mse_megb.
+      if (collect_diag) {
+        .D <- length(domains)
+        gb_pop_d_mean_boot_mat <- matrix(NA_real_, nrow = .D, ncol = B)
+        u_d_boot_mat           <- matrix(NA_real_, nrow = .D, ncol = B)
+      }
+
+      boots_models <- vector("list", B)
+
+      for (i in seq_len(B)) {
+        if (i %% max(1L, B %/% 10L) == 0L)
+          message("leaves_only bootstrap iteration ", i, " of ", B)
+
+        # 1) Refresh leaves on the bootstrap label. Tree structure unchanged.
+        d_train <- xgboost::xgb.DMatrix(X_smp_mat, label = y_star_smp[, i])
+        gb_refreshed <- tryCatch(
+          suppressMessages(suppressWarnings(
+            xgboost::xgb.train(
+              params    = list(
+                updater       = "refresh",
+                process_type  = "update",
+                refresh_leaf  = 1,
+                objective     = "reg:squarederror"
+              ),
+              data      = d_train,
+              nrounds   = orig_nrounds,
+              xgb_model = orig_booster,
+              verbose   = 0
+            )
+          )),
+          error = function(e) {
+            message("  refresh failed at iter ", i, ": ", conditionMessage(e))
+            NULL
+          }
+        )
+        if (is.null(gb_refreshed)) {
+          boots_models[[i]] <- list(
+            Mean_boot = NULL, Mean_boot_orig = NULL, Mean_boot_bench = NULL,
+            error_sd_boot = NA_real_, ran_eff_sd_boot = NA_real_
+          )
+          next
+        }
+
+        # 2) Predict refreshed model on pop and smp.
+        gb_pop_boot <- as.numeric(predict(gb_refreshed, X_pop_mat))
+        gb_smp_boot <- as.numeric(predict(gb_refreshed, X_smp_mat))
+
+        # 3) Refit LMM on residuals from refreshed predictions.
+        fit_data$r <- y_star_smp[, i] - gb_smp_boot
+        if (!is.null(smp_weights_vec)) fit_data$.megb_w <- smp_weights_vec
+        lmer_boot <- tryCatch(
+          suppressMessages(suppressWarnings(
+            lme4::lmer(
+              lmm_formula, data = fit_data, REML = TRUE,
+              weights = if (!is.null(smp_weights_vec)) fit_data$.megb_w else NULL
+            )
+          )),
+          error = function(e) NULL
+        )
+        if (is.null(lmer_boot)) {
+          boots_models[[i]] <- list(
+            Mean_boot = NULL, Mean_boot_orig = NULL, Mean_boot_bench = NULL,
+            error_sd_boot = NA_real_, ran_eff_sd_boot = NA_real_
+          )
+          next
+        }
+
+        re_per_d <- stats::predict(lmer_boot, newdata = newdat_d,
+                                   allow.new.levels = TRUE)
+        fe_boot  <- as.numeric(lme4::fixef(lmer_boot))[1]
+        u_d_boot <- as.numeric(re_per_d) - fe_boot
+
+
+
+
+        # 4) Per-domain mean from refreshed pop predictions + BLUP.
+        gb_pop_d_mean_boot <- as.numeric(tapply(gb_pop_boot, pop_dom_idx, mean))
+        if (collect_diag) {
+          gb_pop_d_mean_boot_mat[, i] <- gb_pop_d_mean_boot
+          u_d_boot_mat[, i]           <- u_d_boot
+        }
+        mean_boot_t        <- gb_pop_d_mean_boot + u_d_boot
+        mean_boot_orig     <- if (!is.null(corrected_bt)) corrected_bt(mean_boot_t)
+        else mean_boot_t
+
+        mean_boot_bench <- if (!is.null(benchmark_fn)) {
+          bs_for_bench <- smp_data
+          bs_for_bench$y_star <- y_star_smp[, i]
+          benchmark_fn(mean_boot_orig, bs_for_bench)
+        } else NULL
+
+        ran_sd <- as.data.frame(lme4::VarCorr(lmer_boot))$sdcor[1]
+        err_sd <- stats::sigma(lmer_boot)
+
+        boots_models[[i]] <- list(
+          Mean_boot       = mean_boot_t,
+          Mean_boot_orig  = mean_boot_orig,
+          Mean_boot_bench = mean_boot_bench,
+          error_sd_boot   = err_sd,
+          ran_eff_sd_boot = ran_sd
+        )
+      }
+
+      if (collect_diag) {
+        diag_env <- getOption("povmap.leaves_only.diag_env")
+        assign("gb_pop_d_mean_boot_mat", gb_pop_d_mean_boot_mat, envir = diag_env)
+        assign("u_d_boot_mat",           u_d_boot_mat,           envir = diag_env)
+        assign("domains",                domains,                envir = diag_env)
+      }
+
+      return(.mse_megb_collate(
+        boots_models = boots_models, tau_star = tau_star, pop_data = pop_data,
+        dom_name = dom_name, corrected_bt = corrected_bt,
+        benchmark_fn = benchmark_fn, domains = domains, error_sd = error_sd
+      ))
+    }
+  }
+
   # ── Else: full refit (legacy path, both GB and LMM each iteration) ──────────
   my_estim_f <- function(x) {
     model_boot <- em_gb_lmm(
@@ -204,7 +437,8 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
       max_iterations         = 10,
       error_tolerance        = 1e-04,
       cov_names              = .cov_names,
-      gbm_engine             = .gbm_engine
+      gbm_engine             = .gbm_engine,
+      weights                = .smp_weights_vec
     )
 
     unit_level_predictions <- gbm_predict(
@@ -251,7 +485,8 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
       .smp_data        = smp_data,
       .Y               = Y,
       .corrected_bt    = corrected_bt,
-      .benchmark_fn    = benchmark_fn
+      .benchmark_fn    = benchmark_fn,
+      .smp_weights_vec = smp_weights_vec
     ),
     parent = getNamespace("povmap")
   )

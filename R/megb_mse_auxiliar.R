@@ -2,24 +2,37 @@
 #' @importFrom dplyr left_join group_by summarise
 #' @importFrom lme4 ranef
 
-# Block-sample errors by domain
-block_sample <- function(domains, in_samp, smp_data, dom_name, pop_data, gb_res) {
+# Block-sample errors by domain. When weights are supplied AND weightedBS is
+# TRUE, residuals are drawn with probability proportional to weights (matching
+# xgb's weightedBS semantics). When weights are NULL or weightedBS is FALSE,
+# residuals are drawn with equal probability (historical behaviour).
+block_sample <- function(domains, in_samp, smp_data, dom_name, pop_data, gb_res,
+                          weights = NULL, weightedBS = FALSE) {
   block_err <- vector(mode = "list", length = length(domains))
+  use_w     <- !is.null(weights) && isTRUE(weightedBS)
 
   for (idd in which(in_samp)) {
+    in_dom <- which(smp_data[[dom_name]] == domains[idd])
+    x_vals <- gb_res[in_dom]
+    p_vals <- if (use_w) weights[in_dom] / sum(weights[in_dom]) else NULL
     block_err[[idd]] <- sample(
-      gb_res[smp_data[dom_name] == domains[idd]],
+      x_vals,
       size    = sum(pop_data[dom_name] == domains[idd]),
-      replace = TRUE
+      replace = TRUE,
+      prob    = p_vals
     )
   }
 
   if (sum(in_samp) != length(domains)) {
+    # OOS domains draw from the full residual pool, weighted across the entire
+    # in-sample if weights are in use.
+    pool_prob <- if (use_w) weights / sum(weights) else NULL
     for (idd in which(!in_samp)) {
       block_err[[idd]] <- sample(
         gb_res,
         size    = sum(pop_data[dom_name] == domains[idd]),
-        replace = TRUE
+        replace = TRUE,
+        prob    = pool_prob
       )
     }
   }
@@ -76,21 +89,34 @@ sample_select <- function(pop, smp, dom_name) {
 #              (pure idiosyncratic residuals, not domain-demeaned).
 #
 ran_comp <- function(unit_pred_smp, smp_data, Y, dom_name, error_sd,
-                     cov_names = cov_names, model) {
+                     cov_names = cov_names, model, weights = NULL) {
+  # weights: numeric vector aligned to rows of smp_data. When supplied,
+  # gb_res rescaling uses weighted SD and weighted-mean centering so the
+  # residual pool is properly normalised under the survey design.
   smp_data_tmp <- smp_data
   residuals_gb <- Y - unit_pred_smp   # ≈ e_dk (idiosyncratic residuals)
 
+  # Helpers: weighted SD / mean fall back to unweighted when weights are NULL.
+  wmean <- function(x, w) {
+    if (is.null(w)) mean(x) else stats::weighted.mean(x, w)
+  }
+  wsd <- function(x, w) {
+    if (is.null(w)) sd(x)
+    else {
+      m   <- stats::weighted.mean(x, w)
+      sqrt(sum(w * (x - m)^2) / sum(w))
+    }
+  }
+
   if (is.null(model$ran_eff_sd) || model$ran_eff_sd < 1e-8) {
     # Singular LMM: all random effects are zero; use raw residuals for e*.
-    gb_res_sd <- sd(residuals_gb)
+    gb_res_sd <- wsd(residuals_gb, weights)
     gb_res    <- if (gb_res_sd > 1e-10) (residuals_gb / gb_res_sd) * error_sd
                  else residuals_gb
-    gb_res    <- gb_res - mean(gb_res)
+    gb_res    <- gb_res - wmean(gb_res, weights)
     ran_effs  <- rep(0, length(unique(smp_data[[dom_name]])))
   } else {
     # ── ran_effs: extract actual per-domain BLUPs û_d from the fitted lme4 ──
-    # ranef(effect_model)[[dom_name]] is a data.frame with one row per
-    # in-sample domain and column "(Intercept)" containing û_d.
     blup_df  <- as.data.frame(lme4::ranef(model$effect_model)[[dom_name]])
     blup_vec <- setNames(blup_df[, "(Intercept)"], rownames(blup_df))
 
@@ -98,22 +124,27 @@ ran_comp <- function(unit_pred_smp, smp_data, Y, dom_name, error_sd,
     ran_effs    <- as.numeric(blup_vec[insamp_doms])
     ran_effs[is.na(ran_effs)] <- 0L
 
-    # Rescale to model$ran_eff_sd: BLUPs are shrunk toward 0 (sd(û_d) ≤ σ_u);
-    # inflating them back to σ_u matches the parametric bootstrap assumption
-    # that u_d* ~ distribution with sd = σ_u.
-    re_sd <- sd(ran_effs)
+    # Rescale to model$ran_eff_sd. ran_effs is per-domain (length = D, not n),
+    # so weights at the area level (sum of within-area sample weights) are the
+    # right reference if we want a weighted rescaling. Without that, fall back
+    # to unweighted SD across domains (the historical behaviour).
+    area_w <- if (!is.null(weights)) {
+      as.numeric(tapply(weights, smp_data[[dom_name]], sum)[insamp_doms])
+    } else NULL
+    re_sd <- wsd(ran_effs, area_w)
     if (re_sd > 1e-10) ran_effs <- (ran_effs / re_sd) * model$ran_eff_sd
-    ran_effs <- ran_effs - mean(ran_effs)
+    ran_effs <- ran_effs - wmean(ran_effs, area_w)
 
     # ── gb_res: idiosyncratic residuals, NOT domain-demeaned ─────────────────
-    # residuals_gb = Y - unit_pred_smp = Y - gb_smp - û_d ≈ e_dk.
-    # Rescale to σ_e for minor finite-sample drift.
-    gb_res_sd <- sd(residuals_gb)
+    gb_res_sd <- wsd(residuals_gb, weights)
     gb_res    <- if (gb_res_sd > 1e-10) (residuals_gb / gb_res_sd) * error_sd
                  else residuals_gb
-    gb_res    <- gb_res - mean(gb_res)
+    gb_res    <- gb_res - wmean(gb_res, weights)
   }
 
   smp_data_tmp$gb_res <- gb_res
-  list(gb_res = gb_res, ran_effs = ran_effs, smp_data = smp_data_tmp)
+  list(gb_res = gb_res, ran_effs = ran_effs, smp_data = smp_data_tmp,
+       area_w = if (!is.null(weights))
+         as.numeric(tapply(weights, smp_data[[dom_name]], sum)[as.character(unique(smp_data[[dom_name]]))])
+         else NULL)
 }

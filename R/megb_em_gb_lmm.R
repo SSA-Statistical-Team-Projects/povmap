@@ -14,7 +14,22 @@ em_gb_lmm <- function(Y,
                       dom_name,
                       cov_names,
                       gbm_engine = "xgboost",
+                      weights    = NULL,
                       ...) {
+  # weights: numeric vector of observation weights aligned to rows of X / data.
+  # Forwarded to train_gbmodel (xgb.DMatrix weight) AND to lme4::lmer (weights).
+  # When NULL, behaviour is unchanged.
+  #
+  # Normalize weights to mean = 1 before any modeling step. lme4 and xgboost
+  # both behave better numerically when weights are on a unit scale rather
+  # than the raw survey scale (DRC popwt: 7..60,000). The relative ratios
+  # between observations are preserved, so the estimator interpretation is
+  # unchanged - only the numerical conditioning improves. Mirrors xgb's
+  # `smp_weights_rescaled / mean(smp_weights_rescaled)` rescaling.
+  if (!is.null(weights)) {
+    mw <- mean(weights, na.rm = TRUE)
+    if (is.finite(mw) && mw > 0) weights <- weights / mw
+  }
 
   target            <- Y
   continue_condition <- TRUE
@@ -28,8 +43,14 @@ em_gb_lmm <- function(Y,
   # lets GB absorb domain means in iteration 1, after which lme4 finds no residual
   # domain structure and the EM collapses to the trivial fixed point (ran_eff_sd=0).
   formula_lmm_init <- as.formula(paste0("target ~ 1 + ", formula_random_effects))
+  # Attach weights as a column on `data` so lme4 can find them by name (works
+  # around lme4's evaluation of `weights` in the model frame).
+  if (!is.null(weights)) data$.megb_w <- as.numeric(weights)
   suppressMessages(
-    lmefit_init <- lme4::lmer(formula_lmm_init, data = data, REML = FALSE)
+    lmefit_init <- lme4::lmer(
+      formula_lmm_init, data = data, REML = FALSE,
+      weights = if (!is.null(weights)) data$.megb_w else NULL
+    )
   )
   adjusted_target <- target - (stats::predict(lmefit_init) - lme4::fixef(lmefit_init))
 
@@ -38,7 +59,8 @@ em_gb_lmm <- function(Y,
 
     response_train <- adjusted_target
     gbm_results    <- train_gbmodel(gbm_engine, features_train, response_train,
-                                    params = gradient_params)
+                                    params  = gradient_params,
+                                    weights = weights)
 
     model        <- gbm_results$boosting
     unit_pred_smp <- gbm_results$prediction
@@ -47,7 +69,10 @@ em_gb_lmm <- function(Y,
     formula_lmm <- as.formula(paste0("tmp_res ~ 1 +", formula_random_effects))
 
     suppressMessages(
-      lmefit <- lme4::lmer(formula_lmm, data = data, REML = FALSE)
+      lmefit <- lme4::lmer(
+        formula_lmm, data = data, REML = FALSE,
+        weights = if (!is.null(weights)) data$.megb_w else NULL
+      )
     )
 
     new_log_lik <- as.numeric(stats::logLik(lmefit))

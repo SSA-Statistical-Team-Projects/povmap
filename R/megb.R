@@ -67,18 +67,38 @@
 #'   the target *is* itself a sample statistic, so this conditioning is a
 #'   somewhat artificial inferential target — \code{"random"} is usually
 #'   preferable.
-#' @param bootstrap_refit one of \code{"lmm_only"} (default) or \code{"full"}.
+#' @param bootstrap_refit one of \code{"leaves_only"} (default),
+#'   \code{"full"}, or \code{"lmm_only"}.
+#'   \code{"leaves_only"} (xgboost only) freezes the tree structure of the
+#'   original GB across all bootstrap iterations and only refreshes leaf-node
+#'   values via xgboost's \code{refresh} updater. This captures within-model
+#'   leaf-prediction sampling uncertainty plus the LMM random-effect
+#'   uncertainty, without exposing the SE to GB tree-selection variance —
+#'   which empirically overstates uncertainty for sparse or boundary-near
+#'   indicators (e.g. ownership rates, livestock counts, access indicators
+#'   with many near-zero territories) where bootstrap-perturbed residuals
+#'   drive fresh GB fits to substantially different trees. For dense
+#'   indicators (continuous welfare, well-spread proportions) \code{"leaves_only"}
+#'   gives results within ~20\% of \code{"full"}; for sparse indicators the
+#'   two can differ by an order of magnitude. Recommended default and aligned
+#'   with how most SAE methods report SEs (conditional on chosen model
+#'   structure).
+#'   \code{"full"}: refit both the gradient booster and the linear mixed model
+#'   in every bootstrap iteration. This additionally captures GB
+#'   tree-selection variance and is appropriate when that is the inferential
+#'   target (e.g. inference about a model \emph{class} rather than a fitted
+#'   model). For sparse indicators this can substantially overstate true
+#'   predictive uncertainty because the residual bootstrap drives fresh GBs
+#'   into pathological refits.
 #'   \code{"lmm_only"}: refit only the linear mixed model on bootstrap residuals
 #'   each iteration, treating the gradient-booster fit as fixed. This is the
-#'   standard EBLUP parametric bootstrap (Prasad–Rao / Hall–Maiti) and yields
+#'   classical EBLUP parametric bootstrap (Prasad–Rao / Hall–Maiti) and yields
 #'   the textbook leading-order MSE \eqn{g_1 = \gamma_d \sigma_e^2 / n_d}.
-#'   It isolates random-effect uncertainty, runs an order of magnitude faster
-#'   than the full refit, and gives CIs comparable to the residual bootstrap
-#'   used by \code{\link{xgb}}. \code{"full"}: refit both the booster and the
-#'   linear mixed model in every bootstrap iteration. This propagates GB
-#'   refit-to-refit drift into the prediction-error variance, making CIs
-#'   substantially wider, especially for flexible boosters; use it when you
-#'   want CIs that explicitly include GB-fit uncertainty.
+#'   It runs faster than the other modes but assumes the FE estimator is
+#'   parametric and contributes negligible variance — an assumption that
+#'   holds for low-dimensional linear FE models but \emph{not} for boosted
+#'   trees, where it typically understates SE by an order of magnitude. Use
+#'   only if you explicitly want the classical-EBLUP variance decomposition.
 #' @param mse_type one of \code{"var"} (default) or \code{"mse"}. \code{"var"}
 #'   reports the empirical bootstrap variance of back-transformed domain means
 #'   and uses bootstrap quantiles (recentred at the point estimate) for the CI,
@@ -167,7 +187,7 @@ megb <- function(fixed,
                  transformation   = "no",
                  mse              = TRUE,
                  mse_type         = c("var", "mse"),
-                 bootstrap_refit  = c("lmm_only", "full"),
+                 bootstrap_refit  = c("leaves_only", "full", "lmm_only"),
                  bench_target     = c("random", "fixed"),
                  B                = 100,
                  bootstrap_cores  = 0,
@@ -180,8 +200,13 @@ megb <- function(fixed,
                  benchmark_type   = "ratio",
                  benchmark_level  = NULL,
                  benchmark_weights = NULL,
+                 weightedBS       = TRUE,
                  cpus             = NULL,
                  ...) {
+  # weightedBS: when TRUE and smp_weights is supplied, the bootstrap residual
+  # sampling uses probabilities proportional to weights (mirroring xgb's
+  # weightedBS semantics). When FALSE, residuals are sampled with equal
+  # probability (the historical default before weights were plumbed through).
 
   out_call        <- match.call()
   mse_type        <- match.arg(mse_type)
@@ -293,6 +318,7 @@ megb <- function(fixed,
     seed            = seed,
     mse             = FALSE,
     gbm_engine      = gbm_engine,
+    smp_weights_vec = fwk$smp_weights_vec,
     ...
   )
 
@@ -534,6 +560,22 @@ megb <- function(fixed,
   mse_estimated <- NULL
   if (mse) {
     message("Bootstrap with ", B, " iterations has started")
+    # Attach weights as a column on boot_smp_data to guarantee row alignment.
+    # fwk$smp_weights_vec was built from fwk$smp_data, but boot_smp_data
+    # (= megb_fit$inp_smp_data$smp_data) may have a different row count or
+    # ordering after framework + megb_em processing. Pulling weights from a
+    # column ensures they always match the smp_data rows downstream consumers
+    # iterate over.
+    if (!is.null(fwk$smp_weights_vec)) {
+      if (length(fwk$smp_weights_vec) == nrow(boot_smp_data)) {
+        boot_smp_data$.megb_w <- as.numeric(fwk$smp_weights_vec)
+      } else {
+        warning("smp_weights_vec length (", length(fwk$smp_weights_vec),
+                ") does not match boot_smp_data row count (",
+                nrow(boot_smp_data), "). Falling back to unweighted bootstrap.")
+        boot_smp_data$.megb_w <- NULL
+      }
+    }
     mse_estimated <- mse_megb(
       Y                      = megb_fit$inp_smp_data$target_var,
       X                      = megb_fit$X_proc,
@@ -557,7 +599,9 @@ megb <- function(fixed,
       unit_preds             = megb_fit$unit_preds_all,
       bootstrap_refit        = bootstrap_refit,
       corrected_bt           = corrected_bt,
-      benchmark_fn           = benchmark_fn
+      benchmark_fn           = benchmark_fn,
+      smp_weights_col        = ".megb_w",
+      weightedBS             = weightedBS
     )
   }
 
