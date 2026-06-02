@@ -59,19 +59,22 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
     smp_weights_vec <- NULL
   }
 
-  # Normalize weights to mean = 1 for numerical stability in lme4 / xgboost.
-  # Mirrors em_gb_lmm's normalization so bootstrap LMM refits behave the same
-  # as the original fit. Relative ratios preserved; estimator unchanged.
+  # Rescale weights WITHIN each domain (Pfeffermann scaling), matching the
+  # original fit in em_gb_lmm so the bootstrap LMM refits and weighted residual
+  # sampling use the same weight treatment. Weights sum to the domain sample
+  # size (average 1) within each domain. smp_data is already domain-sorted above.
   if (!is.null(smp_weights_vec)) {
-    mw <- mean(smp_weights_vec, na.rm = TRUE)
-    if (is.finite(mw) && mw > 0) smp_weights_vec <- smp_weights_vec / mw
-    # Also drop any NAs - replace with 1 (= mean after rescaling) so we never
-    # leak NAs into prob vectors or LMM weight arguments.
     if (any(is.na(smp_weights_vec))) {
       warning("smp_weights had ", sum(is.na(smp_weights_vec)),
-              " NA values; replacing with 1.")
-      smp_weights_vec[is.na(smp_weights_vec)] <- 1
+              " NA values; replacing with 0 before rescaling.")
+      smp_weights_vec[is.na(smp_weights_vec)] <- 0
     }
+    dom  <- as.character(smp_data[[dom_name]])
+    dsum <- ave(smp_weights_vec, dom, FUN = function(z) sum(z, na.rm = TRUE))
+    dn   <- ave(smp_weights_vec, dom, FUN = length)
+    keep <- is.finite(dsum) & dsum > 0
+    smp_weights_vec[keep]  <- smp_weights_vec[keep] * dn[keep] / dsum[keep]
+    smp_weights_vec[!keep] <- 1
   }
 
   sort_pop   <- order(as.character(pop_data[[dom_name]]))

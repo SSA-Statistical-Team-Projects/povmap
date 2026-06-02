@@ -20,15 +20,21 @@ em_gb_lmm <- function(Y,
   # Forwarded to train_gbmodel (xgb.DMatrix weight) AND to lme4::lmer (weights).
   # When NULL, behaviour is unchanged.
   #
-  # Normalize weights to mean = 1 before any modeling step. lme4 and xgboost
-  # both behave better numerically when weights are on a unit scale rather
-  # than the raw survey scale (DRC popwt: 7..60,000). The relative ratios
-  # between observations are preserved, so the estimator interpretation is
-  # unchanged - only the numerical conditioning improves. Mirrors xgb's
-  # `smp_weights_rescaled / mean(smp_weights_rescaled)` rescaling.
+  # Rescale survey weights WITHIN each domain so that, in every domain, the
+  # weights sum to that domain's sample size (equivalently, average to 1). This
+  # is the Pfeffermann et al. (1998) scaling used for survey-weighted multilevel
+  # / pseudo-EBP estimation (Guadarrama et al.; Dang et al. 2026), and it
+  # matches the rescaling the xgb pipeline applies (xgb.R: w * domain_n /
+  # domain_sum_wts). It prevents domains with concentrated weights from
+  # dominating the fit and keeps the weight scale unit-level for numerical
+  # stability in lme4 / xgboost. `data[[dom_name]]` gives the domain of each row.
   if (!is.null(weights)) {
-    mw <- mean(weights, na.rm = TRUE)
-    if (is.finite(mw) && mw > 0) weights <- weights / mw
+    dom   <- as.character(data[[dom_name]])
+    dsum  <- ave(weights, dom, FUN = function(z) sum(z, na.rm = TRUE))
+    dn    <- ave(weights, dom, FUN = length)
+    keep  <- is.finite(dsum) & dsum > 0
+    weights[keep]  <- weights[keep] * dn[keep] / dsum[keep]
+    weights[!keep] <- 1
   }
 
   target            <- Y
