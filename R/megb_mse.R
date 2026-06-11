@@ -14,6 +14,7 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
                      benchmark_fn = NULL,
                      smp_weights_col = NULL,
                      weightedBS = TRUE,
+                     pop_weights_vec = NULL,
                      ...) {
   # smp_weights_col: name of a column on smp_data containing observation
   #   weights. Pulling weights from a column (rather than passing a vector)
@@ -80,6 +81,29 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
   sort_pop   <- order(as.character(pop_data[[dom_name]]))
   pop_data   <- pop_data[sort_pop, , drop = FALSE]
   unit_preds <- unit_preds[sort_pop, , drop = FALSE]
+
+  # Per-cell population weights aligned to the (now domain-sorted) pop rows, i.e.
+  # to gb_pop_vec / pop_dom_idx below. Same vector the point estimate aggregates
+  # with (megb.R:380). When absent or mis-sized, fall back to unweighted means so
+  # behaviour is unchanged.
+  pw_pop <- if (!is.null(pop_weights_vec) &&
+                length(pop_weights_vec) == nrow(pop_data)) {
+    as.numeric(pop_weights_vec)[sort_pop]
+  } else {
+    if (!is.null(pop_weights_vec))
+      warning("pop_weights_vec length (", length(pop_weights_vec),
+              ") != nrow(pop_data) (", nrow(pop_data),
+              "); bootstrap domain aggregation falls back to unweighted.")
+    NULL
+  }
+  # Population-weighted (or unweighted-fallback) domain mean of per-cell values,
+  # matching megb.R:380's sum(v*pw)/sum(pw). Used at every per-cell aggregation
+  # site so the bootstrap mirrors the point estimate's weighting as well as order.
+  agg_dom <- function(v) {
+    if (is.null(pw_pop)) as.numeric(tapply(v, pop_dom_idx, mean))
+    else as.numeric(tapply(v * pw_pop, pop_dom_idx, sum) /
+                    tapply(pw_pop,      pop_dom_idx, sum))
+  }
 
   # Fixed-effect-only predictors (GB output, *not* GB + BLUP). Falling back to
   # the combined predictions would re-introduce the area-effect double counting
@@ -170,7 +194,7 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
   if (!is.null(corrected_bt)) {
     tau_star_orig_pc <- vapply(seq_len(B), function(b) {
       cell_orig <- corrected_bt(gb_pop_vec + u_d_star[pop_dom_idx, b])
-      as.numeric(tapply(cell_orig, pop_dom_idx, mean))
+      agg_dom(cell_orig)
     }, numeric(length(domains)))
   }
 
@@ -243,7 +267,7 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
       # the original gb_pop_vec; only u_d_boot is re-estimated this iteration.
       mean_boot_orig <- if (!is.null(corrected_bt)) {
         cell_orig_boot <- corrected_bt(gb_pop_vec + u_d_boot[pop_dom_idx])
-        as.numeric(tapply(cell_orig_boot, pop_dom_idx, mean))
+        agg_dom(cell_orig_boot)
       } else mean_boot_t
 
       mean_boot_bench <- if (!is.null(benchmark_fn)) {
@@ -421,7 +445,7 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
         # corrected_bt(aggregate) line.
         mean_boot_orig     <- if (!is.null(corrected_bt)) {
           cell_orig_boot <- corrected_bt(gb_pop_boot + u_d_boot[pop_dom_idx])
-          as.numeric(tapply(cell_orig_boot, pop_dom_idx, mean))
+          agg_dom(cell_orig_boot)
         } else mean_boot_t
 
         mean_boot_bench <- if (!is.null(benchmark_fn)) {
@@ -501,10 +525,20 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
     # cell, then aggregate, instead of back-transforming the aggregated mean.
     if (!is.null(.corrected_bt)) {
       upp$.cell_orig <- .corrected_bt(upp$unit_preds)
-      mo <- upp |>
-        dplyr::group_by(dom_name) |>
-        dplyr::summarise(.M = mean(.cell_orig)) |>
-        as.data.frame()
+      # Population-weighted domain mean (matches megb.R:380); unweighted fallback
+      # when no pop weights were supplied. .pw_pop is aligned to .pop_data rows.
+      if (!is.null(.pw_pop)) {
+        upp$.pw <- .pw_pop
+        mo <- upp |>
+          dplyr::group_by(dom_name) |>
+          dplyr::summarise(.M = sum(.cell_orig * .pw) / sum(.pw)) |>
+          as.data.frame()
+      } else {
+        mo <- upp |>
+          dplyr::group_by(dom_name) |>
+          dplyr::summarise(.M = mean(.cell_orig)) |>
+          as.data.frame()
+      }
       mean_boot_orig <- mo$.M[match(mean_preds$dom_name, mo$dom_name)]
     } else {
       mean_boot_orig <- mean_boot_t
@@ -535,7 +569,8 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
       .Y               = Y,
       .corrected_bt    = corrected_bt,
       .benchmark_fn    = benchmark_fn,
-      .smp_weights_vec = smp_weights_vec
+      .smp_weights_vec = smp_weights_vec,
+      .pw_pop          = pw_pop          # per-cell pop weights (sorted pop order), or NULL
     ),
     parent = getNamespace("povmap")
   )

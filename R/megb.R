@@ -601,7 +601,12 @@ megb <- function(fixed,
       corrected_bt           = corrected_bt,
       benchmark_fn           = benchmark_fn,
       smp_weights_col        = ".megb_w",
-      weightedBS             = weightedBS
+      weightedBS             = weightedBS,
+      # Same per-cell population weights the point estimate aggregates with
+      # (megb.R: domain_means = sum(hat*pw)/sum(pw) over pop cells). Passed so the
+      # bootstrap's per-cell-then-aggregate domain means use identical weighting;
+      # NULL reproduces the historical unweighted bootstrap aggregation.
+      pop_weights_vec        = if (!is.null(pop_weights)) fwk$pop_weights_vec else NULL
     )
   }
 
