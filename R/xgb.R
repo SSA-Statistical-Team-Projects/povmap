@@ -391,7 +391,10 @@ xgb <- function(fixed,
   #browser()
   #4. benchmark area-level estimates and transform these if option is selected, so bootstrap can draw from the residuals of the benchmarked estimates
   if (!is.null(benchmark)) {
-    domains_pred$hat_bench <- add_benchmark(x=domains_pred$hat,benchmark_level=benchmark_level,
+    # Benchmark the PER-CELL-order point (hat_pc) so the benchmarked point sits on
+    # the same per-cell back-transform order as sim_truth. The non-benchmarked
+    # point (domains_pred$hat, aggregate order) is left untouched.
+    domains_pred$hat_bench <- add_benchmark(x=domains_pred$hat_pc,benchmark_level=benchmark_level,
                                             fwk=fwk,fixed=fixed,benchmark=benchmark,benchmark_type=benchmark_type)
     domains_pred$hat_bench_t <- transform_outcome(domains_pred$hat_bench)$y
     # construct residuals from transformed benchmark estimate
@@ -633,7 +636,10 @@ xgb <- function(fixed,
                                     #B_domains <- dplyr:::left_join(B_domains,B_sample_bm,by=benchmark_level)
 
                                     bm_vec <- setNames(B_sample_bm$sample_bm, B_sample_bm[,benchmark_level])
-                                    B_domains$sim_bench <- add_benchmark(predictions$hat,benchmark_level=benchmark_level,benchmark=bm_vec,fwk=fwk,
+                                    # Benchmark the PER-CELL-order replicate point (hat_pc) so each
+                                    # benchmarked replicate matches sim_truth's order; Var_bench then
+                                    # differences like-order quantities. sim_truth (per-cell) is unchanged.
+                                    B_domains$sim_bench <- add_benchmark(predictions$hat_pc,benchmark_level=benchmark_level,benchmark=bm_vec,fwk=fwk,
                                                                          fixed=fixed,benchmark_type=benchmark_type)
                                   } # close additional benchmarking bootstrap code
                                 } # close residual bootstrap code to produce B_domains_sim
@@ -1005,7 +1011,8 @@ point_estim_xgb <- function(params, smp_X, smp_Y, smp_weight, pop_X, sub_domains
   #resid_domains_rescaled <- sample_domains$resid_domains_rescaled
   #resid_sub_domains_rescaled <- resid_total_rescaled - sample$resid_domains_rescaled
 
-  mean_sim <- 0
+  mean_sim    <- 0   # aggregate-then-back-transform (non-benchmarked point order)
+  mean_sim_pc <- 0   # per-cell-then-aggregate (benchmarked point order; matches sim_truth)
 
 
 
@@ -1022,19 +1029,26 @@ point_estim_xgb <- function(params, smp_X, smp_Y, smp_weight, pop_X, sub_domains
 
     B_domains <- left_join(B_domains,area_draws,by="domains")
 
-    # Add bootstrapped area residual and back transform
+    # Aggregate-then-back-transform: the NON-benchmarked point order (unchanged).
     B_domains$sim_t_plus_area <- B_domains$sim_t +B_domains$area_draw
     B_domains$sim_plus_area <- back_transform_outcome(B_domains$sim_t_plus_area)
-
-
-
-
     mean_sim <- (mean_sim*(l-1)+B_domains$sim_plus_area)/l
+
+    # Per-cell-then-aggregate: the BENCHMARKED point order, constructed exactly as
+    # sim_truth in the bootstrap -- broadcast each area's draw to its cells, add on
+    # the transformed scale, back-transform EACH CELL, then population-weight
+    # aggregate. No extra RNG is drawn here, so the aggregate path (mean_sim) and
+    # the whole RNG stream stay byte-for-byte unchanged.
+    sub_area_draw <- area_draws$area_draw[match(sub_pred_t[,fwk$domains], area_draws$domains)]
+    sim_pa_cell   <- back_transform_outcome(sub_pred_t$sim_t + sub_area_draw)
+    pc <- collapse:::fmean(x=sim_pa_cell,g=sub_pred_t[,fwk$domains],w=sub_pred_t[,fwk$pop_weights])
+    mean_sim_pc <- (mean_sim_pc*(l-1) + as.numeric(pc[as.character(B_domains$domains)]))/l
   } # end back-transformation loop to calculate mean of simulations through back-transformation
 
   # generate point estimates
   MC_results <-  data.frame(B_domains["domains"],
-                            hat=mean_sim)
+                            hat=mean_sim,
+                            hat_pc=mean_sim_pc)
   sub_pred_t$sim_t <- NULL
 
 
