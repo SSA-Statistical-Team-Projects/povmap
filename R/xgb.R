@@ -488,6 +488,14 @@ xgb <- function(fixed,
       foreach::registerDoSEQ()
     }
 
+    # Reproducible parallel RNG. Without this, the foreach %dopar% below draws
+    # unseeded random numbers in each worker, so Var_bench and the benchmarked
+    # CIs drift run-to-run at the same seed. registerDoRNG assigns each iteration
+    # j its own L'Ecuyer-CMRG stream derived from `seed`, independent of how
+    # iterations are scheduled across workers, making the bootstrap byte-for-byte
+    # reproducible. Applies to both the doSNOW (parallel) and doSEQ (sequential)
+    # backends and does not affect the point-estimate RNG (set.seed elsewhere).
+    doRNG::registerDoRNG(seed)
 
     cat("Beginning bootstrap \n")
     #for (j in 1:B){

@@ -58,7 +58,8 @@ Imports:
     furrr,
     future,
     lme4,
-    purrr
+    purrr,
+    doRNG
 Suggests:
     testthat,
     R.rsp,
