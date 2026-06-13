@@ -93,6 +93,9 @@ xgb_cv <- function(fixed,
                    plot_filename = NULL,
                    ...) {
 
+  # Pinned-version guard (see BUILD_PIN_xgb.txt) -- fail before any model fit
+  .assert_xgb_version()
+
   set.seed(seed)
 
   # Extract outcome variable name

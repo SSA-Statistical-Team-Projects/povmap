@@ -103,6 +103,9 @@ xgb_tune <- function(fixed,
                      verbose = TRUE,
                      ...){
 
+  # Pinned-version guard (see BUILD_PIN_xgb.txt) -- fail before any model fit
+  .assert_xgb_version()
+
   # Data preparation
   #_____________________________________________________________________________
   outcome <- all.vars(fixed[[2]])

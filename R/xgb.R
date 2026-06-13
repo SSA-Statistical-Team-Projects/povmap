@@ -215,6 +215,34 @@ ht_var_weighted_mean <- function(y, w, g) {
   result
 }
 
+# Pinned-version guard -- see BUILD_PIN_xgb.txt
+# The xgb point estimate and bootstrap are sensitive to the xgboost version:
+# cross-version prediction drift is diffuse (~0.05 median per ward between
+# 1.7.7.1 and 3.1.2.1 on identical data) and is NOT fixable by setting
+# base_score/tree_method/max_bin explicitly. The reproducibility anchor is
+# xgboost 3.1.2.1. This guard runs before any model fit so a wrong-library
+# environment (e.g. a system-library 1.7.7.1 resolving ahead of the pinned
+# library) fails loudly instead of silently re-drifting onto another version.
+# Set options(povmap.skip_xgb_version_check = TRUE) only for deliberate
+# non-reproducibility-critical use on another xgboost.
+.povmap_xgb_pin <- "3.1.2.1"
+.assert_xgb_version <- function() {
+  if (isTRUE(getOption("povmap.skip_xgb_version_check", FALSE))) return(invisible(NULL))
+  found <- as.character(utils::packageVersion("xgboost"))
+  if (!identical(found, .povmap_xgb_pin)) {
+    stop(sprintf(
+      paste0("xgboost version mismatch: found %s but the pinned reproducibility ",
+             "version is %s.\n  The SAE point estimates and bootstrap are version-",
+             "sensitive (see BUILD_PIN_xgb.txt); a different version silently re-",
+             "drifts the ward-level results.\n  Ensure the library holding xgboost ",
+             "%s resolves first in .libPaths(): %s\n  (To bypass deliberately: ",
+             "options(povmap.skip_xgb_version_check = TRUE).)"),
+      found, .povmap_xgb_pin, .povmap_xgb_pin,
+      paste(.libPaths(), collapse = " ; ")), call. = FALSE)
+  }
+  invisible(NULL)
+}
+
 xgb <- function(fixed,
                 smp_data,
                 smp_weights = NULL,
@@ -259,6 +287,7 @@ xgb <- function(fixed,
                 ...){
 
   #1. Initialize
+  .assert_xgb_version()
   out_call <- match.call()
   # default to using sample weights for benchmarking if internal benchmarking
   if (is.null(benchmark_weights) & !is.null(smp_weights)) {
