@@ -14,6 +14,7 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
                      benchmark_fn = NULL,
                      smp_weights_col = NULL,
                      weightedBS = TRUE,
+                     pop_weights_vec = NULL,
                      ...) {
   # smp_weights_col: name of a column on smp_data containing observation
   #   weights. Pulling weights from a column (rather than passing a vector)
@@ -80,6 +81,29 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
   sort_pop   <- order(as.character(pop_data[[dom_name]]))
   pop_data   <- pop_data[sort_pop, , drop = FALSE]
   unit_preds <- unit_preds[sort_pop, , drop = FALSE]
+
+  # Per-cell population weights aligned to the (now domain-sorted) pop rows, i.e.
+  # to gb_pop_vec / pop_dom_idx below. Same vector the point estimate aggregates
+  # with (megb.R:380). When absent or mis-sized, fall back to unweighted means so
+  # behaviour is unchanged.
+  pw_pop <- if (!is.null(pop_weights_vec) &&
+                length(pop_weights_vec) == nrow(pop_data)) {
+    as.numeric(pop_weights_vec)[sort_pop]
+  } else {
+    if (!is.null(pop_weights_vec))
+      warning("pop_weights_vec length (", length(pop_weights_vec),
+              ") != nrow(pop_data) (", nrow(pop_data),
+              "); bootstrap domain aggregation falls back to unweighted.")
+    NULL
+  }
+  # Population-weighted (or unweighted-fallback) domain mean of per-cell values,
+  # matching megb.R:380's sum(v*pw)/sum(pw). Used at every per-cell aggregation
+  # site so the bootstrap mirrors the point estimate's weighting as well as order.
+  agg_dom <- function(v) {
+    if (is.null(pw_pop)) as.numeric(tapply(v, pop_dom_idx, mean))
+    else as.numeric(tapply(v * pw_pop, pop_dom_idx, sum) /
+                    tapply(pw_pop,      pop_dom_idx, sum))
+  }
 
   # Fixed-effect-only predictors (GB output, *not* GB + BLUP). Falling back to
   # the combined predictions would re-introduce the area-effect double counting
@@ -153,7 +177,26 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
   # we don't materialise pop-level e — saves memory and avoids extra noise.
   pop_dom_idx   <- match(as.character(pop_data[[dom_name]]), domains)
   gb_pop_d_mean <- as.numeric(tapply(gb_pop_vec, pop_dom_idx, mean))
-  tau_star      <- gb_pop_d_mean + u_d_star    # broadcasts: D × B
+  tau_star      <- gb_pop_d_mean + u_d_star    # broadcasts: D × B (transformed scale)
+
+  # ── tau_star on the ORIGINAL scale: per-cell back-transform, then aggregate ──
+  # Mirror the reported point estimate's order exactly (megb.R: corrected_bt is
+  # applied to each population cell's transformed prediction, then the cells are
+  # aggregated to the domain). Previously the original-scale truth was formed by
+  # back-transforming the already-aggregated transformed mean (apply(tau_star, 2,
+  # corrected_bt) in .mse_megb_collate), i.e. aggregate-then-back-transform, which
+  # is Jensen-biased relative to the point estimate for internally heterogeneous
+  # domains. Here ONLY the aggregation order changes: the same corrected_bt (with
+  # the original fit's sigma^2_e), the same area-term draws u_d_star (0 for OOS
+  # domains, as built above), and the same unweighted domain aggregation are used.
+  # Column b pairs with replicate iteration b downstream (keep_orig indexing).
+  tau_star_orig_pc <- NULL
+  if (!is.null(corrected_bt)) {
+    tau_star_orig_pc <- vapply(seq_len(B), function(b) {
+      cell_orig <- corrected_bt(gb_pop_vec + u_d_star[pop_dom_idx, b])
+      agg_dom(cell_orig)
+    }, numeric(length(domains)))
+  }
 
   # ── Bootstrap "samples" are the original smp_data with y_star injected ──
   # No subsampling: each iter sees the same smp X distribution as the original
@@ -218,9 +261,14 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
       fe_boot  <- as.numeric(lme4::fixef(lmer_boot))[1]   # intercept
       u_d_boot <- as.numeric(re_per_d) - fe_boot   # length D, 0 for OOS
 
-      mean_boot_t    <- gb_pop_d_mean + u_d_boot
-      mean_boot_orig <- if (!is.null(corrected_bt)) corrected_bt(mean_boot_t)
-                        else mean_boot_t
+      mean_boot_t    <- gb_pop_d_mean + u_d_boot   # transformed aggregate (mse path)
+      # Original scale: per-cell back-transform then aggregate (mirror point
+      # estimate). lmm_only holds the booster fixed, so the per-cell fixed part is
+      # the original gb_pop_vec; only u_d_boot is re-estimated this iteration.
+      mean_boot_orig <- if (!is.null(corrected_bt)) {
+        cell_orig_boot <- corrected_bt(gb_pop_vec + u_d_boot[pop_dom_idx])
+        agg_dom(cell_orig_boot)
+      } else mean_boot_t
 
       mean_boot_bench <- if (!is.null(benchmark_fn)) {
         bs_for_bench <- smp_data
@@ -244,7 +292,8 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
     return(.mse_megb_collate(
       boots_models = boots_models, tau_star = tau_star, pop_data = pop_data,
       dom_name = dom_name, corrected_bt = corrected_bt,
-      benchmark_fn = benchmark_fn, domains = domains, error_sd = error_sd
+      benchmark_fn = benchmark_fn, domains = domains, error_sd = error_sd,
+      tau_star_orig_pc = tau_star_orig_pc
     ))
   }
 
@@ -388,9 +437,16 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
           gb_pop_d_mean_boot_mat[, i] <- gb_pop_d_mean_boot
           u_d_boot_mat[, i]           <- u_d_boot
         }
-        mean_boot_t        <- gb_pop_d_mean_boot + u_d_boot
-        mean_boot_orig     <- if (!is.null(corrected_bt)) corrected_bt(mean_boot_t)
-        else mean_boot_t
+        mean_boot_t        <- gb_pop_d_mean_boot + u_d_boot   # transformed aggregate (mse path)
+        # Original scale: per-cell back-transform then aggregate (mirror point
+        # estimate). Uses this iteration's refreshed per-cell predictions
+        # gb_pop_boot and re-estimated u_d_boot; same corrected_bt, same unweighted
+        # aggregation. Only the order differs from the previous
+        # corrected_bt(aggregate) line.
+        mean_boot_orig     <- if (!is.null(corrected_bt)) {
+          cell_orig_boot <- corrected_bt(gb_pop_boot + u_d_boot[pop_dom_idx])
+          agg_dom(cell_orig_boot)
+        } else mean_boot_t
 
         mean_boot_bench <- if (!is.null(benchmark_fn)) {
           bs_for_bench <- smp_data
@@ -420,7 +476,8 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
       return(.mse_megb_collate(
         boots_models = boots_models, tau_star = tau_star, pop_data = pop_data,
         dom_name = dom_name, corrected_bt = corrected_bt,
-        benchmark_fn = benchmark_fn, domains = domains, error_sd = error_sd
+        benchmark_fn = benchmark_fn, domains = domains, error_sd = error_sd,
+        tau_star_orig_pc = tau_star_orig_pc
       ))
     }
   }
@@ -454,15 +511,38 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
       cov_names  = .cov_names
     )
 
-    mean_preds <- unit_level_predictions$unit_pred_pop |>
+    upp <- unit_level_predictions$unit_pred_pop
+    mean_preds <- upp |>
       dplyr::group_by(dom_name) |>
       dplyr::summarise(Mean = mean(unit_preds)) |>
       as.data.frame()
 
-    mean_boot_t <- mean_preds[, "Mean"]
+    mean_boot_t <- mean_preds[, "Mean"]   # transformed aggregate (mse path)
 
-    mean_boot_orig  <- if (!is.null(.corrected_bt)) .corrected_bt(mean_boot_t)
-                       else mean_boot_t
+    # Original scale: per-cell back-transform then aggregate (mirror point
+    # estimate). The full refit already produces per-cell pop predictions
+    # (unit_preds, transformed, incl. the area effect); apply corrected_bt to each
+    # cell, then aggregate, instead of back-transforming the aggregated mean.
+    if (!is.null(.corrected_bt)) {
+      upp$.cell_orig <- .corrected_bt(upp$unit_preds)
+      # Population-weighted domain mean (matches megb.R:380); unweighted fallback
+      # when no pop weights were supplied. .pw_pop is aligned to .pop_data rows.
+      if (!is.null(.pw_pop)) {
+        upp$.pw <- .pw_pop
+        mo <- upp |>
+          dplyr::group_by(dom_name) |>
+          dplyr::summarise(.M = sum(.cell_orig * .pw) / sum(.pw)) |>
+          as.data.frame()
+      } else {
+        mo <- upp |>
+          dplyr::group_by(dom_name) |>
+          dplyr::summarise(.M = mean(.cell_orig)) |>
+          as.data.frame()
+      }
+      mean_boot_orig <- mo$.M[match(mean_preds$dom_name, mo$dom_name)]
+    } else {
+      mean_boot_orig <- mean_boot_t
+    }
     mean_boot_bench <- if (!is.null(.benchmark_fn)) .benchmark_fn(mean_boot_orig, x)
                        else NULL
 
@@ -489,7 +569,8 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
       .Y               = Y,
       .corrected_bt    = corrected_bt,
       .benchmark_fn    = benchmark_fn,
-      .smp_weights_vec = smp_weights_vec
+      .smp_weights_vec = smp_weights_vec,
+      .pw_pop          = pw_pop          # per-cell pop weights (sorted pop order), or NULL
     ),
     parent = getNamespace("povmap")
   )
@@ -525,14 +606,16 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
   .mse_megb_collate(
     boots_models = boots_models, tau_star = tau_star, pop_data = pop_data,
     dom_name = dom_name, corrected_bt = corrected_bt,
-    benchmark_fn = benchmark_fn, domains = domains, error_sd = error_sd
+    benchmark_fn = benchmark_fn, domains = domains, error_sd = error_sd,
+    tau_star_orig_pc = tau_star_orig_pc
   )
 }
 
 # Internal: collate per-iteration bootstrap outputs into the matrices and
 # summary frames mse_megb returns. Used by both the lmm_only and full paths.
 .mse_megb_collate <- function(boots_models, tau_star, pop_data, dom_name,
-                              corrected_bt, benchmark_fn, domains, error_sd) {
+                              corrected_bt, benchmark_fn, domains, error_sd,
+                              tau_star_orig_pc = NULL) {
 
   # Robust column-bind of per-iteration vectors of length D. Drops iterations
   # whose slot is NULL or whose length disagrees with D (with a warning).
@@ -572,7 +655,11 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
   tau_star_orig_bench <- NULL
   MSE_bench_estimates <- NULL
   if (!is.null(corrected_bt)) {
-    tau_star_orig     <- apply(tau_star, 2, corrected_bt)
+    # Prefer the per-cell-then-aggregate truth computed in mse_megb (mirrors the
+    # point estimate's back-transform order). Fall back to the legacy
+    # aggregate-then-back-transform only if it was not supplied (backward compat).
+    tau_star_orig     <- if (!is.null(tau_star_orig_pc)) tau_star_orig_pc
+                         else apply(tau_star, 2, corrected_bt)
     tau_star_orig_unb <- tau_star_orig[, keep_orig, drop = FALSE]
   }
   if (!is.null(corrected_bt) && !is.null(benchmark_fn)) {

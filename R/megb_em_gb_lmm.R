@@ -71,7 +71,20 @@ em_gb_lmm <- function(Y,
     model        <- gbm_results$boosting
     unit_pred_smp <- gbm_results$prediction
 
-    tmp_res    <- Y - unit_pred_smp
+    # Estimate the LMM (idiosyncratic variance sigma_e AND the shrunken random
+    # effect) from OUT-OF-FOLD GB residuals, not in-sample residuals. A strong
+    # learner overfits within-area in-sample, deflating sigma_e ~6x and inflating
+    # the EBLUP shrinkage factor toward 1 (so even one-observation areas are
+    # unshrunk and the RE over-absorbs covariate-predictable area structure). Using
+    # held-out residuals restores the proper area-specific shrinkage gradient
+    # (census-validated: gamma 0.99->~0.38 at n_d=1, ~0.85 at n_d>8) and removes the
+    # over-absorption. The point prediction still uses the in-sample GB
+    # (unit_pred_smp); only the variance/RE decomposition uses the held-out residual.
+    # Applied every EM iteration so the corrected variance feeds the next iteration.
+    # Disable with options(megb.oof_sigma = FALSE) to recover the legacy behaviour.
+    .use_oof <- !isFALSE(getOption("megb.oof_sigma", TRUE)) &&
+                !is.null(gbm_results$oof_prediction)
+    tmp_res    <- if (.use_oof) Y - gbm_results$oof_prediction else Y - unit_pred_smp
     formula_lmm <- as.formula(paste0("tmp_res ~ 1 +", formula_random_effects))
 
     suppressMessages(

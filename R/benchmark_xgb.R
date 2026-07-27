@@ -15,7 +15,27 @@
 benchmark_xgb_level <- function (point_estim, framework, fixed, benchmark,
                                  benchmark_type, benchmark_level,benchmark_weights = NULL) {
 
-
+  # Alignment guard: this function positionally zips point_estim$ind$Mean against
+  # unique(framework$pop_data[[domains]]) and the per-domain weights, i.e. it
+  # assumes the i-th point estimate belongs to the i-th unique pop_data domain. A
+  # caller whose point estimates are in a different domain order (e.g. megb's
+  # tapply/alphabetical order vs pop_data's first-appearance order) would be
+  # silently mis-benchmarked. When the caller supplies labels on
+  # point_estim$ind$Domain, verify the contract and error loudly on any mismatch.
+  if (!is.null(point_estim$ind$Domain)) {
+    .pe_dom  <- as.character(point_estim$ind$Domain)
+    .pop_dom <- as.character(unique(framework$pop_data[[framework$domains]]))
+    if (length(.pe_dom) != length(.pop_dom) || !identical(.pe_dom, .pop_dom)) {
+      .ndiff <- if (length(.pe_dom) == length(.pop_dom))
+                  sum(.pe_dom != .pop_dom) else NA_integer_
+      stop(sprintf(paste0("benchmark_xgb_level: point-estimate domain order does ",
+        "not match unique(pop_data[['%s']]) order (%s of %d positions differ). ",
+        "Benchmarking positionally zips these, so a mismatch silently mis-assigns ",
+        "territories to the wrong benchmark target."),
+        framework$domains, ifelse(is.na(.ndiff), "a differing number", .ndiff),
+        length(.pop_dom)))
+    }
+  }
 
   if (!is.numeric(benchmark)) {
     benchmark_ <- collapse::fmean(framework$smp_data[[paste0(fixed[2])]],g=framework$smp_data[,benchmark_level],w=framework$smp_data[,framework$smp_weights])
