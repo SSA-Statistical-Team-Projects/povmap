@@ -153,6 +153,16 @@
 #'   target into the benchmarked confidence intervals, correcting potential
 #'   undercoverage that arises when the bootstrap state mean is far more
 #'   stable than the real direct estimate. Defaults to \code{FALSE}.
+#' @param benchmark_target_se optional named numeric vector giving the standard
+#'   error of each benchmark-level direct estimate, keyed by the
+#'   \code{benchmark_level} group value. When supplied (and
+#'   \code{perturb_benchmark = TRUE}), it is used as the SD of the
+#'   benchmark-target perturbation instead of the internal Horvitz-Thompson
+#'   estimate. Supply the same estimator used to build the published direct-
+#'   estimate confidence intervals (typically the cluster-robust / Taylor SE) so
+#'   the perturbation injects exactly the uncertainty the target is reported
+#'   with. An error is raised if any benchmark group is missing from the vector.
+#'   Defaults to \code{NULL} (use the internal Horvitz-Thompson SE).
 #' @importFrom purrr as_vector
 #' @importFrom collapse fmean
 #' @importFrom foreach foreach %dopar% %do%
@@ -199,10 +209,17 @@
 # Formula: V_HT(ȳ_g) = n_g / ((n_g-1) * (Σw)²) * Σ w²(y - ȳ)²
 # Equivalent to the with-replacement linearisation used by survey::svymean.
 ht_var_weighted_mean <- function(y, w, g) {
-  # Horvitz-Thompson variance of a weighted mean under Poisson sampling:
-  #   sigma_hat^2 = (1 / (sum w)^2) * sum_i w_i (w_i - 1) y_i^2
-  # See Annex 2 of the Nigeria SAE report for derivation. This matches the
-  # direct-estimate variance used elsewhere in the project.
+  # Horvitz-Thompson / Hajek variance of a weighted MEAN (ratio estimator
+  # yhat = sum(w y) / sum(w)) under Poisson sampling:
+  #   sigma_hat^2 = (1 / (sum w)^2) * sum_i w_i (w_i - 1) (y_i - yhat)^2
+  # The residual (y_i - yhat) is REQUIRED: sum w(w-1) y_i^2 is the variance of
+  # the TOTAL (sum w y); for the ratio mean the deviations from the estimated
+  # mean must be used, otherwise the variance scales with E[y^2] rather than the
+  # dispersion of y and is grossly inflated for outcomes whose mean is far from
+  # zero (e.g. a proportion near 0.6: ~7x too large in variance, ~3x in SE).
+  # Census-validated: the centered form reproduces the design-based province
+  # cluster-robust (Taylor) SE used elsewhere in the project (0.043 vs 0.044 for
+  # DRC poverty); the uncentered form gave 0.144.
   g <- as.character(g)
   groups <- unique(g)
   result <- setNames(numeric(length(groups)), groups)
@@ -210,36 +227,44 @@ ht_var_weighted_mean <- function(y, w, g) {
     idx  <- g == grp
     y_g  <- y[idx];  w_g <- w[idx];  n_g <- sum(idx)
     if (n_g < 2L) { result[grp] <- NA_real_; next }
-    result[grp] <- sum(w_g * (w_g - 1) * y_g^2) / sum(w_g)^2
+    ybar_g <- sum(w_g * y_g) / sum(w_g)
+    result[grp] <- sum(w_g * (w_g - 1) * (y_g - ybar_g)^2) / sum(w_g)^2
   }
   result
 }
 
-# Pinned-version guard -- see BUILD_PIN_xgb.txt
+# Tested-version notice.
 # The xgb point estimate and bootstrap are sensitive to the xgboost version:
 # cross-version prediction drift is diffuse (~0.05 median per ward between
 # 1.7.7.1 and 3.1.2.1 on identical data) and is NOT fixable by setting
-# base_score/tree_method/max_bin explicitly. The reproducibility anchor is
-# xgboost 3.1.2.1. This guard runs before any model fit so a wrong-library
-# environment (e.g. a system-library 1.7.7.1 resolving ahead of the pinned
-# library) fails loudly instead of silently re-drifting onto another version.
-# Set options(povmap.skip_xgb_version_check = TRUE) only for deliberate
-# non-reproducibility-critical use on another xgboost.
-.povmap_xgb_pin <- "3.1.2.1"
+# base_score/tree_method/max_bin explicitly. povmap's results were validated
+# against xgboost 3.1.2.1, so estimates produced on another version may differ
+# from published ones even on identical data and tuning.
+#
+# This used to stop(). It no longer does: pinning to a single version makes the
+# package unusable on every future xgboost release, which is a worse problem than
+# the drift it guards against. The finding is preserved as a one-time warning so
+# the user can judge whether cross-version comparability matters for their use.
+# Suppress with options(povmap.skip_xgb_version_check = TRUE).
+.povmap_xgb_tested <- "3.1.2.1"
+.povmap_xgb_warned <- new.env(parent = emptyenv())
 .assert_xgb_version <- function() {
   if (isTRUE(getOption("povmap.skip_xgb_version_check", FALSE))) return(invisible(NULL))
   found <- as.character(utils::packageVersion("xgboost"))
-  if (!identical(found, .povmap_xgb_pin)) {
-    stop(sprintf(
-      paste0("xgboost version mismatch: found %s but the pinned reproducibility ",
-             "version is %s.\n  The SAE point estimates and bootstrap are version-",
-             "sensitive (see BUILD_PIN_xgb.txt); a different version silently re-",
-             "drifts the ward-level results.\n  Ensure the library holding xgboost ",
-             "%s resolves first in .libPaths(): %s\n  (To bypass deliberately: ",
-             "options(povmap.skip_xgb_version_check = TRUE).)"),
-      found, .povmap_xgb_pin, .povmap_xgb_pin,
-      paste(.libPaths(), collapse = " ; ")), call. = FALSE)
-  }
+  if (identical(found, .povmap_xgb_tested)) return(invisible(NULL))
+  # warn once per session: three entry points call this, and xgb_tune/xgb_cv call
+  # it inside loops, so a per-call warning would bury the message it is making.
+  if (isTRUE(.povmap_xgb_warned$done)) return(invisible(NULL))
+  .povmap_xgb_warned$done <- TRUE
+  warning(sprintf(
+    paste0("xgboost %s detected; povmap's xgb results were validated against %s.\n",
+           "  Point estimates and bootstrap intervals are version-sensitive: drift of\n",
+           "  ~0.05 median per ward was observed between 1.7.7.1 and 3.1.2.1 on identical\n",
+           "  data and tuning, and is not removable by setting base_score, tree_method or\n",
+           "  max_bin. Results remain internally consistent on any single version; only\n",
+           "  cross-version comparisons are affected.\n",
+           "  (Silence with options(povmap.skip_xgb_version_check = TRUE).)"),
+    found, .povmap_xgb_tested), call. = FALSE)
   invisible(NULL)
 }
 
@@ -283,6 +308,7 @@ xgb <- function(fixed,
                 variance_y = NULL,
                 rescale_weights = TRUE,
                 perturb_benchmark = FALSE,
+                benchmark_target_se = NULL,
                 verbose = FALSE,
                 ...){
 
@@ -458,24 +484,55 @@ xgb <- function(fixed,
 
   B_sub <- xgb_model$sub_predictions
 
-  # Pre-compute Horvitz-Thompson SE of the state-level (benchmark_level) direct
-  # estimate, then pre-generate all B perturbations as a named matrix so that
-  # parallel foreach workers receive a simple object (no rnorm inside workers).
+  # Standard error of the benchmark-level (e.g. province) direct target, used as
+  # the SD of the benchmark-target perturbation, then pre-generate all B
+  # perturbations as a named matrix so parallel foreach workers receive a simple
+  # object (no rnorm inside workers).
+  #
+  # Preferred: the caller supplies `benchmark_target_se`, a named vector giving
+  # the design-based SE of each benchmark-level direct estimate (keyed by the
+  # benchmark_level group value). This should be the SAME estimator that produces
+  # the published direct-estimate confidence intervals -- typically the
+  # cluster-robust (Taylor) SE -- so the perturbation injects exactly the
+  # uncertainty the target is reported with, by construction.
+  #
+  # Fallback (benchmark_target_se = NULL): the internal Horvitz-Thompson centered
+  # variance of the weighted mean (ht_var_weighted_mean), computed from the
+  # supplied sample. This is design-based but is computed on the (enumeration-area
+  # aggregated) sample handed to xgb(), so it can differ slightly from a
+  # cluster-robust SE built on the full microdata; prefer benchmark_target_se when
+  # the matching direct SEs are available.
   if (perturb_benchmark && !is.null(benchmark_level)) {
-    bm_ht_var <- ht_var_weighted_mean(
-      y = fwk$smp_data[[fwk$outcome]],
-      w = fwk$smp_data[[benchmark_weights]],
-      g = fwk$smp_data[[benchmark_level]]
-    )
-    bm_ht_se <- sqrt(bm_ht_var)
-    if (any(is.na(bm_ht_se))) {
-      warning("perturb_benchmark: some benchmark groups have n < 2; HT SE set to 0 for those groups.")
-      bm_ht_se[is.na(bm_ht_se)] <- 0
+    groups_bm <- unique(as.character(fwk$smp_data[[benchmark_level]]))
+    if (!is.null(benchmark_target_se)) {
+      nm <- names(benchmark_target_se)
+      if (is.null(nm)) stop("perturb_benchmark: benchmark_target_se must be a named vector keyed by benchmark_level group.")
+      bm_ht_se <- setNames(rep(NA_real_, length(groups_bm)), groups_bm)
+      hit <- intersect(groups_bm, nm)
+      bm_ht_se[hit] <- as.numeric(benchmark_target_se[hit])
+      if (any(is.na(bm_ht_se))) stop(sprintf(
+        "perturb_benchmark: benchmark_target_se is missing %d of %d benchmark groups: %s",
+        sum(is.na(bm_ht_se)), length(bm_ht_se),
+        paste(names(bm_ht_se)[is.na(bm_ht_se)], collapse = ", ")))
+      if (verbose) message(sprintf(
+        "perturb_benchmark: supplied direct SE at benchmark level - median %.4f, range [%.4f, %.4f]",
+        median(bm_ht_se), min(bm_ht_se), max(bm_ht_se)))
+    } else {
+      bm_ht_var <- ht_var_weighted_mean(
+        y = fwk$smp_data[[fwk$outcome]],
+        w = fwk$smp_data[[benchmark_weights]],
+        g = fwk$smp_data[[benchmark_level]]
+      )
+      bm_ht_se <- sqrt(bm_ht_var)
+      if (any(is.na(bm_ht_se))) {
+        warning("perturb_benchmark: some benchmark groups have n < 2; HT SE set to 0 for those groups.")
+        bm_ht_se[is.na(bm_ht_se)] <- 0
+      }
+      if (verbose) message(sprintf(
+        "perturb_benchmark: internal HT SE at benchmark level - median %.4f, range [%.4f, %.4f]",
+        median(bm_ht_se), min(bm_ht_se), max(bm_ht_se)
+      ))
     }
-    if (verbose) message(sprintf(
-      "perturb_benchmark: HT SE at benchmark level — median %.4f, range [%.4f, %.4f]",
-      median(bm_ht_se), min(bm_ht_se), max(bm_ht_se)
-    ))
     # B x n_groups matrix: row j gives the noise to add in bootstrap iteration j.
     # Pre-generating avoids rnorm() inside parallel workers (unpredictable RNG state)
     # and makes the draws reproducible given the outer seed.
@@ -787,12 +844,29 @@ xgb <- function(fixed,
       for (grp in unique(grp_per_col[!is.na(grp_per_col)])) {
         if (!grp %in% colnames(bm_perturbations)) next
         cols <- which(grp_per_col == grp)
-        # bm_perturbations[, grp] is length-B; R broadcasts it across all cols
-        B_results_bench[, cols] <- B_results_bench[, cols] + bm_perturbations[, grp]
-        if (transformation == "arcsin")
-          B_results_bench[, cols] <- pmax(0, pmin(1, B_results_bench[, cols]))
-        else if (transformation %in% c("log", "log.shift", "poisson"))
-          B_results_bench[, cols] <- pmax(1e-10, B_results_bench[, cols])
+        # Perturb the benchmark target on the model's transformed (unbounded) scale
+        # and back-transform, so perturbed draws stay in range WITHOUT a clamp. The
+        # rate-scale target SE (bm_perturbations) is mapped to a transformed-scale
+        # increment via the transform's local derivative at the group mean (delta
+        # method), preserving the intended benchmark-uncertainty magnitude. The
+        # previous behaviour added the perturbation on the rate scale and hard-clamped
+        # arcsin draws to [0, 1]; near the 0/1 boundary that clamp could CONTRACT
+        # interval widths (occasionally below the unperturbed width), an artefact that
+        # perturbing on the transformed scale removes. bm_perturbations[, grp] is
+        # length-B and is broadcast across all cols.
+        if (transformation == "no") {
+          B_results_bench[, cols] <- B_results_bench[, cols] + bm_perturbations[, grp]
+        } else {
+          lo   <- 1e-9
+          hi   <- if (transformation == "arcsin") 1 - 1e-9 else Inf
+          pbar <- min(max(mean(B_results_bench[, cols], na.rm = TRUE), lo), hi)
+          eps  <- 1e-4
+          p_hi <- min(pbar + eps, hi); p_lo <- max(pbar - eps, lo)
+          dzdp <- (transform_outcome(p_hi)$y - transform_outcome(p_lo)$y) / (p_hi - p_lo)
+          tb   <- transform_outcome(pmin(pmax(B_results_bench[, cols], lo), hi))$y
+          tb   <- tb + bm_perturbations[, grp] * as.numeric(dzdp)
+          B_results_bench[, cols] <- back_transform_outcome(tb)
+        }
       }
 
       if (verbose) {

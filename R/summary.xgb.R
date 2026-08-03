@@ -70,12 +70,24 @@ summary.xgb <- function(object, ...) {
   y <- object$smp_data[,c(object$framework$outcome,object$framework$sub_domains,object$framework$domains,object$framework$smp_weights)]
   #colnames(y)[2] <- "sub_domains"
   y <- na.omit(merge(x=y,y=object$yhat,all.x=T,by=object$framework$sub_domains))
-  r_squared <- cor(y[,object$framework$outcome],y$hat)^2
+  # Two distinct in-sample fit statistics, reported separately so neither can be
+  # mistaken for the other (see print.summary.xgb legend):
+  #   squared_correlation = cor(y, yhat)^2, the squared Pearson correlation.
+  #     Invariant to a linear rescaling of the prediction; measures co-variation
+  #     only. This is the quantity historically labelled "R2".
+  #   r2_prop_var = 1 - SSE/SST, the proportion of variance explained. Penalizes
+  #     bias and scale compression and can be negative. Numerator and denominator
+  #     use matched denominators (both are sums), so it is exactly 1 - SSE/SST.
+  squared_correlation <- cor(y[,object$framework$outcome],y$hat)^2
+  r2_prop_var <- 1 - sum((y[,object$framework$outcome] - y$hat)^2) /
+    sum((y[,object$framework$outcome] - mean(y[,object$framework$outcome]))^2)
   mae <- mean(abs(y[,object$framework$outcome] - y$hat))
   rank_cor <- cor(y[,object$framework$outcome], y$hat, method = "spearman")
   y_yhat <- y[,c(object$framework$outcome,"hat")]
   area_means <- collapse::fmean(x=y_yhat,g=y[,object$framework$domains],w=y[,object$framework$smp_weights])
-  area_r_squared <- cor(area_means[,object$framework$outcome],area_means$hat)^2
+  area_squared_correlation <- cor(area_means[,object$framework$outcome],area_means$hat)^2
+  area_r2_prop_var <- 1 - sum((area_means[,object$framework$outcome] - area_means$hat)^2) /
+    sum((area_means[,object$framework$outcome] - mean(area_means[,object$framework$outcome]))^2)
   area_mae <- mean(abs(area_means[,object$framework$outcome] - area_means$hat))
   area_rank_cor <- cor(area_means[,object$framework$outcome], area_means$hat, method = "spearman")
 
@@ -97,13 +109,15 @@ summary.xgb <- function(object, ...) {
   )
 
   coeff_det <- data.frame(
-    R2    = r_squared,
-    MAE   = mae,
-    Rank_cor = rank_cor,
-    Area_R2 = area_r_squared,
-    Area_MAE = area_mae,
-    Area_Rank_cor = area_rank_cor,
-    row.names      = ""
+    Squared_correlation      = squared_correlation,
+    R2_prop_var              = r2_prop_var,
+    MAE                      = mae,
+    Rank_cor                 = rank_cor,
+    Area_squared_correlation = area_squared_correlation,
+    Area_R2_prop_var         = area_r2_prop_var,
+    Area_MAE                 = area_mae,
+    Area_Rank_cor            = area_rank_cor,
+    row.names                = ""
   )
 
   feature_names <- xgboost:::xgb.feature_names(object$model)
@@ -164,6 +178,11 @@ print.summary.xgb <- function(x, ...) {
   cat("\n")
   print(x$sizedom_smp_pop)
   cat("\n")
+  cat("Fit statistics (in-sample):\n")
+  cat("________________________________________________________________\n")
+  cat("Squared_correlation: squared Pearson correlation, cor(y, yhat)^2\n")
+  cat("R2_prop_var: proportion of variance explained, 1 - SSE/SST (can be negative)\n")
+  cat("Prefix Area_: computed on the domain (area) means rather than the units\n")
   print(x$coeff_determ)
   cat("\n")
   cat("Variance components:\n")

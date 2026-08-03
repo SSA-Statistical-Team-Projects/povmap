@@ -45,8 +45,15 @@
 #'   comparing specifications with and without the area-level covariates
 #'   and by leave-areas-out cross-validation, rather than by truncating
 #'   the EM loop.
-#' @param bench_target one of \code{"random"} (default) or \code{"fixed"}.
-#'   Controls how the benchmark target is treated *inside the bootstrap*. Only
+#' @param bench_target one of \code{"fixed"} (default) or \code{"random"}.
+#'   Controls how the benchmark target is treated *inside the bootstrap*. "fixed"
+#'   rakes every replicate to the observed (province/level) target, so the
+#'   benchmarked MSE/CI is the spread of the estimate around the realised truth at
+#'   the observed target — the correct choice for benchmarking to an observed survey
+#'   target. "random" recomputes the target from each replicate's own resampled
+#'   survey, which makes the benchmarked estimate track its own bootstrap mean and
+#'   collapses the level variance, giving too-narrow intervals (census-validated:
+#'   well-sampled-area coverage 0.74 under "random" vs 0.96 under "fixed"). Only
 #'   matters when \code{benchmark} is character (internal, survey-derived
 #'   benchmarking); for numeric or data.frame benchmarks the target is a
 #'   constant by construction.
@@ -188,7 +195,7 @@ megb <- function(fixed,
                  mse              = TRUE,
                  mse_type         = c("var", "mse"),
                  bootstrap_refit  = c("leaves_only", "full", "lmm_only"),
-                 bench_target     = c("random", "fixed"),
+                 bench_target     = c("fixed", "random"),
                  B                = 100,
                  bootstrap_cores  = 0,
                  conf_level       = 0.95,
@@ -241,8 +248,13 @@ megb <- function(fixed,
   # which benchmark_ebp_level does not implement and would silently return
   # all-NA Mean_bench).
   add_benchmark_megb <- function(x, benchmark_level, fwk, fixed,
-                                 benchmark, benchmark_type) {
-    point_estim       <- list(ind = data.frame(Mean = x))
+                                 benchmark, benchmark_type, domain_labels = NULL) {
+    # Carry domain labels so benchmark_xgb_level can assert positional alignment
+    # with unique(pop_data[[domains]]) (guards the key-alignment fix above).
+    point_estim       <- if (!is.null(domain_labels))
+                           list(ind = data.frame(Mean = x, Domain = domain_labels,
+                                                 stringsAsFactors = FALSE))
+                         else list(ind = data.frame(Mean = x))
     if (is.null(benchmark_level)) {
       point_estim$ind <- benchmark_ebp_national(
         point_estim    = point_estim,
@@ -389,11 +401,27 @@ megb <- function(fixed,
     stringsAsFactors = FALSE
   )
 
+  # ── Benchmark key-alignment fix ───────────────────────────────────────────────
+  # benchmark_xgb_level() positionally zips point_estim$ind$Mean against
+  # unique(pop_data[[domains]]) (and the per-domain population weights). megb builds
+  # `ind` via tapply(), which orders domains ALPHABETICALLY; pop_data is in
+  # first-appearance order. When the two differ, every misplaced territory is raked
+  # under the wrong benchmark-level target, silently corrupting the benchmarked
+  # estimates (observed: ~90% of territories mis-assigned, with non-monotone
+  # within-level redistribution and spurious zeros). xgb is unaffected because it
+  # builds `ind` in pop_data order natively. Reorder `ind` to pop_data's domain
+  # order so the positional contract holds; the assertion in benchmark_xgb_level
+  # turns any residual mismatch into a loud error rather than silent corruption.
+  .pop_dom_order <- as.character(unique(fwk$pop_data[[domains]]))
+  ind <- ind[match(.pop_dom_order, as.character(ind$Domain)), , drop = FALSE]
+  rownames(ind) <- NULL
+
   # ── 6b. Benchmarking of point estimates ───────────────────────────────────────
   ind_bench <- NULL
   if (!is.null(benchmark)) {
     bench_vals <- add_benchmark_megb(
       x               = ind$Mean,
+      domain_labels   = ind$Domain,
       benchmark_level = benchmark_level,
       fwk             = fwk,
       fixed           = fixed,

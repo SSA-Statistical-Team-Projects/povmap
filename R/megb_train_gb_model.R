@@ -32,12 +32,22 @@ train_gbmodel <- function(model_type, features_train, response_train,
         nfold                 = 5,
         early_stopping_rounds = 10,
         verbose               = 0,
-        prediction            = FALSE,
+        prediction            = TRUE,   # keep out-of-fold preds for honest sigma_e
         ...
       )
       best_iter <- cv$best_iteration
       if (is.null(best_iter) || length(best_iter) == 0 || best_iter <= 0)
         best_iter <- nrounds
+      # Out-of-fold (held-out) predictions, used by em_gb_lmm to estimate the
+      # idiosyncratic error variance from held-out rather than in-sample residuals.
+      # A strong learner overfits within-area in-sample, which deflates sigma_e and
+      # inflates the EBLUP shrinkage toward 1 (the RE then over-absorbs covariate-
+      # predictable area structure). xgboost >= 2.x returns these in $cv_predict;
+      # older versions in $pred.
+      oof <- cv$cv_predict; if (is.null(oof)) oof <- cv$pred
+      if (is.list(oof)) oof <- oof[[1]]
+      oof <- suppressWarnings(as.numeric(oof))
+      if (length(oof) != nrow(features_train)) oof <- NULL  # guard: fall back to in-sample
 
       booster <- xgboost::xgb.train(
         data    = dtrain,
@@ -51,6 +61,7 @@ train_gbmodel <- function(model_type, features_train, response_train,
            best_iter     = best_iter,
            feature_names = colnames(features_train),
            prediction    = stats::predict(booster, dtrain),
+           oof_prediction = oof,
            eval_log      = cv$evaluation_log,
            train_pool_schema = NULL)
     },

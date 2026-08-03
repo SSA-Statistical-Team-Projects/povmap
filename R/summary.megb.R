@@ -42,8 +42,17 @@ summary.megb <- function(object, ...) {
   Y_actual <- object$framework$Y_smp
   Y_hat    <- object$framework$unit_pred_smp
 
+  # Two distinct in-sample fit statistics, reported separately so neither can be
+  # mistaken for the other (mirrors summary.xgb):
+  #   squared_correlation = cor(y, yhat)^2, the squared Pearson correlation
+  #     (invariant to a linear rescaling; historically labelled "R2").
+  #   r2_prop_var = 1 - SSE/SST, the proportion of variance explained, with
+  #     matched denominators (both sums); penalizes compression and can be negative.
   if (!is.null(Y_hat) && length(Y_hat) == length(Y_actual)) {
-    r_squared <- tryCatch(cor(Y_actual, Y_hat)^2,    error = function(e) NA)
+    squared_correlation <- tryCatch(cor(Y_actual, Y_hat)^2, error = function(e) NA)
+    r2_prop_var <- tryCatch(
+      1 - sum((Y_actual - Y_hat)^2) / sum((Y_actual - mean(Y_actual))^2),
+      error = function(e) NA)
     mae       <- mean(abs(Y_actual - Y_hat))
     rank_cor  <- tryCatch(cor(Y_actual, Y_hat, method = "spearman"), error = function(e) NA)
 
@@ -58,28 +67,36 @@ summary.megb <- function(object, ...) {
       error = function(e) NULL
     )
     if (!is.null(area_means) && nrow(area_means) >= 2) {
-      area_r_squared <- tryCatch(cor(area_means$Y, area_means$hat)^2,
+      area_squared_correlation <- tryCatch(cor(area_means$Y, area_means$hat)^2,
                                  error = function(e) NA)
+      area_r2_prop_var <- tryCatch(
+        1 - sum((area_means$Y - area_means$hat)^2) /
+          sum((area_means$Y - mean(area_means$Y))^2),
+        error = function(e) NA)
       area_mae       <- mean(abs(area_means$Y - area_means$hat))
       area_rank_cor  <- tryCatch(
         cor(area_means$Y, area_means$hat, method = "spearman"),
         error = function(e) NA
       )
     } else {
-      area_r_squared <- NA; area_mae <- NA; area_rank_cor <- NA
+      area_squared_correlation <- NA; area_r2_prop_var <- NA
+      area_mae <- NA; area_rank_cor <- NA
     }
   } else {
-    r_squared <- NA; mae <- NA; rank_cor <- NA
-    area_r_squared <- NA; area_mae <- NA; area_rank_cor <- NA
+    squared_correlation <- NA; r2_prop_var <- NA; mae <- NA; rank_cor <- NA
+    area_squared_correlation <- NA; area_r2_prop_var <- NA
+    area_mae <- NA; area_rank_cor <- NA
   }
 
   coeff_det <- data.frame(
-    R2            = r_squared,
-    MAE           = mae,
-    Rank_cor      = rank_cor,
-    Area_R2       = area_r_squared,
-    Area_MAE      = area_mae,
-    Area_Rank_cor = area_rank_cor,
+    Squared_correlation      = squared_correlation,
+    R2_prop_var              = r2_prop_var,
+    MAE                      = mae,
+    Rank_cor                 = rank_cor,
+    Area_squared_correlation = area_squared_correlation,
+    Area_R2_prop_var         = area_r2_prop_var,
+    Area_MAE                 = area_mae,
+    Area_Rank_cor            = area_rank_cor,
     row.names = ""
   )
 
@@ -164,6 +181,11 @@ print.summary.megb <- function(x, ...) {
   cat("\n")
   print(x$sizedom_smp_pop)
   cat("\n")
+  cat("Fit statistics (in-sample):\n")
+  cat("________________________________________________________________\n")
+  cat("Squared_correlation: squared Pearson correlation, cor(y, yhat)^2\n")
+  cat("R2_prop_var: proportion of variance explained, 1 - SSE/SST (can be negative)\n")
+  cat("Prefix Area_: computed on the domain (area) means rather than the units\n")
   print(x$coeff_determ)
   cat("\nVariance components:\n")
   cat("________________________________________________________________\n")

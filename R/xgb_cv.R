@@ -49,9 +49,18 @@
 #' generated. Defaults to NULL.
 #' @param ... additional parameters passed to \code{xgb}.
 #'
-#' @return A list containing:
+#' @return A list containing (all fit statistics are scored against the direct
+#'   estimate, a noisy target, not against a known truth):
 #' \describe{
-#'   \item{r2_cv}{Out-of-sample R-squared on the back-transformed scale}
+#'   \item{r2_cv}{Out-of-sample R-squared, the proportion of variance explained,
+#'     exactly 1 - SSE/SST with matched (sum) denominators. Penalizes bias and
+#'     scale compression and can be negative. Denominator is the variation of the
+#'     noisy direct estimate.}
+#'   \item{cor_cv}{Out-of-sample Pearson correlation between the held-out
+#'     prediction and the direct estimate. Invariant to a linear rescaling of the
+#'     prediction, so it is not driven down by compression toward the mean.}
+#'   \item{cor2_cv}{Square of \code{cor_cv}, the squared Pearson correlation.
+#'     Distinct from \code{r2_cv}; the two coincide only for in-sample OLS fits.}
 #'   \item{mse_cv}{Out-of-sample MSE on the back-transformed scale}
 #'   \item{mae_cv}{Out-of-sample MAE on the back-transformed scale}
 #'   \item{rank_cor_cv}{Out-of-sample Spearman rank correlation}
@@ -328,11 +337,25 @@ xgb_cv <- function(fixed,
   # Merge with direct estimates
   cv_results <- merge(cv_predictions, direct_estimates, by = "Domain")
 
-  # Compute diagnostics on the back-transformed (original) scale
+  # Compute diagnostics on the back-transformed (original) scale.
+  # All out-of-sample statistics are scored against the DIRECT estimate, which is
+  # itself a noisy target, not against a known truth.
   mse_cv <- mean((cv_results$Direct - cv_results$Predicted)^2)
   mae_cv <- mean(abs(cv_results$Direct - cv_results$Predicted))
-  var_direct <- var(cv_results$Direct)
-  r2_cv <- 1 - mse_cv / var_direct
+  # r2_cv: proportion of variance explained, exactly 1 - SSE/SST. Numerator and
+  # denominator use matched denominators (both are sums). Penalizes bias and
+  # scale compression and can be negative. Distinct from cor2_cv below.
+  # (Previously this divided SSE by n and SST by n-1, understating the ratio by a
+  # factor (n-1)/n and overstating r2_cv; corrected to matched sums.)
+  sse_cv <- sum((cv_results$Direct - cv_results$Predicted)^2)
+  sst_cv <- sum((cv_results$Direct - mean(cv_results$Direct))^2)
+  r2_cv <- 1 - sse_cv / sst_cv
+  # cor_cv: Pearson correlation between held-out prediction and direct estimate;
+  # cor2_cv its square. Invariant to a linear rescaling of the prediction, so it
+  # measures co-variation only and, unlike r2_cv, is not driven down by
+  # compression of the prediction toward the mean.
+  cor_cv <- cor(cv_results$Direct, cv_results$Predicted)
+  cor2_cv <- cor_cv^2
   rank_cor_cv <- cor(cv_results$Direct, cv_results$Predicted, method = "spearman")
 
   # Skewness of domain-level outcomes
@@ -342,6 +365,8 @@ xgb_cv <- function(fixed,
   # Output
   result <- list(
     r2_cv = r2_cv,
+    cor_cv = cor_cv,
+    cor2_cv = cor2_cv,
     mse_cv = mse_cv,
     mae_cv = mae_cv,
     rank_cor_cv = rank_cor_cv,
@@ -351,11 +376,14 @@ xgb_cv <- function(fixed,
 
   if (verbose) {
     cat("Cross-validation results (with population data):\n")
-    cat("  R2:        ", round(r2_cv, 4), "\n")
-    cat("  MSE:       ", round(mse_cv, 6), "\n")
-    cat("  MAE:       ", round(mae_cv, 4), "\n")
-    cat("  Rank cor:  ", round(rank_cor_cv, 4), "\n")
-    cat("  Skewness:  ", round(skewness_domains, 3), "\n")
+    cat("  (all scored against the noisy direct estimate, not truth)\n")
+    cat("  R2 (1 - SSE/SST): ", round(r2_cv, 4), "\n")
+    cat("  Correlation:      ", round(cor_cv, 4), "\n")
+    cat("  Cor-squared:      ", round(cor2_cv, 4), "\n")
+    cat("  MSE:              ", round(mse_cv, 6), "\n")
+    cat("  MAE:              ", round(mae_cv, 4), "\n")
+    cat("  Rank cor:         ", round(rank_cor_cv, 4), "\n")
+    cat("  Skewness:         ", round(skewness_domains, 3), "\n")
   }
 
   # Generate predicted vs direct plot if filename is specified
