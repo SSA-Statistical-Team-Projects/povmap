@@ -633,6 +633,19 @@ xgb <- function(fixed,
                                   B_domains$sim_t_plus_area <- B_domains$sim_t +B_domains$area_draw
                                   B_domains$sim_plus_area <- back_transform_outcome(B_domains$sim_t_plus_area)
 
+                                  # [ORDER] Per-cell replicate, so the interval quantiles follow the
+                                  # same back-transform-then-aggregate order as the point estimate
+                                  # (hat_pc). Mirrors point_estim_xgb lines ~1144-1149 and the
+                                  # benchmark branch below. The area draw is REUSED, not redrawn, so
+                                  # this consumes no additional RNG and the bootstrap stream is
+                                  # unchanged; with transformation = "no" back_transform_outcome is
+                                  # the identity and sim_plus_area_pc == sim_plus_area exactly.
+                                  sub_area_draw_pc <- area_draw$area_draw[match(B_sub[,fwk$domains],
+                                                                                area_draw$domains)]
+                                  B_domains$sim_plus_area_pc <- collapse:::fmean(
+                                    x = back_transform_outcome(B_sub$sim_t + sub_area_draw_pc),
+                                    g = B_sub[,fwk$domains], w = B_sub[,fwk$pop_weights])
+
 
 
                                   if (!is.null(benchmark)) {
@@ -773,6 +786,9 @@ xgb <- function(fixed,
                                   B_domains <- collapse:::fmean(x=B_sub$sim,g=B_sub$domains,w=B_sub$wts)
                                   B_domains <- data.frame("domains" = names(B_domains),"sim" = B_domains)
                                   B_domains$sim_plus_area <- B_domains$sim
+                                  # [ORDER] this branch already back-transforms per cell before
+                                  # aggregating, so the two orderings coincide here
+                                  B_domains$sim_plus_area_pc <- B_domains$sim
                                   B_domains$sim_bench <- NULL
                                   B_domains$sim_truth <- NULL
                                 }
@@ -781,6 +797,7 @@ xgb <- function(fixed,
                                 # Return a single-row data frame with list-columns
                                 data.frame(
                                   B_results = I(list(B_domains$sim_plus_area)),      # I() prevents unlisting
+                                  B_results_pc = I(list(B_domains$sim_plus_area_pc)),  # [ORDER]
                                   B_results_bench = I(list(B_domains$sim_bench)),
                                   B_results_truth = I(list(B_domains$sim_truth)),
                                   B_domains = I(list(B_domains$domains)),
@@ -797,6 +814,7 @@ xgb <- function(fixed,
     # Extract and combine from list
 
     B_results <- do.call(rbind, B_results_list$B_results)
+    B_results_pc <- do.call(rbind, B_results_list$B_results_pc)   # [ORDER]
     B_results_bench <- do.call(rbind, B_results_list$B_results_bench)
     B_results_truth <- do.call(rbind, B_results_list$B_results_truth)
     B_results_domains <-  B_results_list$B_domains[[1]]
@@ -807,6 +825,7 @@ xgb <- function(fixed,
     original_domain_order <- unique(fwk$pop_domains_vec)
     row_reorder <- match(original_domain_order, B_results_domains)
     B_results <- B_results[,row_reorder]
+    B_results_pc <- B_results_pc[,row_reorder]   # [ORDER]
     if (!is.null(benchmark)) {
       B_results_bench <- B_results_bench[,row_reorder]
       B_results_truth <- B_results_truth[,row_reorder]
@@ -890,6 +909,7 @@ xgb <- function(fixed,
     #results <- NULL
     results <- data.frame(domains = B_results_domains)
     results$Mean_boot <- NA
+    results$Mean_boot_agg <- NA   # [ORDER]
     results$Lower_boot <- NA
     results$Upper_boot <- NA
     results$Var_boot <- NA
@@ -898,9 +918,9 @@ xgb <- function(fixed,
     results$Upper_bench <- NA
 
     if (!is.null(benchmark)) {
-      results <- left_join (results, domains_pred[, c("hat","hat_bench","domains")],by="domains")
+      results <- left_join (results, domains_pred[, c("hat","hat_pc","hat_bench","domains")],by="domains")
     } else {
-      results <- left_join (results, domains_pred[, c("hat","domains")],by="domains")
+      results <- left_join (results, domains_pred[, c("hat","hat_pc","domains")],by="domains")
     }
 
     colnames(results)[1] <- "Domain"
@@ -908,7 +928,11 @@ xgb <- function(fixed,
 
     for (l in 1:ncol(B_results)){
 
-      temp <- B_results[,l]
+      # [ORDER] quantiles are taken from the per-cell replicate so the interval and the
+      # reported point estimate (hat_pc) are on the same back-transform-then-aggregate
+      # order. B_results (aggregate-then-back-transform) is retained for Mean_boot_agg.
+      temp <- B_results_pc[,l]
+      temp_agg <- B_results[,l]
 
       # if (transformation=="arcsin"){
       #   temp <- ifelse(temp>asin(1), asin(1), temp)
@@ -919,6 +943,7 @@ xgb <- function(fixed,
       #   temp <- exp(temp)
       # }
       results$Mean_boot[l] <- mean(temp)
+      results$Mean_boot_agg[l] <- mean(temp_agg)   # [ORDER] old ordering, for reconciliation
       results$Lower_boot[l] <- quantile(temp, probs = (1-conf_level)/2)
       results$Upper_boot[l] <- quantile(temp, probs = 1-(1-conf_level)/2)
       results$Var_boot[l] <- var(temp)
@@ -949,12 +974,20 @@ xgb <- function(fixed,
   #sub_domains_direct$hat <- back_transform_outcome(sub_domains_direct$outcome_t-xgb_model$resid_total)
 
   if (bootstrap==T) {
+    # [ORDER] Mean is hat_pc (back-transform per cell, then aggregate), which is the
+    # coherent order and matches what the benchmarked path has always used. hat
+    # (aggregate on the transformed scale, then back-transform) is retained as
+    # Mean_agg so results from earlier versions can be reconciled. With
+    # transformation = "no" the two are identical.
+    # The CI recentring uses hat_pc and Mean_boot, both per-cell, so point estimate
+    # and interval are on the same order.
     result <- list(
-      ind = data.frame(Domain = results$Domain, Mean = results$hat),
+      ind = data.frame(Domain = results$Domain, Mean = results$hat_pc,
+                       Mean_agg = results$hat),
       var = data.frame(Domain = results$Domain, Mean = results$Var_boot),
       CI  = data.frame(Domain = results$Domain,
-                       Lower = results$Lower_boot+results$hat-results$Mean_boot,
-                       Upper = results$Upper_boot+results$hat-results$Mean_boot),
+                       Lower = results$Lower_boot+results$hat_pc-results$Mean_boot,
+                       Upper = results$Upper_boot+results$hat_pc-results$Mean_boot),
       yhat=data.frame(sub_domains_direct[,c(sub_domains,"hat")]),
       model = xgb_fit,
       smp_data =  smp_data,
@@ -975,7 +1008,10 @@ xgb <- function(fixed,
   else {
     # Bootstrap not selected
     result <- list(
-      ind = data.frame(Domain = domains_pred[,"domains"], Mean = domains_pred[,"hat"]),
+      # [ORDER] see the bootstrap branch above: Mean is the per-cell order, Mean_agg
+      # preserves the previous aggregate-then-back-transform value.
+      ind = data.frame(Domain = domains_pred[,"domains"], Mean = domains_pred[,"hat_pc"],
+                       Mean_agg = domains_pred[,"hat"]),
       yhat=data.frame(sub_domains_direct[,c(sub_domains,"hat")]),
       model = xgb_fit,
       smp_data =  smp_data,
