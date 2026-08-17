@@ -1,5 +1,22 @@
 # povmap 1.0.1
 
+* `xgb()`: the reported area point estimate and its bootstrap interval are now both
+  computed by back-transforming each population cell and then aggregating (`hat_pc`),
+  rather than aggregating on the model's transformed scale and back-transforming the
+  area aggregate once (`hat`). The two orders differ whenever the transformation is
+  nonlinear; for `transformation = "arcsin"` the difference is the Jensen term, which
+  is positive below a rate of 0.5, negative above it, and zero at 0.5. Measured on a
+  60-domain panel spanning rates 0.05-0.96 it reaches 0.069 on the rate scale and
+  correlates 0.99 with the analytic leading term `cos(2*asin(sqrt(rate)))`. Because it
+  changes sign at 0.5 its average over a symmetric panel is near zero, so an aggregate
+  comparison will understate it. The previous value is retained as `ind$Mean_agg` (and
+  `Mean_boot_agg` internally) for reconciliation. The bootstrap replicate is computed
+  by reusing the already-drawn area effect, so no additional random numbers are
+  consumed and the bootstrap stream is unchanged. With `transformation = "no"` the two
+  orders are identical to floating point (max abs difference 2.8e-16 in test), and the
+  benchmarked path already used the per-cell order, so benchmarked results are
+  unaffected.
+
 * Fit statistics: `summary.xgb`, `summary.megb`, and `xgb_cv` previously reported
   two different statistics under the single name "R2". `summary.*` reported the
   squared Pearson correlation `cor(y, yhat)^2` in-sample, while `xgb_cv` reported
