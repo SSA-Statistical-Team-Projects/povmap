@@ -734,6 +734,15 @@ xgb <- function(fixed,
                                     # benchmark predictions to the collapsed simulated sample in probability space
                                     # First calculate weighted mean of sample to benchmark, for each benchmark_level
                                     B_sample_bm <- data.frame(sample_bm = collapse:::fmean(x=B_sample$sim_plus_area,g=B_sample[,benchmark_level],w=B_sample[,benchmark_weights]))
+                                    ## rownames() is character here too, but unlike the
+                                    ## domain round-trip at R/xgb.R:1156 this one is not a
+                                    ## latent join bug: its only consumer is the setNames()
+                                    ## call below, and names() are character by definition,
+                                    ## so restoring the caller's type would change nothing.
+                                    ## The left_join on benchmark_level that WOULD have
+                                    ## broken is commented out (see two lines down). Left
+                                    ## as-is deliberately; if that join is ever restored,
+                                    ## apply the same type restoration used at :1156.
                                     B_sample_bm[,benchmark_level] <- rownames(B_sample_bm)
 
                                     # (benchmark-target perturbation is applied post-loop in the main process)
@@ -1211,9 +1220,21 @@ point_estim_xgb <- function(params, smp_X, smp_Y, smp_weight, pop_X, sub_domains
   sub_pred_t$sim_t <- NULL
 
 
+  ## Return the domain identifier in the CALLER's type, not rownames()'s
+  ## character. The only consumer is the `%in%` filter at R/xgb.R:459, which
+  ## coerces and so does not error -- but as.character() on a numeric domain can
+  ## emit scientific notation (as.character(1e5) == "1e+05"), which would fail
+  ## to match silently. Cheap to make exact.
+  .dom_out <- rownames(sample_domains)
+  .proto_out <- sample[[fwk$domains]]
+  if (is.numeric(.proto_out)) {
+    .dom_out <- as.numeric(.dom_out)
+  } else if (is.factor(.proto_out)) {
+    .dom_out <- factor(.dom_out, levels = levels(.proto_out))
+  }
   return(list(predictions=MC_results,sub_predictions = sub_pred_t, model=xgb_fit,resid_sub_domains=resid_sub_domains,
               resid_domains=resid_domains, resid_total=resid_total,wt_sub_domains=wt_sub_domains,
-              wt_domains=sample_domains$wts,domains=rownames(sample_domains)))
+              wt_domains=sample_domains$wts,domains=.dom_out))
 }
 
 
