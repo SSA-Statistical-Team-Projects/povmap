@@ -1148,7 +1148,19 @@ point_estim_xgb <- function(params, smp_X, smp_Y, smp_weight, pop_X, sub_domains
                                wts= collapse:::fsum(wt_sub_domains,g=sample[,fwk$domains]),
                                resid_domains=collapse:::fmean(resid_total,g=sample[,fwk$domains],w=wt_sub_domains))
 
-  sample_domains <- data.frame(sample_domains,rownames(sample_domains))
+  ## fmean(g=) names its result by group, so rownames() here is ALWAYS
+  ## character. Rebuilding the domain column from it and joining straight back
+  ## onto `sample` therefore fails whenever `domains` is numeric or a factor --
+  ## both of which the documentation explicitly permits ("The variable can be
+  ## numeric or a factor"). Restore the incoming type before the join.
+  .dom   <- rownames(sample_domains)
+  .proto <- sample[[fwk$domains]]
+  if (is.numeric(.proto)) {
+    .dom <- as.numeric(.dom)
+  } else if (is.factor(.proto)) {
+    .dom <- factor(.dom, levels = levels(.proto))
+  }
+  sample_domains <- data.frame(sample_domains, .dom)
   colnames(sample_domains)[ncol(sample_domains)] <- fwk$domains
   sample <- left_join(sample,sample_domains,by=fwk$domains)
 
