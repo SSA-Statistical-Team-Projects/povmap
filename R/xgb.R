@@ -1166,7 +1166,7 @@ point_estim_xgb <- function(params, smp_X, smp_Y, smp_weight, pop_X, sub_domains
 
   for (l in 1:L) {
     sub_pred_t$sim_t <- as.numeric(sub_pred_t$hat_t) + resid_sub_domains[sample(1:length(resid_sub_domains),
-                                                                                nrow(sub_pred_t), prob=1/sample[,fwk$smp_weights],
+                                                                                nrow(sub_pred_t), prob=sample[,fwk$smp_weights],
                                                                                 replace = TRUE)]
     B_domains <- collapse:::fmean(x=sub_pred_t$sim_t,g=sub_pred_t[,fwk$domains],w=sub_pred_t[,fwk$pop_weights])
     B_domains <- data.frame("domains" = names(B_domains),"sim_t" = B_domains)
