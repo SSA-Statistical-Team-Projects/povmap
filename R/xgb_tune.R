@@ -140,8 +140,9 @@ xgb_tune <- function(fixed,
                      max_delta_step = c(0),
                      lambda = c(0.5, 1.5),
                      alpha = c(0),
-                     search = c("grid", "random"),
+                     search = c("grid", "random", "bayes"),
                      n_iter = 32,
+                     init_points = 12,
                      bounds = NULL,
                      early_stopping_rounds = NULL,
                      nrounds_max = 2000,
@@ -258,154 +259,83 @@ xgb_tune <- function(fixed,
     names(tunegrid) <- known
   }
 
-  OPT <- matrix(NA, ncol = folds, nrow = dim(tunegrid)[1])
-  ITER <- matrix(NA, ncol = folds, nrow = dim(tunegrid)[1])
-
-  # Tuning
-  #_____________________________________________________________________________
-
-  # Register parallel backend (uses 1 core when cpus = 1, i.e. sequential)
+  ## Parallel backend, shared by every search mode.
   cl <- parallel::makeCluster(cpus)
   doParallel::registerDoParallel(cl)
   on.exit(parallel::stopCluster(cl), add = TRUE)
-
-  # Capture extra arguments for passing into parallel workers
   dots <- list(...)
 
-  # Collect domain-level mean labels per fold for R2 computation
-  domain_labels_list <- vector("list", folds)
+  score_args <- list(X_final = X_final, X_smp = X_smp, Y_smp = Y_smp,
+                     smp_weights = smp_weights, cluster_col = cluster_col,
+                     cluster = cluster, domains = domains, folds = folds,
+                     early_stopping_rounds = early_stopping_rounds,
+                     nrounds_max = nrounds_max, seed = seed, dots = dots)
 
-  # Progress bar across folds (updates in the main process after each fold completes)
-  if (verbose == TRUE) {
-    pb <- txtProgressBar(min = 0, max = folds, style = 3)
-  }
+  if (search == "bayes") {
+    if (!requireNamespace("ParBayesianOptimization", quietly = TRUE))
+      stop("search = \"bayes\" needs the ParBayesianOptimization package. ",
+           "Install it, or use search = \"random\", which needs nothing extra.",
+           call. = FALSE)
+    if (is.null(bounds)) bounds <- .XGB_DEFAULT_BOUNDS
 
-  for (fold in 1:folds){
+    ## The optimiser samples uniformly inside whatever bounds it is given, so
+    ## log-scaled parameters are optimised in LOG space and exponentiated inside
+    ## the scoring function. Integer parameters are handed over as integer
+    ## bounds, which is how the optimiser recognises them.
+    specs   <- lapply(names(bounds), function(p) .xgb_norm_bound(p, bounds[[p]]))
+    names(specs) <- names(bounds)
+    pbounds <- lapply(names(specs), function(p) {
+      s <- specs[[p]]
+      if (s$scale == "log") c(log(s$range[1]), log(s$range[2]))
+      else if (s$scale == "int") c(as.integer(s$range[1]), as.integer(s$range[2]))
+      else c(s$range[1], s$range[2])
+    })
+    names(pbounds) <- names(specs)
 
-    # Compute domain-level weighted mean labels for this fold's held-out data
-    # (independent of tuning grid row, so done once per fold)
-    fold_labels <- Y_smp[cluster_col$fold == fold, ]
-    fold_domains <- X_smp[cluster_col$fold == fold, ][[paste0(domains)]]
-    fold_wts <- smp_weights[cluster_col$fold == fold]
-    fold_df <- data.frame(labels = fold_labels, domains = fold_domains, wts = fold_wts)
-    domain_labels_list[[fold]] <- sapply(split(fold_df, fold_df$domains),
-                                         function(g) weighted.mean(g$labels, w = g$wts))
+    fixed_vals <- list(nround = nround[1], max_depth = max_depth[1],
+      colsample_bytree = colsample_bytree[1], colsample_bylevel = colsample_bylevel[1],
+      colsample_bynode = colsample_bynode[1], subsample = subsample[1],
+      min_child_weight = min_child_weight[1], eta = eta[1], gamma = gamma[1],
+      max_delta_step = max_delta_step[1], lambda = lambda[1], alpha = alpha[1])
+    known <- names(fixed_vals)
 
-    ## Inner early-stopping group. Carved out of the TRAINING folds and grouped
-    ## by cluster, so the outer fold stays purely for scoring. Stopping on the
-    ## same fold used to score would select the stopping point on the data it is
-    ## then evaluated against.
-    es_on      <- !is.null(early_stopping_rounds)
-    train_rows <- cluster_col$fold != fold
-    if (es_on) {
-      tr_clusters   <- unique(cluster_col[[cluster]][train_rows])
-      n_val         <- max(1L, round(0.1 * length(tr_clusters)))
-      val_clusters  <- sample(tr_clusters, n_val)
-      es_val_rows   <- train_rows & (cluster_col[[cluster]] %in% val_clusters)
-      es_train_rows <- train_rows & !es_val_rows
-    } else {
-      es_val_rows   <- NULL
-      es_train_rows <- train_rows
-    }
-
-    fold_res <- foreach::foreach(
-      row = 1:nrow(tunegrid),
-      .combine  = rbind,
-      .packages = "xgboost"
-    ) %dopar% {
-
-      params <- c(list(
-        max_depth          = tunegrid$max_depth[row],
-        colsample_bytree   = tunegrid$colsample_bytree[row],
-        colsample_bylevel  = tunegrid$colsample_bylevel[row],
-        subsample          = tunegrid$subsample[row],
-        min_child_weight   = tunegrid$min_child_weight[row],
-        eta                = tunegrid$eta[row],
-        gamma              = tunegrid$gamma[row],
-        max_delta_step     = tunegrid$max_delta_step[row],
-        lambda             = tunegrid$lambda[row],
-        alpha              = tunegrid$alpha[row]
-      ), dots)
-
-      ## Without this the fits are stochastic whenever subsample or colsample is
-      ## below 1, so a seeded search would still not reproduce. Derived per
-      ## (fold, row) so configurations are not artificially correlated.
-      ## Passed straight through to xgboost. Two reasons for the direct value
-      ## rather than one derived per fold and configuration: `...` is documented
-      ## as forwarded to xgb.train, so a caller could already reach this via
-      ## seed = in dots and the new formal must not change what that did; and a
-      ## shared seed gives common random numbers across configurations, which
-      ## reduces the noise in comparing them rather than adding to it.
-      if (!is.null(seed)) params$seed <- seed
-
-      dtrain <- xgboost::xgb.DMatrix(
-        data   = data.matrix(X_final[es_train_rows, ]),
-        label  = Y_smp[es_train_rows, ],
-        weight = as.matrix(smp_weights)[es_train_rows, ]
-      )
-
-      if (es_on) {
-        ## nrounds leaves the search entirely: fix a high maximum and let each
-        ## configuration find its own stopping point on the inner group.
-        dvalid <- xgboost::xgb.DMatrix(
-          data   = data.matrix(X_final[es_val_rows, ]),
-          label  = Y_smp[es_val_rows, ],
-          weight = as.matrix(smp_weights)[es_val_rows, ]
-        )
-        xgb_fit <- xgboost::xgb.train(
-          data                  = dtrain,
-          params                = params,
-          nrounds               = nrounds_max,
-          evals                 = list(valid = dvalid),
-          early_stopping_rounds = early_stopping_rounds,
-          verbose               = 0
-        )
-        ## xgboost 3.x keeps the booster as an external pointer, so
-        ## fit$best_iteration is NULL; the value is a STRING attribute and is
-        ## 0-based. Convert, and add one to report a round COUNT.
-        bi <- suppressWarnings(as.integer(xgboost::xgb.attr(xgb_fit, "best_iteration")))
-        best_iter <- if (length(bi) == 1L && !is.na(bi)) bi + 1L else nrounds_max
-      } else {
-        xgb_fit <- xgboost::xgb.train(
-          data    = dtrain,
-          params  = params,
-          nrounds = tunegrid$nround[row],
-          verbose = 0
-        )
-        best_iter <- tunegrid$nround[row]
+    ## FUN returns the NEGATIVE mean domain-level weighted MSE, because the
+    ## optimiser maximises. Same helper, same metric, as the other two modes.
+    bayes_FUN <- function(...) {
+      x <- list(...)
+      vals <- fixed_vals
+      for (p in names(x)) {
+        v <- x[[p]]
+        if (specs[[p]]$scale == "log") v <- exp(v)
+        if (specs[[p]]$scale == "int") v <- as.integer(round(v))
+        vals[[p]] <- v
       }
-
-      # Predictions (only for those out of sample)
-      ## Plain predict() is correct on BOTH paths: when early stopping ran,
-      ## xgboost truncates to best_iteration automatically (verified against a
-      ## model retrained to exactly that many rounds), and when it did not, all
-      ## trees are used as before. No iterationrange needed.
-      domains_hat <- data.frame(predict(xgb_fit, data.matrix(X_final[cluster_col$fold == fold, ])))
-      domains_hat[[paste0(domains)]] <- X_smp[cluster_col$fold == fold, ][[paste0(domains)]]
-      domains_hat[[colnames(Y_smp)]] <- Y_smp[cluster_col$fold == fold, ]
-      domains_hat[["wts"]] <- smp_weights[cluster_col$fold == fold]
-      colnames(domains_hat) <- c("hat", "domains", "labels", "wts")
-      grouped_domains <- split(domains_hat, domains_hat$domains)
-      mean_hat    <- sapply(grouped_domains, function(group) weighted.mean(group$hat, w = group$wts))
-      mean_labels <- sapply(grouped_domains, function(group) weighted.mean(group$labels, w = group$wts))
-      first_rows  <- lapply(grouped_domains, function(group) group[1, ])
-      domains_pred <- do.call(rbind, first_rows)
-      domains_pred$hat    <- mean_hat
-      domains_pred$labels <- mean_labels
-
-      # Return MSE for this row
-      c(mse = mean((domains_pred$labels - domains_pred$hat)^2), best_iter = best_iter)
+      tg <- as.data.frame(vals[known]); names(tg) <- known
+      sc <- do.call(.xgb_score_configs, c(list(tunegrid = tg), score_args))
+      list(Score = -mean(sc$OPT[1, ]), nround_used = mean(sc$ITER[1, ]))
     }
 
-    fold_res <- matrix(as.numeric(fold_res), ncol = 2)
-    OPT[, fold]  <- fold_res[, 1]
-    ITER[, fold] <- fold_res[, 2]
-    if (verbose == TRUE) {
-      setTxtProgressBar(pb, fold)
+    if (!is.null(seed)) set.seed(seed)
+    opt <- ParBayesianOptimization::bayesOpt(
+      FUN = bayes_FUN, bounds = pbounds, initPoints = init_points,
+      iters.n = n_iter, verbose = if (isTRUE(verbose)) 1 else 0)
+
+    best <- ParBayesianOptimization::getBestPars(opt)
+    vals <- fixed_vals
+    for (p in names(best)) {
+      v <- best[[p]]
+      if (specs[[p]]$scale == "log") v <- exp(v)
+      if (specs[[p]]$scale == "int") v <- as.integer(round(v))
+      vals[[p]] <- v
     }
-  }
-  if (verbose == TRUE) {
-    close(pb)
+    tunegrid <- as.data.frame(vals[known]); names(tunegrid) <- known
+    sc <- do.call(.xgb_score_configs, c(list(tunegrid = tunegrid), score_args))
+    OPT <- sc$OPT; ITER <- sc$ITER; domain_labels_list <- sc$domain_labels
+    bayes_obj <- opt
+  } else {
+    sc <- do.call(.xgb_score_configs, c(list(tunegrid = tunegrid), score_args))
+    OPT <- sc$OPT; ITER <- sc$ITER; domain_labels_list <- sc$domain_labels
+    bayes_obj <- NULL
   }
 
   # Optimal values
@@ -448,6 +378,27 @@ xgb_tune <- function(fixed,
   ## elements is unaffected.
   final_output$search    <- search
   final_output$n_configs <- nrow(tunegrid)
+  if (search == "bayes") {
+    final_output$bounds     <- bounds
+    final_output$init_points<- init_points
+    final_output$n_iter     <- n_iter
+    final_output$bayes_opt  <- bayes_obj
+    ## The optimiser is only earning its overhead if its later picks beat its
+    ## initial random ones. Exposed so that can be checked rather than assumed.
+    sc <- bayes_obj$scoreSummary
+    if (!is.null(sc) && "Score" %in% names(sc)) {
+      init_best <- max(sc$Score[seq_len(min(init_points, nrow(sc)))])
+      final_output$score_init_best  <- -init_best
+      final_output$score_final_best <- -max(sc$Score)
+      final_output$surrogate_gain   <- init_best - max(sc$Score) < 0
+    }
+    final_output$position <- .xgb_bounds_position(bounds, final_output)
+    if (any(final_output$position$at_boundary))
+      warning("Selected value sits on a boundary for: ",
+              paste(final_output$position$parameter[final_output$position$at_boundary],
+                    collapse = ", "),
+              ". The range was too narrow -- widen it and rerun.", call. = FALSE)
+  }
   if (es_on) {
     final_output$best_iters_by_fold <- best_iters
     ## Hitting the ceiling is the early-stopping analogue of an optimum sitting
