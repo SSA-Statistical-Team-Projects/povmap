@@ -49,6 +49,47 @@
 #' @param lambda L2 regularization term on weights. Increasing this value will result in a more conservative model.
 #' Defaults to 1.
 #' @param alpha L1 regularization term on weights. Increasing this value will result in a more conservative model.
+#' @param search search strategy. \code{"grid"} (the default) evaluates the
+#'   full Cartesian product of the parameter vectors above and reproduces the
+#'   behaviour of earlier versions exactly. \code{"random"} instead draws
+#'   \code{n_iter} configurations from continuous ranges given in \code{bounds}.
+#' @param n_iter number of configurations drawn when \code{search = "random"}.
+#'   Defaults to 32. Note that 32 random draws is NOT equivalent in coverage to a
+#'   32 point grid: the grid tests two values of five parameters and so
+#'   establishes direction rather than locating an optimum, whereas the random
+#'   draws explore the interior of the ranges but cover any single axis more
+#'   thinly. Raising \code{n_iter} trades compute for resolution directly.
+#' @param bounds named list giving the search range per parameter, used only when
+#'   \code{search = "random"}. Each element is either a bare \code{c(lo, hi)},
+#'   which inherits that parameter's default sampling scale, or
+#'   \code{list(range = c(lo, hi), scale = "log")} to override it. Only
+#'   parameters named here are varied; every other parameter is held at the first
+#'   value of its own argument, so exploring depth does not silently move
+#'   \code{gamma} and \code{alpha} as well. Defaults to \code{eta},
+#'   \code{max_depth}, \code{min_child_weight}, \code{subsample},
+#'   \code{colsample_bytree} and \code{lambda}. \code{eta},
+#'   \code{min_child_weight} and \code{lambda} are drawn log-uniformly because
+#'   they span orders of magnitude and a uniform draw would spend most of its
+#'   budget at the insensitive end; \code{alpha} is drawn with a point mass at
+#'   zero, since a log scale is impossible at zero.
+#' @param early_stopping_rounds if supplied, each configuration is fitted with
+#'   \code{nrounds_max} rounds and stopped early on an inner validation group
+#'   held out of the training folds and grouped by \code{cluster}. This takes
+#'   \code{nround} out of the search entirely, freeing a dimension so a fixed
+#'   budget goes further. The inner group is separate from the outer fold, which
+#'   remains purely for scoring. Defaults to \code{NULL}, i.e. fixed
+#'   \code{nround} as before.
+#' @param nrounds_max ceiling on boosting rounds when early stopping is in use.
+#'   Defaults to 2000. If any fold stops at this ceiling a warning is raised,
+#'   since the budget rather than the data then chose the stopping point.
+#' @param seed integer seed making the whole routine reproducible: the assignment
+#'   of clusters to folds, the random draw of configurations, and the underlying
+#'   \code{xgboost} fits, which are otherwise stochastic whenever
+#'   \code{subsample} or the \code{colsample_*} parameters are below 1. The fit
+#'   seed is passed straight to xgboost, so configurations share common random
+#'   numbers. The fold assignment and the xgboost fits were both previously
+#'   unseeded, so results varied run to run even under grid search;
+#'   \code{seed = NULL} preserves that behaviour exactly.
 #' Defaults to 0.
 #' @param cpus. Number of cores to parallelize across. Defaults to 1 (no parallelization)
 #' @param verbose display progress. Defaults to FALSE.
@@ -99,6 +140,12 @@ xgb_tune <- function(fixed,
                      max_delta_step = c(0),
                      lambda = c(0.5, 1.5),
                      alpha = c(0),
+                     search = c("grid", "random"),
+                     n_iter = 32,
+                     bounds = NULL,
+                     early_stopping_rounds = NULL,
+                     nrounds_max = 2000,
+                     seed = NULL,
                      cpus = 1, 
                      verbose = TRUE,
                      ...){
@@ -146,6 +193,14 @@ xgb_tune <- function(fixed,
     Y_smp <- log(Y_smp)
   }
 
+  # Search mode, seed
+  #_____________________________________________________________________________
+  search <- match.arg(search)
+  ## Seeding covers BOTH the fold assignment below and the random draw. The fold
+  ## assignment was previously unseeded, so even grid search was not reproducible
+  ## run to run; seed = NULL preserves that old behaviour exactly.
+  if (!is.null(seed)) set.seed(seed)
+
   # Folds
   #_____________________________________________________________________________
   cluster_col <- data.frame(X_smp[[paste0(cluster)]])
@@ -164,6 +219,7 @@ xgb_tune <- function(fixed,
 
   # Grid
   #_____________________________________________________________________________
+  if (search == "grid") {
   tunegrid <- expand.grid(
     nround             = nround,
     max_depth          = max_depth,
@@ -178,8 +234,32 @@ xgb_tune <- function(fixed,
     lambda             = lambda,
     alpha              = alpha
   )
+  } else {
+    ## Random search: sample the named parameters from continuous ranges and hold
+    ## every other parameter at the FIRST value of its argument.
+    if (is.null(bounds)) bounds <- .XGB_DEFAULT_BOUNDS
+    if (!is.list(bounds) || is.null(names(bounds)) || any(!nzchar(names(bounds))))
+      stop("bounds must be a NAMED list, one entry per parameter to vary.", call. = FALSE)
+    known <- c("nround", "max_depth", "colsample_bytree", "colsample_bylevel",
+               "colsample_bynode", "subsample", "min_child_weight", "eta",
+               "gamma", "max_delta_step", "lambda", "alpha")
+    bad <- setdiff(names(bounds), known)
+    if (length(bad))
+      stop("bounds names not recognised: ", paste(bad, collapse = ", "), call. = FALSE)
+    sampled <- .xgb_sample_bounds(bounds, n_iter)
+    fixed_vals <- list(
+      nround = nround[1], max_depth = max_depth[1],
+      colsample_bytree = colsample_bytree[1], colsample_bylevel = colsample_bylevel[1],
+      colsample_bynode = colsample_bynode[1], subsample = subsample[1],
+      min_child_weight = min_child_weight[1], eta = eta[1], gamma = gamma[1],
+      max_delta_step = max_delta_step[1], lambda = lambda[1], alpha = alpha[1])
+    tunegrid <- as.data.frame(lapply(known, function(p)
+      if (p %in% names(sampled)) sampled[[p]] else rep(fixed_vals[[p]], n_iter)))
+    names(tunegrid) <- known
+  }
 
   OPT <- matrix(NA, ncol = folds, nrow = dim(tunegrid)[1])
+  ITER <- matrix(NA, ncol = folds, nrow = dim(tunegrid)[1])
 
   # Tuning
   #_____________________________________________________________________________
@@ -211,9 +291,26 @@ xgb_tune <- function(fixed,
     domain_labels_list[[fold]] <- sapply(split(fold_df, fold_df$domains),
                                          function(g) weighted.mean(g$labels, w = g$wts))
 
-    fold_mse <- foreach::foreach(
+    ## Inner early-stopping group. Carved out of the TRAINING folds and grouped
+    ## by cluster, so the outer fold stays purely for scoring. Stopping on the
+    ## same fold used to score would select the stopping point on the data it is
+    ## then evaluated against.
+    es_on      <- !is.null(early_stopping_rounds)
+    train_rows <- cluster_col$fold != fold
+    if (es_on) {
+      tr_clusters   <- unique(cluster_col[[cluster]][train_rows])
+      n_val         <- max(1L, round(0.1 * length(tr_clusters)))
+      val_clusters  <- sample(tr_clusters, n_val)
+      es_val_rows   <- train_rows & (cluster_col[[cluster]] %in% val_clusters)
+      es_train_rows <- train_rows & !es_val_rows
+    } else {
+      es_val_rows   <- NULL
+      es_train_rows <- train_rows
+    }
+
+    fold_res <- foreach::foreach(
       row = 1:nrow(tunegrid),
-      .combine  = c,
+      .combine  = rbind,
       .packages = "xgboost"
     ) %dopar% {
 
@@ -230,20 +327,59 @@ xgb_tune <- function(fixed,
         alpha              = tunegrid$alpha[row]
       ), dots)
 
+      ## Without this the fits are stochastic whenever subsample or colsample is
+      ## below 1, so a seeded search would still not reproduce. Derived per
+      ## (fold, row) so configurations are not artificially correlated.
+      ## Passed straight through to xgboost. Two reasons for the direct value
+      ## rather than one derived per fold and configuration: `...` is documented
+      ## as forwarded to xgb.train, so a caller could already reach this via
+      ## seed = in dots and the new formal must not change what that did; and a
+      ## shared seed gives common random numbers across configurations, which
+      ## reduces the noise in comparing them rather than adding to it.
+      if (!is.null(seed)) params$seed <- seed
+
       dtrain <- xgboost::xgb.DMatrix(
-        data   = data.matrix(X_final[cluster_col$fold != fold, ]),
-        label  = Y_smp[cluster_col$fold != fold, ],
-        weight = as.matrix(smp_weights)[cluster_col$fold != fold, ]
+        data   = data.matrix(X_final[es_train_rows, ]),
+        label  = Y_smp[es_train_rows, ],
+        weight = as.matrix(smp_weights)[es_train_rows, ]
       )
 
-      xgb_fit <- xgboost::xgb.train(
-        data    = dtrain,
-        params  = params,
-        nrounds = tunegrid$nround[row],
-        verbose = 0
-      )
+      if (es_on) {
+        ## nrounds leaves the search entirely: fix a high maximum and let each
+        ## configuration find its own stopping point on the inner group.
+        dvalid <- xgboost::xgb.DMatrix(
+          data   = data.matrix(X_final[es_val_rows, ]),
+          label  = Y_smp[es_val_rows, ],
+          weight = as.matrix(smp_weights)[es_val_rows, ]
+        )
+        xgb_fit <- xgboost::xgb.train(
+          data                  = dtrain,
+          params                = params,
+          nrounds               = nrounds_max,
+          evals                 = list(valid = dvalid),
+          early_stopping_rounds = early_stopping_rounds,
+          verbose               = 0
+        )
+        ## xgboost 3.x keeps the booster as an external pointer, so
+        ## fit$best_iteration is NULL; the value is a STRING attribute and is
+        ## 0-based. Convert, and add one to report a round COUNT.
+        bi <- suppressWarnings(as.integer(xgboost::xgb.attr(xgb_fit, "best_iteration")))
+        best_iter <- if (length(bi) == 1L && !is.na(bi)) bi + 1L else nrounds_max
+      } else {
+        xgb_fit <- xgboost::xgb.train(
+          data    = dtrain,
+          params  = params,
+          nrounds = tunegrid$nround[row],
+          verbose = 0
+        )
+        best_iter <- tunegrid$nround[row]
+      }
 
       # Predictions (only for those out of sample)
+      ## Plain predict() is correct on BOTH paths: when early stopping ran,
+      ## xgboost truncates to best_iteration automatically (verified against a
+      ## model retrained to exactly that many rounds), and when it did not, all
+      ## trees are used as before. No iterationrange needed.
       domains_hat <- data.frame(predict(xgb_fit, data.matrix(X_final[cluster_col$fold == fold, ])))
       domains_hat[[paste0(domains)]] <- X_smp[cluster_col$fold == fold, ][[paste0(domains)]]
       domains_hat[[colnames(Y_smp)]] <- Y_smp[cluster_col$fold == fold, ]
@@ -258,10 +394,12 @@ xgb_tune <- function(fixed,
       domains_pred$labels <- mean_labels
 
       # Return MSE for this row
-      mean((domains_pred$labels - domains_pred$hat)^2)
+      c(mse = mean((domains_pred$labels - domains_pred$hat)^2), best_iter = best_iter)
     }
 
-    OPT[, fold] <- fold_mse
+    fold_res <- matrix(as.numeric(fold_res), ncol = 2)
+    OPT[, fold]  <- fold_res[, 1]
+    ITER[, fold] <- fold_res[, 2]
     if (verbose == TRUE) {
       setTxtProgressBar(pb, fold)
     }
@@ -276,7 +414,11 @@ xgb_tune <- function(fixed,
   best_row <- which.min(mean_mse)
   mse_min  <- mean_mse[best_row]
 
-  nround_opt <- tunegrid$nround[best_row]
+  es_on <- !is.null(early_stopping_rounds)
+  ## With early stopping the useful nrounds is the one each fold learned, not
+  ## the grid value, so report the mean stopping point for the selected config.
+  best_iters <- ITER[best_row, ]
+  nround_opt <- if (es_on) round(mean(best_iters)) else tunegrid$nround[best_row]
   max_depth_opt <- tunegrid$max_depth[best_row]
   colsample_bytree_opt <- tunegrid$colsample_bytree[best_row]
   colsample_bylevel_opt <- tunegrid$colsample_bylevel[best_row]
@@ -301,6 +443,31 @@ xgb_tune <- function(fixed,
   names(final_output) <- c("nround", "max_depth", "colsample_bytree", "colsample_bylevel",
                            'colsample_bynode', "subsample", "min_child_weight", "eta",
                            "gamma", "max_delta_step", 'lambda', "alpha", "mse_oos", "r2_oos")
+
+  ## Extra diagnostics, appended so positional access to the original 14
+  ## elements is unaffected.
+  final_output$search    <- search
+  final_output$n_configs <- nrow(tunegrid)
+  if (es_on) {
+    final_output$best_iters_by_fold <- best_iters
+    ## Hitting the ceiling is the early-stopping analogue of an optimum sitting
+    ## on a grid edge: the budget bound, not the data, chose the stopping point.
+    final_output$hit_nrounds_max <- any(best_iters >= nrounds_max)
+    if (isTRUE(final_output$hit_nrounds_max))
+      warning("At least one fold stopped at nrounds_max (", nrounds_max,
+              "); raise nrounds_max, the stopping point was bounded by the budget.",
+              call. = FALSE)
+  }
+  if (search == "random") {
+    final_output$bounds   <- bounds
+    final_output$n_iter   <- n_iter
+    final_output$position <- .xgb_bounds_position(bounds, final_output)
+    if (any(final_output$position$at_boundary))
+      warning("Selected value sits on a boundary for: ",
+              paste(final_output$position$parameter[final_output$position$at_boundary],
+                    collapse = ", "),
+              ". The range was too narrow -- widen it and rerun.", call. = FALSE)
+  }
 
   class(final_output) <- c("xgb","emdi")
   return(final_output)
