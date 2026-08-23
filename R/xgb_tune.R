@@ -53,6 +53,30 @@
 #'   full Cartesian product of the parameter vectors above and reproduces the
 #'   behaviour of earlier versions exactly. \code{"random"} instead draws
 #'   \code{n_iter} configurations from continuous ranges given in \code{bounds}.
+#' @section Choosing a search strategy:
+#' Random search was measured against the grid and against Bayesian
+#' optimisation on a sub-area estimation problem with 10,979 sub-areas, 636
+#' municipalities and 23 covariates, scoring domain-level weighted MSE under
+#' grouped CV.
+#'
+#' Random search at 63 s beat the 32-point grid at 61 s by 23 percent on
+#' out-of-sample R2 (0.139 against 0.113), because the grid tests two values of
+#' five parameters and so establishes direction rather than locating an
+#' optimum. Adding \code{nround} to the search improved R2 by a further 10
+#' percent (0.153) but cost four times the wall clock, so the cheap
+#' configuration reaches within 9 percent of the expensive one. If you are
+#' wall-clock constrained, the first minute buys most of the available gain.
+#'
+#' Bayesian optimisation (ParBayesianOptimization) was tested and LOST to
+#' random search at equal wall clock, which is why no such option is offered
+#' here. A CV evaluation on this problem costs about 6 s while the surrogate
+#' costs 25 to 29 s per iteration, so the machinery is four to five times more
+#' expensive than the work it economises on; at equal wall clock random search
+#' affords roughly six times as many evaluations. The surrogate also failed an
+#' informativeness check, twenty guided iterations improving on ten random
+#' initial points by 0.3 percent and by nothing on a second seed. The
+#' conclusion is specific to cheap evaluations and would likely invert if a
+#' single evaluation took minutes.
 #' @param n_iter number of configurations drawn when \code{search = "random"}.
 #'   Defaults to 32. Note that 32 random draws is NOT equivalent in coverage to a
 #'   32 point grid: the grid tests two values of five parameters and so
@@ -258,155 +282,20 @@ xgb_tune <- function(fixed,
     names(tunegrid) <- known
   }
 
-  OPT <- matrix(NA, ncol = folds, nrow = dim(tunegrid)[1])
-  ITER <- matrix(NA, ncol = folds, nrow = dim(tunegrid)[1])
-
-  # Tuning
-  #_____________________________________________________________________________
-
-  # Register parallel backend (uses 1 core when cpus = 1, i.e. sequential)
+  ## Parallel backend, shared by every search mode.
   cl <- parallel::makeCluster(cpus)
   doParallel::registerDoParallel(cl)
   on.exit(parallel::stopCluster(cl), add = TRUE)
-
-  # Capture extra arguments for passing into parallel workers
   dots <- list(...)
 
-  # Collect domain-level mean labels per fold for R2 computation
-  domain_labels_list <- vector("list", folds)
+  score_args <- list(X_final = X_final, X_smp = X_smp, Y_smp = Y_smp,
+                     smp_weights = smp_weights, cluster_col = cluster_col,
+                     cluster = cluster, domains = domains, folds = folds,
+                     early_stopping_rounds = early_stopping_rounds,
+                     nrounds_max = nrounds_max, seed = seed, dots = dots)
 
-  # Progress bar across folds (updates in the main process after each fold completes)
-  if (verbose == TRUE) {
-    pb <- txtProgressBar(min = 0, max = folds, style = 3)
-  }
-
-  for (fold in 1:folds){
-
-    # Compute domain-level weighted mean labels for this fold's held-out data
-    # (independent of tuning grid row, so done once per fold)
-    fold_labels <- Y_smp[cluster_col$fold == fold, ]
-    fold_domains <- X_smp[cluster_col$fold == fold, ][[paste0(domains)]]
-    fold_wts <- smp_weights[cluster_col$fold == fold]
-    fold_df <- data.frame(labels = fold_labels, domains = fold_domains, wts = fold_wts)
-    domain_labels_list[[fold]] <- sapply(split(fold_df, fold_df$domains),
-                                         function(g) weighted.mean(g$labels, w = g$wts))
-
-    ## Inner early-stopping group. Carved out of the TRAINING folds and grouped
-    ## by cluster, so the outer fold stays purely for scoring. Stopping on the
-    ## same fold used to score would select the stopping point on the data it is
-    ## then evaluated against.
-    es_on      <- !is.null(early_stopping_rounds)
-    train_rows <- cluster_col$fold != fold
-    if (es_on) {
-      tr_clusters   <- unique(cluster_col[[cluster]][train_rows])
-      n_val         <- max(1L, round(0.1 * length(tr_clusters)))
-      val_clusters  <- sample(tr_clusters, n_val)
-      es_val_rows   <- train_rows & (cluster_col[[cluster]] %in% val_clusters)
-      es_train_rows <- train_rows & !es_val_rows
-    } else {
-      es_val_rows   <- NULL
-      es_train_rows <- train_rows
-    }
-
-    fold_res <- foreach::foreach(
-      row = 1:nrow(tunegrid),
-      .combine  = rbind,
-      .packages = "xgboost"
-    ) %dopar% {
-
-      params <- c(list(
-        max_depth          = tunegrid$max_depth[row],
-        colsample_bytree   = tunegrid$colsample_bytree[row],
-        colsample_bylevel  = tunegrid$colsample_bylevel[row],
-        subsample          = tunegrid$subsample[row],
-        min_child_weight   = tunegrid$min_child_weight[row],
-        eta                = tunegrid$eta[row],
-        gamma              = tunegrid$gamma[row],
-        max_delta_step     = tunegrid$max_delta_step[row],
-        lambda             = tunegrid$lambda[row],
-        alpha              = tunegrid$alpha[row]
-      ), dots)
-
-      ## Without this the fits are stochastic whenever subsample or colsample is
-      ## below 1, so a seeded search would still not reproduce. Derived per
-      ## (fold, row) so configurations are not artificially correlated.
-      ## Passed straight through to xgboost. Two reasons for the direct value
-      ## rather than one derived per fold and configuration: `...` is documented
-      ## as forwarded to xgb.train, so a caller could already reach this via
-      ## seed = in dots and the new formal must not change what that did; and a
-      ## shared seed gives common random numbers across configurations, which
-      ## reduces the noise in comparing them rather than adding to it.
-      if (!is.null(seed)) params$seed <- seed
-
-      dtrain <- xgboost::xgb.DMatrix(
-        data   = data.matrix(X_final[es_train_rows, ]),
-        label  = Y_smp[es_train_rows, ],
-        weight = as.matrix(smp_weights)[es_train_rows, ]
-      )
-
-      if (es_on) {
-        ## nrounds leaves the search entirely: fix a high maximum and let each
-        ## configuration find its own stopping point on the inner group.
-        dvalid <- xgboost::xgb.DMatrix(
-          data   = data.matrix(X_final[es_val_rows, ]),
-          label  = Y_smp[es_val_rows, ],
-          weight = as.matrix(smp_weights)[es_val_rows, ]
-        )
-        xgb_fit <- xgboost::xgb.train(
-          data                  = dtrain,
-          params                = params,
-          nrounds               = nrounds_max,
-          evals                 = list(valid = dvalid),
-          early_stopping_rounds = early_stopping_rounds,
-          verbose               = 0
-        )
-        ## xgboost 3.x keeps the booster as an external pointer, so
-        ## fit$best_iteration is NULL; the value is a STRING attribute and is
-        ## 0-based. Convert, and add one to report a round COUNT.
-        bi <- suppressWarnings(as.integer(xgboost::xgb.attr(xgb_fit, "best_iteration")))
-        best_iter <- if (length(bi) == 1L && !is.na(bi)) bi + 1L else nrounds_max
-      } else {
-        xgb_fit <- xgboost::xgb.train(
-          data    = dtrain,
-          params  = params,
-          nrounds = tunegrid$nround[row],
-          verbose = 0
-        )
-        best_iter <- tunegrid$nround[row]
-      }
-
-      # Predictions (only for those out of sample)
-      ## Plain predict() is correct on BOTH paths: when early stopping ran,
-      ## xgboost truncates to best_iteration automatically (verified against a
-      ## model retrained to exactly that many rounds), and when it did not, all
-      ## trees are used as before. No iterationrange needed.
-      domains_hat <- data.frame(predict(xgb_fit, data.matrix(X_final[cluster_col$fold == fold, ])))
-      domains_hat[[paste0(domains)]] <- X_smp[cluster_col$fold == fold, ][[paste0(domains)]]
-      domains_hat[[colnames(Y_smp)]] <- Y_smp[cluster_col$fold == fold, ]
-      domains_hat[["wts"]] <- smp_weights[cluster_col$fold == fold]
-      colnames(domains_hat) <- c("hat", "domains", "labels", "wts")
-      grouped_domains <- split(domains_hat, domains_hat$domains)
-      mean_hat    <- sapply(grouped_domains, function(group) weighted.mean(group$hat, w = group$wts))
-      mean_labels <- sapply(grouped_domains, function(group) weighted.mean(group$labels, w = group$wts))
-      first_rows  <- lapply(grouped_domains, function(group) group[1, ])
-      domains_pred <- do.call(rbind, first_rows)
-      domains_pred$hat    <- mean_hat
-      domains_pred$labels <- mean_labels
-
-      # Return MSE for this row
-      c(mse = mean((domains_pred$labels - domains_pred$hat)^2), best_iter = best_iter)
-    }
-
-    fold_res <- matrix(as.numeric(fold_res), ncol = 2)
-    OPT[, fold]  <- fold_res[, 1]
-    ITER[, fold] <- fold_res[, 2]
-    if (verbose == TRUE) {
-      setTxtProgressBar(pb, fold)
-    }
-  }
-  if (verbose == TRUE) {
-    close(pb)
-  }
+  sc <- do.call(.xgb_score_configs, c(list(tunegrid = tunegrid), score_args))
+  OPT <- sc$OPT; ITER <- sc$ITER; domain_labels_list <- sc$domain_labels
 
   # Optimal values
   #_____________________________________________________________________________
