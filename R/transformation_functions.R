@@ -169,6 +169,8 @@ back_transformation <- function(y, transformation, lambda, shift,
     log_shift_opt_back(y = y, lambda = lambda)
   } else if (transformation == "arcsin") {
     arcsin_transform_back(y = y, shift = shift)
+  } else if (transformation == "sqrt") {
+    sqrt_transform_back(y = y, shift = shift)
   } else if (transformation == "ordernorm") {
     ordernorm_back(y = y, shift = shift, framework = framework, fixed = fixed)
   } else if (transformation == "logit") {
@@ -194,6 +196,8 @@ transformation <- function(y, transformation, lambda, shift,
     log_shift_opt(y = y, lambda = lambda)
   } else if (transformation == "arcsin") {
     arcsin_transform(y = y, shift = shift)
+  } else if (transformation == "sqrt") {
+    sqrt_transform(y = y, shift = shift)
   } else if (transformation == "ordernorm") {
     ordernorm(y = y, shift = shift)
   } else if (transformation == "logit") {
@@ -510,6 +514,29 @@ arcsin_transform <- function(y, shift = NULL) {
 arcsin_transform_back <- function(y, shift = NULL) {
   y <- pmax(0, pmin(y, pi/2))
   y <- sin(y)^2
+  return(y = y)
+}
+
+
+# The square-root transformation ------------------------------------------------
+
+# Forward is defined at zero, unlike log or logit, so a bounded proportion with
+# heavy mass at exactly zero needs no epsilon fudge on the way in.
+sqrt_transform <- function(y, shift = NULL) {
+  y <- sqrt(y)
+  return(list(y = y, shift = shift))
+}
+
+# The clamp at zero is a WEAK-MONOTONICITY guard, the same role the [0, pi/2]
+# clamp plays for arcsin. z^2 is decreasing for z < 0, so without it a smaller
+# transformed value could back-transform to a LARGER rate, and a residual draw
+# that pushes z negative would fold the prediction back upward. Clamping keeps
+# the back-transform non-decreasing over the whole real line and lands it on the
+# non-negative half line. No upper bound is imposed: unlike arcsin this does not
+# constrain to [0, 1], which is immaterial for a rate averaging well under 1%.
+sqrt_transform_back <- function(y, shift = NULL) {
+  y <- pmax(0, y)
+  y <- y^2
   return(y = y)
 }
 

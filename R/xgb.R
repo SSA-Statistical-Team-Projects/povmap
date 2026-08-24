@@ -307,6 +307,7 @@ xgb <- function(fixed,
                 boot_estimates = F,
                 center_residuals = F,
                 variance_y = NULL,
+                smearing = c("naive", "corrected"),
                 rescale_weights = TRUE,
                 perturb_benchmark = FALSE,
                 benchmark_target_se = NULL,
@@ -315,6 +316,7 @@ xgb <- function(fixed,
 
   #1. Initialize
   .assert_xgb_version()
+  smearing <- match.arg(smearing)
   out_call <- match.call()
   # default to using sample weights for benchmarking if internal benchmarking
   if (is.null(benchmark_weights) & !is.null(smp_weights)) {
@@ -347,6 +349,11 @@ xgb <- function(fixed,
   if (transformation=="arcsin"){
     transform_outcome <- arcsin_transform
     back_transform_outcome <- arcsin_transform_back
+  }
+  else if (transformation=="sqrt"){
+    if (min(fwk$Y_smp) < 0) stop("Outcome must be non-negative when using the sqrt transformation")
+    transform_outcome <- sqrt_transform
+    back_transform_outcome <- sqrt_transform_back
   }
   else if (transformation=="log"){
     transform_outcome <- log_transform
@@ -419,7 +426,7 @@ xgb <- function(fixed,
   }
 
   # Estimate model
-  xgb_model <- point_estim_xgb(params=params,smp_X=X_smp_xgb,
+  xgb_model <- point_estim_xgb(smearing=smearing,params=params,smp_X=X_smp_xgb,
                                smp_Y=sub_domains_direct$outcome,
                                smp_weight= smp_weights_rescaled/mean(smp_weights_rescaled),
                                pop_X=X_pop_xgb,
@@ -719,7 +726,7 @@ xgb <- function(fixed,
                                     boot_weights <- boot_weights / mean(boot_weights)
 
                                     # 3. Generate predictions using new sample values in arcsin space
-                                    predictions  <- point_estim_xgb(params=params,smp_X=X_smp_boot,
+                                    predictions  <- point_estim_xgb(smearing=smearing,params=params,smp_X=X_smp_boot,
                                                                     smp_Y=B_sample$sim_plus_area,
                                                                     smp_weight= boot_weights,
                                                                     pop_X=X_pop_xgb,
@@ -1083,7 +1090,49 @@ xgb <- function(fixed,
 } # close xgb function
 
 
-point_estim_xgb <- function(params, smp_X, smp_Y, smp_weight, pop_X, sub_domains,nrounds,fwk,transform_outcome,back_transform_outcome,L,variance_y) {
+
+#' Scaling factor that removes the sampling component from the smearing variance
+#'
+#' The smearing estimator targets \code{E[g(z + eps)]}, which is the conditional
+#' mean of the outcome, so it is not biased in itself. The bias arises because the
+#' residual pool mixes true between-cell variation with SAMPLING error in the
+#' sub-area direct estimates, and a convex inverse over-predicts when handed the
+#' inflated variance. Subtracting the whole residual variance would remove the
+#' legitimate part too and land back at \code{g(z)}, the back-transform of the
+#' mean, which is the Jensen-wrong quantity smearing exists to avoid.
+#'
+#' Scaling the drawn residuals by
+#' \code{lambda = sqrt(max(0, 1 - var_sampling / var_resid))} leaves only the true
+#' component. This is transform-agnostic, so one code path serves arcsin, sqrt,
+#' log and any future transformation; for \code{sqrt} it reduces exactly to
+#' subtracting the sampling variance, since \code{E[(z + lambda e)^2] = z^2 +
+#' lambda^2 var(e)}. It degrades safely: when sampling variance dominates,
+#' lambda is 0 and the estimator falls back to \code{g(z)}.
+#'
+#' Returns 1 when \code{smearing = "naive"}, so the caller multiplies by a
+#' no-op and the RNG stream is unchanged.
+#' @keywords internal
+.xgb_smearing_lambda <- function(resid, wt, var_y, y, transform_outcome,
+                                 smearing = "naive") {
+  if (!identical(smearing, "corrected")) return(1)
+  if (is.null(var_y))
+    stop("smearing = \"corrected\" requires variance_y. The correction removes the ",
+         "sampling component of the residual variance, and that component cannot ",
+         "be identified from the residuals alone.", call. = FALSE)
+  # map the rate-scale sampling variance onto the transformed scale by the delta
+  # method, with the finite difference kept inside the domain (arcsin is
+  # undefined above 1, sqrt below 0)
+  eps  <- 1e-6
+  yhi  <- pmin(y + eps, 1)
+  ylo  <- pmax(y - eps, 0)
+  dzdy <- (transform_outcome(yhi)$y - transform_outcome(ylo)$y) / (yhi - ylo)
+  var_samp_t  <- stats::weighted.mean(var_y * dzdy^2, w = wt, na.rm = TRUE)
+  var_resid_t <- stats::weighted.mean(resid^2,        w = wt, na.rm = TRUE)
+  if (!is.finite(var_resid_t) || var_resid_t <= 0) return(1)
+  sqrt(max(0, 1 - var_samp_t / var_resid_t))
+}
+
+point_estim_xgb <- function(params, smp_X, smp_Y, smp_weight, pop_X, sub_domains,nrounds,fwk,transform_outcome,back_transform_outcome,L,variance_y,smearing="naive") {
 
   smp_Y_t <- transform_outcome(smp_Y)$y
 
@@ -1156,6 +1205,33 @@ point_estim_xgb <- function(params, smp_X, smp_Y, smp_weight, pop_X, sub_domains
   resid_domains <- sample_domains$resid_domains
   resid_sub_domains <- resid_total -sample$resid_domains
 
+  ## ---- smearing variance correction ------------------------------------------
+  ## The smearing estimator targets E[g(z + eps)], which IS the conditional mean of
+  ## the outcome, so it is not biased in itself. The problem is that the residual
+  ## pool is contaminated with SAMPLING error -- a sub-area direct estimate rests on
+  ## a handful of households -- so the variance being smeared over is inflated, and
+  ## a convex inverse (z^2 for sqrt, sin(z)^2 near zero for arcsin) over-predicts.
+  ##
+  ## Subtracting the whole residual variance would remove the legitimate part too
+  ## and land back at g(z), the Jensen-wrong back-transform-of-the-mean. Instead
+  ## SCALE the drawn residuals by lambda so the smeared variance carries only the
+  ## true between-cell component:
+  ##     lambda = sqrt(max(0, 1 - var_sampling / var_resid))
+  ## This is transform-agnostic -- one path for arcsin, sqrt, log, Freeman-Tukey --
+  ## and for sqrt it reduces exactly to subtracting the sampling variance, since
+  ## E[(z + lambda e)^2] = z^2 + lambda^2 var(e). It degrades safely: when sampling
+  ## variance dominates, lambda -> 0 and the estimator falls back to g(z).
+  ##
+  ## lambda multiplies the drawn residual WITHOUT changing the sample() call, so
+  ## the RNG stream is untouched and smearing = "naive" stays bit-identical to
+  ## previous behaviour.
+  lam_sub <- .xgb_smearing_lambda(resid = resid_sub_domains,
+                                  wt = wt_sub_domains,
+                                  var_y = if (is.null(variance_y)) NULL else sample[, variance_y],
+                                  y = sample[, fwk$outcome],
+                                  transform_outcome = transform_outcome,
+                                  smearing = smearing)
+
   #resid_domains_rescaled <- sample_domains$resid_domains_rescaled
   #resid_sub_domains_rescaled <- resid_total_rescaled - sample$resid_domains_rescaled
 
@@ -1165,7 +1241,7 @@ point_estim_xgb <- function(params, smp_X, smp_Y, smp_weight, pop_X, sub_domains
 
 
   for (l in 1:L) {
-    sub_pred_t$sim_t <- as.numeric(sub_pred_t$hat_t) + resid_sub_domains[sample(1:length(resid_sub_domains),
+    sub_pred_t$sim_t <- as.numeric(sub_pred_t$hat_t) + lam_sub * resid_sub_domains[sample(1:length(resid_sub_domains),
                                                                                 nrow(sub_pred_t), prob=sample[,fwk$smp_weights],
                                                                                 replace = TRUE)]
     B_domains <- collapse:::fmean(x=sub_pred_t$sim_t,g=sub_pred_t[,fwk$domains],w=sub_pred_t[,fwk$pop_weights])
