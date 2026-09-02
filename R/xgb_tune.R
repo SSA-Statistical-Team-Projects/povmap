@@ -177,6 +177,12 @@ xgb_tune <- function(fixed,
   # Pinned-version guard (see BUILD_PIN_xgb.txt) -- fail before any model fit
   .assert_xgb_version()
 
+  # Reject anything that fell into `...` unused. `...` is forwarded to
+  # xgb.train(), so a caller written against a newer signature -- or a
+  # misspelled formal -- would otherwise be discarded in silence and the search
+  # would quietly run on defaults. See .check_xgb_dots() for the full reasoning.
+  .check_xgb_dots(list(...), fn_formals = names(formals(sys.function())))
+
   # Data preparation
   #_____________________________________________________________________________
   outcome <- all.vars(fixed[[2]])

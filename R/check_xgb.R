@@ -292,3 +292,96 @@ xgb_check2 <- function(transformation,
   if (!is.character(cluster)) stop("The cluster name must be a character value.")
 
 }
+
+#' Reject arguments that fell into `...` without being used
+#'
+#' `xgb_tune()` forwards `...` to `xgboost::xgb.train()`, so an argument that is
+#' not a formal of `xgb_tune()` and not an xgboost parameter is silently
+#' discarded. That is how a caller written against a newer signature can run
+#' against an older library and get a result with no error: when `search`,
+#' `n_iter`, `bounds` and `seed` were added, a call supplying them to a build
+#' that predated them evaluated the 32-point default grid -- every point at
+#' `eta = 0.3`, `nround` in {150, 300} -- and returned it looking like a random
+#' search, with only a suspiciously short runtime to give it away.
+#'
+#' This check makes that failure loud. It cannot repair older builds, which have
+#' no check in them; it protects every version from here on, which is the case
+#' where a caller is upgraded before the library.
+#'
+#' @param dots the result of `list(...)` in the calling function.
+#' @param fn_formals names of the calling function's formals, used to spot a
+#'   near-miss spelling of a real argument (`fold` for `folds`).
+#' @param allow character vector of additional names to accept.
+#' @param strict if `TRUE` (default) an unrecognised name is an error; if
+#'   `FALSE` it is a warning. The escape hatch exists so that a genuinely new
+#'   xgboost parameter, added upstream after this list was written, can never
+#'   block a legitimate call.
+#' @keywords internal
+#' @noRd
+.check_xgb_dots <- function(dots, fn_formals = character(0),
+                            allow = character(0), strict = TRUE) {
+  if (!length(dots)) return(invisible(TRUE))
+
+  nms <- names(dots)
+  if (is.null(nms) || any(!nzchar(nms))) {
+    stop("xgb_tune(): ", sum(is.null(nms) | !nzchar(nms)),
+         " argument(s) were passed to `...` without a name. `...` is forwarded ",
+         "to xgboost::xgb.train(), which needs names, so an unnamed value is ",
+         "discarded. Name them, or remove them.", call. = FALSE)
+  }
+
+  ## Documented xgboost training parameters plus the xgb.train arguments a
+  ## caller may reasonably want to reach. Deliberately generous: the point is to
+  ## catch a name that belongs to no API at all, not to police xgboost.
+  known <- c(
+    ## general
+    "booster", "device", "nthread", "verbosity", "validate_parameters", "seed_per_iteration",
+    ## tree booster
+    "base_score", "objective", "eval_metric", "tree_method", "grow_policy",
+    "max_leaves", "max_bin", "sampling_method", "monotone_constraints",
+    "interaction_constraints", "num_parallel_tree", "scale_pos_weight",
+    "sketch_eps", "refresh_leaf", "process_type", "updater", "top_k",
+    "colsample_bylevel", "colsample_bynode", "colsample_bytree",
+    "max_cat_to_onehot", "max_cat_threshold", "multi_strategy",
+    ## objective-specific
+    "tweedie_variance_power", "huber_slope", "quantile_alpha",
+    "aft_loss_distribution", "aft_loss_distribution_scale", "num_class",
+    "disable_default_eval_metric",
+    ## xgb.train arguments
+    "watchlist", "evals", "obj", "feval", "custom_metric", "maximize",
+    "print_every_n", "callbacks", "xgb_model", "save_period", "save_name",
+    "missing", "weight", "params",
+    allow)
+
+  unknown <- setdiff(nms, known)
+  if (!length(unknown)) return(invisible(TRUE))
+
+  ## A name that nearly matches a real formal is almost always a typo or a
+  ## signature change, so say which one it looks like rather than only that it
+  ## was not recognised.
+  hint <- character(0)
+  if (length(fn_formals)) {
+    fn_formals <- setdiff(fn_formals, "...")
+    for (u in unknown) {
+      d <- utils::adist(u, fn_formals, ignore.case = TRUE)[1, ]
+      near <- fn_formals[d <= max(1L, floor(nchar(u) / 4))]
+      if (length(near)) hint <- c(hint, sprintf("  '%s' -- did you mean %s?",
+                                                u, paste(sQuote(near), collapse = " or ")))
+    }
+  }
+
+  msg <- paste0(
+    "xgb_tune(): unrecognised argument(s) in `...`: ",
+    paste(sQuote(unknown), collapse = ", "), ".\n",
+    "`...` is forwarded to xgboost::xgb.train(), so these would be silently ",
+    "discarded rather than used.\n",
+    if (length(hint)) paste0(paste(hint, collapse = "\n"), "\n") else "",
+    "If this is an argument of a NEWER xgb_tune() than the one installed ",
+    "(installed version ", utils::packageVersion("povmap"),
+    "), the call would otherwise have run with defaults and returned a result ",
+    "that looks correct.\n",
+    "If it is a legitimate xgboost parameter this list does not know about, ",
+    "pass it inside `params = list(...)`.")
+  if (isTRUE(strict)) stop(msg, call. = FALSE) else warning(msg, call. = FALSE)
+  invisible(FALSE)
+}
