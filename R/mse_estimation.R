@@ -435,8 +435,10 @@ if (is.null(framework$smp_subdomains) && is.null(framework$pop_subdomains)) {  #
   #  Draw epsilon 
   var_eps <- vector(length=framework$N_pop)
   var_eps[(framework$obs_dom & framework$obs_subdom)] <- (model_par$sigmae2est) # observed subdomain within observed domain 
-  var_eps[(framework$obs_dom & !framework$obs_subdom)] <- (model_par$sigmae2est+model_par$sigmah2est) # unobserved subdomain within observed subdomain 
-  var_eps[!framework$obs_dom] <- (model_par$sigmae2est+model_par$sigmah2est+model_par$sigmau2est) # unobserved domain 
+  # Y_pop_mu below already contains vu_pop and eta_pop for every unit, so the unit variance
+  # is sigma_e2 everywhere (same correction as in superpopulation()).
+  var_eps[(framework$obs_dom & !framework$obs_subdom)] <- (model_par$sigmae2est) # unobserved subdomain within observed domain
+  var_eps[!framework$obs_dom] <- (model_par$sigmae2est) # unobserved domain 
   
   eps <- rnorm(framework$N_pop, 0, sqrt(var_eps))
 
@@ -539,10 +541,12 @@ superpopulation <- function(framework, model_par, gen_model, lambda, shift,
       sum(framework$obs_dom), 0,
       sqrt(model_par$sigmae2est)
     )
+    # Unit error at sigma_e2 for every unit. The area draw vu_pop below is added to every
+    # unit, sampled area or not, so adding sigma_u2 here as well gave census units in
+    # unsampled areas the area variance twice (measured 2026-09-12: sigma_e2 + 2 sigma_u2).
     eps[!framework$obs_dom] <- rnorm(
       sum(!framework$obs_dom), 0,
-      sqrt(model_par$sigmae2est +
-             model_par$sigmau2est)
+      sqrt(model_par$sigmae2est)
     )  
  
   
@@ -585,16 +589,16 @@ superpopulation_2f <- function(framework, model_par, gen_model, lambda, shift,
     sum(framework$obs_dom & framework$obs_subdom), 0,
     sqrt(model_par$sigmae2est)
   )
+  # Same correction as in superpopulation(): vu_pop and eta_pop are added to every unit
+  # below, so the unit error is sigma_e2 everywhere.
   eps[framework$obs_dom & !framework$obs_subdom] <- rnorm(
     sum(framework$obs_dom & !framework$obs_subdom), 0,
-    sqrt(model_par$sigmae2est+model_par$sigmah2est)
+    sqrt(model_par$sigmae2est)
   )
   eps[!framework$obs_dom] <- rnorm(
     sum(!framework$obs_dom), 0,
-    sqrt(model_par$sigmae2est +
-           model_par$sigmah2est + 
-           model_par$sigmau2est)
-  )  
+    sqrt(model_par$sigmae2est)
+  )
   
   
   

@@ -1,5 +1,18 @@
 # povmap 1.0.1
 
+* Parametric bootstrap MSE: the truth generator drew the unit-level error for census
+  units in domains without sample observations at `sigmae2est + sigmau2est` and then
+  added the domain effect, drawn at `sigmau2est`, to every unit, so those units had
+  variance `sigmae2est + 2 * sigmau2est` around the regression line and their domains a
+  within-domain variance of `sigmae2est + sigmau2est`. The unit error is now drawn at
+  `sigmae2est` for every unit, as in Molina and Rao (2010) and in emdi's documented
+  algorithm. Point estimates and in-sample MSEs are unchanged (same draws, same seed);
+  out-of-sample MSEs change, in an indicator-dependent direction (on MEX2010 data the
+  head-count MSE rises about 2 percent). The same construction in `superpopulation_2f()`
+  and `true_indicators_weighted()` is corrected in the same way. The one-fold site is
+  inherited from emdi and is in every released povmap; the other two are david3 only.
+  Test: `tests/testthat/test_generator_unsampled_variance.R`.
+
 * `xgb()`: the reported area point estimate and its bootstrap interval are now both
   computed by back-transforming each population cell and then aggregating (`hat_pc`),
   rather than aggregating on the model's transformed scale and back-transforming the
