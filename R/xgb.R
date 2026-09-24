@@ -51,7 +51,9 @@
 #' @param boot_estimates. If TRUE, point_estimates are set equal to the average of the bootstrap replications. If set to FALSE, point estimates
 #' are set equal to the XGboost prediction. Defaults to FALSE.
 #' @param center_residuals. If TRUE, the mean of the residuals during the bootstrap are subtracted from the residuals prior to the bootstrapping procedure.
-#' Defaults to FALSE.
+#' Defaults to FALSE. This switch governs the bootstrap only. The point estimate
+#' always draws from centred pools, and with \code{transformation = "no"} it draws
+#' nothing and returns the deterministic aggregate of the fitted predictions.
 #' @param cpus. Number of cores to parallelize across. Defaults to 1 (no parallelization)
 #' @param conf_level confidence level for the confidence interval. Defaults to 0.95.
 #' @param nrounds maximum number of boosting iterations. Defaults to 100.
@@ -436,7 +438,8 @@ xgb <- function(fixed,
                                back_transform_outcome = back_transform_outcome,
                                L=L,
                                fwk=fwk,
-                               variance_y = variance_y)
+                               variance_y = variance_y,
+                               transformation = transformation)
 
   xgb_fit <-  xgb_model$model
   domains_pred <- xgb_model$predictions
@@ -735,7 +738,7 @@ xgb <- function(fixed,
                                                                     fwk=fwk,
                                                                     transform_outcome=transform_outcome,
                                                                     back_transform_outcome=back_transform_outcome,
-                                                                    L=L,variance_y=NULL)$predictions
+                                                                    L=L,variance_y=NULL,transformation=transformation)$predictions
 
 
 
@@ -1132,7 +1135,7 @@ xgb <- function(fixed,
   sqrt(max(0, 1 - var_samp_t / var_resid_t))
 }
 
-point_estim_xgb <- function(params, smp_X, smp_Y, smp_weight, pop_X, sub_domains,nrounds,fwk,transform_outcome,back_transform_outcome,L,variance_y,smearing="naive") {
+point_estim_xgb <- function(params, smp_X, smp_Y, smp_weight, pop_X, sub_domains,nrounds,fwk,transform_outcome,back_transform_outcome,L,variance_y,smearing="naive",transformation=NULL) {
 
   smp_Y_t <- transform_outcome(smp_Y)$y
 
@@ -1205,6 +1208,18 @@ point_estim_xgb <- function(params, smp_X, smp_Y, smp_weight, pop_X, sub_domains
   resid_domains <- sample_domains$resid_domains
   resid_sub_domains <- resid_total -sample$resid_domains
 
+  ## ---- centring the pools the point estimate draws from ------------------------
+  ## The sub-area pool is centred within domain by the survey weight it is drawn
+  ## with, so sum(resid_sub_domains * w) == 0 by construction. The area pool is
+  ## not: its expectation under its draw probability (the summed domain weight) is
+  ## the overall weighted mean residual, which an xgboost fit does not force to
+  ## zero. Drawn uncentred, it shifts every domain by that mean and the shift does
+  ## not fall with L. Centre it here, on its own draw probability, for the point
+  ## path. The uncentred pool is still returned as resid_domains, so the bootstrap
+  ## is unchanged and remains governed by center_residuals.
+  resid_domains_point <- resid_domains -
+    stats::weighted.mean(resid_domains, w = sample_domains$wts)
+
   ## ---- smearing variance correction ------------------------------------------
   ## The smearing estimator targets E[g(z + eps)], which IS the conditional mean of
   ## the outcome, so it is not biased in itself. The problem is that the residual
@@ -1238,7 +1253,21 @@ point_estim_xgb <- function(params, smp_X, smp_Y, smp_weight, pop_X, sub_domains
   mean_sim    <- 0   # aggregate-then-back-transform (non-benchmarked point order)
   mean_sim_pc <- 0   # per-cell-then-aggregate (benchmarked point order; matches sim_truth)
 
-
+  ## ---- untransformed outcome: no draw -------------------------------------------
+  ## With transformation = "no" the back-transform is the identity, so the draw
+  ## loop averages hat + e_sub + e_area over L draws. With both pools centred that
+  ## converges to the deterministic aggregate of hat itself, and at any finite L
+  ## it only adds Monte Carlo noise. Return the deterministic aggregate directly.
+  ## The draw is kept, centred, only where the back-transform is nonlinear and
+  ## E[g(z + e)] differs from g(z).
+  if (identical(transformation, "no")) {
+    det <- collapse:::fmean(x=as.numeric(sub_pred_t$hat_t),g=sub_pred_t[,fwk$domains],w=sub_pred_t[,fwk$pop_weights])
+    MC_results <- data.frame(domains = names(det), hat = as.numeric(det), hat_pc = as.numeric(det))
+    return(list(predictions=MC_results,sub_predictions = sub_pred_t, model=xgb_fit,resid_sub_domains=resid_sub_domains,
+                resid_domains=resid_domains, resid_domains_point=resid_domains_point,
+                resid_total=resid_total,wt_sub_domains=wt_sub_domains,
+                wt_domains=sample_domains$wts,domains=rownames(sample_domains)))
+  }
 
   for (l in 1:L) {
     sub_pred_t$sim_t <- as.numeric(sub_pred_t$hat_t) + lam_sub * resid_sub_domains[sample(1:length(resid_sub_domains),
@@ -1247,7 +1276,7 @@ point_estim_xgb <- function(params, smp_X, smp_Y, smp_weight, pop_X, sub_domains
     B_domains <- collapse:::fmean(x=sub_pred_t$sim_t,g=sub_pred_t[,fwk$domains],w=sub_pred_t[,fwk$pop_weights])
     B_domains <- data.frame("domains" = names(B_domains),"sim_t" = B_domains)
     B_domains <-data.frame(B_domains,wts=collapse:::fsum(x=sub_pred_t[,fwk$pop_weights],g=sub_pred_t[,fwk$domains]))
-    area_draws <- data.frame(domains=B_domains$domains,area_draw=resid_domains[sample(1:length(resid_domains),
+    area_draws <- data.frame(domains=B_domains$domains,area_draw=resid_domains_point[sample(1:length(resid_domains_point),
                                                                                       nrow(B_domains), prob=sample_domains$wts,
                                                                                       replace = TRUE)])
 
@@ -1277,7 +1306,8 @@ point_estim_xgb <- function(params, smp_X, smp_Y, smp_weight, pop_X, sub_domains
 
 
   return(list(predictions=MC_results,sub_predictions = sub_pred_t, model=xgb_fit,resid_sub_domains=resid_sub_domains,
-              resid_domains=resid_domains, resid_total=resid_total,wt_sub_domains=wt_sub_domains,
+              resid_domains=resid_domains, resid_domains_point=resid_domains_point,
+              resid_total=resid_total,wt_sub_domains=wt_sub_domains,
               wt_domains=sample_domains$wts,domains=rownames(sample_domains)))
 }
 
