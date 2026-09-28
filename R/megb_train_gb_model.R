@@ -44,9 +44,16 @@ train_gbmodel <- function(model_type, features_train, response_train,
         prediction            = TRUE,   # keep out-of-fold preds for honest sigma_e
         ...
       )
-      best_iter <- cv$best_iteration
-      if (is.null(best_iter) || length(best_iter) == 0 || best_iter <= 0)
+      # xgboost >= 3 reports the early-stopping round in cv$early_stop$best_iteration
+      # (1-based: the number of rounds); cv$best_iteration no longer exists there and
+      # reading it returned NULL, so until 28 Sep 2026 every booster fell back to the
+      # full nrounds cap while the out-of-fold predictions (taken by xgb.cv at the best
+      # round) came from shorter fold models. Older xgboost kept it in cv$best_iteration.
+      best_iter <- cv$early_stop$best_iteration
+      if (is.null(best_iter)) best_iter <- cv$best_iteration
+      if (is.null(best_iter) || length(best_iter) == 0 || !is.finite(best_iter) || best_iter <= 0)
         best_iter <- nrounds
+      best_iter <- as.integer(best_iter)
       # Out-of-fold (held-out) predictions, used by em_gb_lmm to estimate the
       # idiosyncratic error variance from held-out rather than in-sample residuals.
       # A strong learner overfits within-area in-sample, which deflates sigma_e and
