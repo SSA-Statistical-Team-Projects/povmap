@@ -382,6 +382,9 @@ megb <- function(fixed,
     ),
     parent = getNamespace("povmap")
   )
+  # Marks the identity back-transform, the one case in which the leaves_only
+  # bootstrap may aggregate from leaf values (povmap.leaves_only.leaf_aggregate).
+  attr(corrected_bt, "identity") <- identical(transformation, "no")
 
   # ── 6. Back-transform unit predictions and aggregate to domain level ──────────
   unit_preds_pop      <- megb_fit$unit_preds_all       # columns: unit_preds, dom_name

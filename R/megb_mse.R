@@ -365,6 +365,18 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
 
       boots_models <- vector("list", B)
 
+      # Leaf-level aggregation (options(povmap.leaves_only.leaf_aggregate); default
+      # TRUE since 28 Sep 2026, FALSE restores per-row prediction). With the identity back-transform every domain mean the
+      # replicate needs is linear in the refreshed leaf values, so it is computed
+      # from them (.megb_leaf_domain_means) instead of predicting every population
+      # row. The sample-row predictions the LMM refit needs are still predicted.
+      .use_leaf <- !isFALSE(getOption("povmap.leaves_only.leaf_aggregate", TRUE)) &&
+                   (is.null(corrected_bt) || isTRUE(attr(corrected_bt, "identity")))
+      if (.use_leaf) {
+        LA <- .megb_leaf_aggregator(orig_booster, X_pop_mat, pop_dom_idx,
+                                    length(domains), pw = pw_pop)
+      }
+
       for (i in seq_len(B)) {
         if (i %% max(1L, B %/% 10L) == 0L)
           message("leaves_only bootstrap iteration ", i, " of ", B)
@@ -400,7 +412,12 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
         }
 
         # 2) Predict refreshed model on pop and smp.
-        gb_pop_boot <- as.numeric(predict(gb_refreshed, X_pop_mat))
+        if (.use_leaf) {
+          LM <- .megb_leaf_domain_means(LA, gb_refreshed)
+          gb_pop_boot <- NULL
+        } else {
+          gb_pop_boot <- as.numeric(predict(gb_refreshed, X_pop_mat))
+        }
         gb_smp_boot <- as.numeric(predict(gb_refreshed, X_smp_mat))
 
         # 3) Refit LMM on residuals from refreshed predictions.
@@ -432,7 +449,8 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
 
 
         # 4) Per-domain mean from refreshed pop predictions + BLUP.
-        gb_pop_d_mean_boot <- as.numeric(tapply(gb_pop_boot, pop_dom_idx, mean))
+        gb_pop_d_mean_boot <- if (.use_leaf) LM$unweighted
+                              else as.numeric(tapply(gb_pop_boot, pop_dom_idx, mean))
         if (collect_diag) {
           gb_pop_d_mean_boot_mat[, i] <- gb_pop_d_mean_boot
           u_d_boot_mat[, i]           <- u_d_boot
@@ -443,7 +461,11 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
         # gb_pop_boot and re-estimated u_d_boot; same corrected_bt, same unweighted
         # aggregation. Only the order differs from the previous
         # corrected_bt(aggregate) line.
-        mean_boot_orig     <- if (!is.null(corrected_bt)) {
+        mean_boot_orig     <- if (!is.null(corrected_bt) && .use_leaf) {
+          # identity back-transform: agg_dom(gb + u_d) = agg_dom(gb) + u_d, since
+          # u_d is constant within the domain and the weights sum to one
+          LM$weighted + u_d_boot
+        } else if (!is.null(corrected_bt)) {
           cell_orig_boot <- corrected_bt(gb_pop_boot + u_d_boot[pop_dom_idx])
           agg_dom(cell_orig_boot)
         } else mean_boot_t

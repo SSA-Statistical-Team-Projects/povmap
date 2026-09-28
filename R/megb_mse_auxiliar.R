@@ -148,3 +148,69 @@ ran_comp <- function(unit_pred_smp, smp_data, Y, dom_name, error_sd,
          as.numeric(tapply(weights, smp_data[[dom_name]], sum)[as.character(unique(smp_data[[dom_name]]))])
          else NULL)
 }
+
+# ── Leaf-level domain aggregation for the leaves_only bootstrap ─────────────────
+# (28 Sep 2026; options(povmap.leaves_only.leaf_aggregate), default TRUE.)
+# The leaves_only bootstrap refreshes leaf VALUES only; every population row stays
+# in the same leaf of every tree. A domain mean of the refreshed predictions is
+# therefore base_score + sum over leaves of (rows of the domain in that leaf) x
+# (leaf value), so it can be computed from the leaf values alone instead of
+# predicting every population row in every replicate. Exact in real arithmetic;
+# in floating point it differs from xgboost's single-precision accumulation at the
+# 1e-7 level (see phase1_note/47 of the Colombia project for the measured sizes).
+
+# Leaf node ids and values of every tree, plus the base score, from the JSON dump.
+.megb_leaf_info <- function(booster) {
+  j <- jsonlite::fromJSON(rawToChar(xgboost::xgb.save.raw(booster, raw_format = "json")),
+                          simplifyVector = FALSE)
+  trees <- j$learner$gradient_booster$model$trees
+  list(base   = as.numeric(gsub("[][]", "", j$learner$learner_model_param$base_score)),
+       leaves = lapply(trees, function(t) {
+         lc <- unlist(t$left_children)
+         list(leaf = which(lc == -1L) - 1L, v = unlist(t$split_conditions)[lc == -1L])
+       }))
+}
+
+# Once per fit: for every (domain, leaf) pair, the number of population rows and
+# the sum of their weights, plus a collapse grouping on domain that every replicate
+# reuses. dom_idx (1..n_dom, every domain present) and pw must be aligned to X_pop.
+.megb_leaf_aggregator <- function(booster, X_pop, dom_idx, n_dom, pw = NULL, chunk = 40L) {
+  info  <- .megb_leaf_info(booster)
+  nt    <- length(info$leaves)
+  nleaf <- vapply(info$leaves, function(z) length(z$leaf), 1L)
+  off   <- c(0L, cumsum(nleaf))
+  dm    <- xgboost::xgb.DMatrix(X_pop)
+  w     <- if (is.null(pw)) rep(1, nrow(X_pop)) else as.numeric(pw)
+  pd <- pg <- pn <- pw_ <- list()
+  for (a in seq(1L, nt, by = chunk)) {
+    b  <- min(nt, a + chunk - 1L)
+    lf <- predict(xgboost::xgb.slice.Booster(booster, a, b), dm, predleaf = TRUE)
+    if (is.null(dim(lf))) lf <- matrix(lf, ncol = 1L)
+    g  <- vapply(seq_len(ncol(lf)), function(k) {
+      t <- a + k - 1L; match(lf[, k], info$leaves[[t]]$leaf) + off[t] }, numeric(nrow(lf)))
+    if (anyNA(g)) stop("leaf aggregation: a population row fell in a node that is not a leaf")
+    G  <- collapse::GRP(list(d = rep(dom_idx, ncol(lf)), g = as.integer(g)), sort = FALSE)
+    k  <- length(pd) + 1L
+    pd[[k]]  <- G$groups$d
+    pg[[k]]  <- G$groups$g
+    pn[[k]]  <- collapse::GRPN(G, expand = FALSE)
+    pw_[[k]] <- collapse::fsum(rep(w, ncol(lf)), G, use.g.names = FALSE)
+  }
+  d <- unlist(pd, use.names = FALSE)
+  list(g = unlist(pg, use.names = FALSE), n = unlist(pn, use.names = FALSE),
+       w = unlist(pw_, use.names = FALSE), GD = collapse::GRP(d),   # sorted: groups 1..n_dom
+       n_dom = n_dom, n_leaves = off[nt + 1L],
+       nd = tabulate(dom_idx, n_dom), sw = collapse::fsum(w, dom_idx, use.g.names = FALSE),
+       weighted = !is.null(pw))
+}
+
+# Per replicate: unweighted and weighted domain means of a refreshed booster.
+.megb_leaf_domain_means <- function(LA, booster) {
+  info <- .megb_leaf_info(booster)
+  v <- unlist(lapply(info$leaves, `[[`, "v"))
+  if (length(v) != LA$n_leaves) stop("leaf aggregation: the refreshed booster's tree structure changed")
+  vg  <- v[LA$g]
+  s_n <- collapse::fsum(vg * LA$n, LA$GD, use.g.names = FALSE)
+  s_w <- collapse::fsum(vg * LA$w, LA$GD, use.g.names = FALSE)
+  list(unweighted = info$base + s_n / LA$nd, weighted = info$base + s_w / LA$sw)
+}

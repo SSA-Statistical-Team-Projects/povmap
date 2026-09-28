@@ -60,13 +60,26 @@ em_gb_lmm <- function(Y,
   )
   adjusted_target <- target - (stats::predict(lmefit_init) - lme4::fixef(lmefit_init))
 
+  # Only the final EM iteration's full-data booster is used (its predictions and
+  # in-sample fit); earlier iterations need only the cross-validation's out-of-fold
+  # predictions. With xgboost and the out-of-fold variance (the default), the
+  # full-data booster is therefore trained once, after convergence, from the
+  # RNG state of the last iteration -- the same booster, bit for bit, at a
+  # fraction of the cost. options(megb.defer_full_fit = FALSE) restores the
+  # per-iteration fit.
+  .defer <- gbm_engine == "xgboost" &&
+            !isFALSE(getOption("megb.defer_full_fit", TRUE)) &&
+            !isFALSE(getOption("megb.oof_sigma", TRUE))
+
   while (continue_condition) {
     iterations <- iterations + 1
 
     response_train <- adjusted_target
     gbm_results    <- train_gbmodel(gbm_engine, features_train, response_train,
-                                    params  = gradient_params,
-                                    weights = weights)
+                                    params   = gradient_params,
+                                    weights  = weights,
+                                    fit_full = !.defer)
+    last_response  <- response_train
 
     model        <- gbm_results$boosting
     unit_pred_smp <- gbm_results$prediction
@@ -104,6 +117,12 @@ em_gb_lmm <- function(Y,
     old_log_lik     <- c(old_log_lik, new_log_lik)
     dom_name_effects <- stats::predict(lmefit)
     adjusted_target  <- target - stats::predict(lmefit) + lme4::fixef(lmefit)
+  }
+
+  if (!is.null(gbm_results$deferred)) {
+    full <- .xgb_full_fit(gbm_results$deferred, features_train, last_response)
+    model <- gbm_results$boosting <- full$boosting
+    unit_pred_smp <- gbm_results$prediction <- full$prediction
   }
 
   residuals  <- target - stats::predict(lmefit) - unit_pred_smp

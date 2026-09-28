@@ -59,7 +59,9 @@ Imports:
     future,
     lme4,
     purrr,
-    doRNG
+    doRNG,
+    collapse,
+    jsonlite
 Suggests:
     testthat,
     R.rsp,
