@@ -78,7 +78,8 @@ em_gb_lmm <- function(Y,
     gbm_results    <- train_gbmodel(gbm_engine, features_train, response_train,
                                     params   = gradient_params,
                                     weights  = weights,
-                                    fit_full = !.defer)
+                                    fit_full = !.defer,
+                                    groups   = data[[dom_name]])
     last_response  <- response_train
 
     model        <- gbm_results$boosting
@@ -150,6 +151,7 @@ em_gb_lmm <- function(Y,
     initial_random_effects = initial_random_effects,
     importance_matrix    = importance_matrix,
     eval_log             = gbm_results$eval_log,
+    best_iter            = gbm_results$best_iter,   # rounds the final booster was trained to
     gradient_params      = gradient_params
   )
 }

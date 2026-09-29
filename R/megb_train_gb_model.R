@@ -3,7 +3,12 @@
 
 train_gbmodel <- function(model_type, features_train, response_train,
                            params, cat_idx0 = integer(0),
-                           weights = NULL, fit_full = TRUE, ...) {
+                           weights = NULL, fit_full = TRUE, groups = NULL, ...) {
+  # groups (xgboost only): the domain of each row. Used only when
+  # options(megb.cv_folds = "domain"), which makes xgb.cv hold out whole domains
+  # (5 folds of domains) instead of random rows. Default "rows": unchanged.
+  # options(megb.early_stopping = FALSE) trains the fold models and the booster to
+  # the full nrounds (no early stopping), as povmap::xgb does. Default TRUE: unchanged.
   # weights: numeric vector of observation weights, length = nrow(features_train).
   # When NULL or all 1s, behaviour is unchanged from the historical default.
   #
@@ -34,14 +39,30 @@ train_gbmodel <- function(model_type, features_train, response_train,
                                       label = response_train)
       if (!is.null(weights)) xgboost::setinfo(dtrain, "weight", as.numeric(weights))
 
-      cv <- xgboost::xgb.cv(
+      .es    <- !isFALSE(getOption("megb.early_stopping", TRUE))
+      .folds <- NULL
+      if (identical(getOption("megb.cv_folds", "rows"), "domain") && !is.null(groups)) {
+        g  <- as.character(groups); ug <- unique(g)
+        fd <- sample(rep_len(1:5, length(ug)))            # 5 folds of whole domains
+        .folds <- lapply(1:5, function(k) which(g %in% ug[fd == k]))
+      }
+      cv <- if (is.null(.folds)) xgboost::xgb.cv(
         params                = xgb_params,
         data                  = dtrain,
         nrounds               = nrounds,
         nfold                 = 5,
-        early_stopping_rounds = 10,
+        early_stopping_rounds = if (.es) 10 else NULL,
         verbose               = 0,
         prediction            = TRUE,   # keep out-of-fold preds for honest sigma_e
+        ...
+      ) else xgboost::xgb.cv(
+        params                = xgb_params,
+        data                  = dtrain,
+        nrounds               = nrounds,
+        folds                 = .folds,
+        early_stopping_rounds = if (.es) 10 else NULL,
+        verbose               = 0,
+        prediction            = TRUE,
         ...
       )
       # xgboost >= 3 reports the early-stopping round in cv$early_stop$best_iteration
