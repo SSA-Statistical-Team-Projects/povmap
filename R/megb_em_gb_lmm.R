@@ -15,6 +15,8 @@ em_gb_lmm <- function(Y,
                       cov_names,
                       gbm_engine = "xgboost",
                       weights    = NULL,
+                      cv_folds       = getOption("megb.cv_folds", "domain"),
+                      early_stopping = getOption("megb.early_stopping", TRUE),
                       ...) {
   # weights: numeric vector of observation weights aligned to rows of X / data.
   # Forwarded to train_gbmodel (xgb.DMatrix weight) AND to lme4::lmer (weights).
@@ -79,7 +81,9 @@ em_gb_lmm <- function(Y,
                                     params   = gradient_params,
                                     weights  = weights,
                                     fit_full = !.defer,
-                                    groups   = data[[dom_name]])
+                                    groups   = data[[dom_name]],
+                                    cv_folds = cv_folds,
+                                    early_stopping = early_stopping)
     last_response  <- response_train
 
     model        <- gbm_results$boosting

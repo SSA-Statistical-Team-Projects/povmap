@@ -13,6 +13,9 @@ megb(
   domains,
   transformation = "no",
   mse = TRUE,
+  mse_type = c("var", "mse"),
+  bootstrap_refit = c("leaves_only", "full", "lmm_only"),
+  bench_target = c("fixed", "random"),
   B = 100,
   bootstrap_cores = 0,
   conf_level = 0.95,
@@ -24,6 +27,10 @@ megb(
   benchmark_type = "ratio",
   benchmark_level = NULL,
   benchmark_weights = NULL,
+  weightedBS = TRUE,
+  cpus = NULL,
+  cv_folds = getOption("megb.cv_folds", "domain"),
+  early_stopping = getOption("megb.early_stopping", TRUE),
   ...
 )
 }
@@ -83,6 +90,46 @@ both \code{smp_data} and \code{pop_data} before fitting. Defaults to
 \code{FALSE}.}
 
 \item{seed}{integer seed for reproducibility. Defaults to \code{123}.}
+
+\item{cv_folds}{how the internal cross-validation (\code{xgboost::xgb.cv},
+  xgboost engine only) splits the sample in every EM iteration. Its
+  out-of-fold predictions give the residuals from which the linear mixed
+  model estimates the error variance \eqn{\sigma_e^2}, the random-effect
+  variance \eqn{\sigma_u^2} and the random effects, and the fold models set
+  the number of boosting rounds when \code{early_stopping = TRUE}.
+  \code{"domain"} (default) holds out 5 folds of whole domains, so no domain
+  has rows on both sides of a fold. \code{"rows"} holds out 5 folds of random
+  rows, the behaviour before povmap 6bd056f.
+
+  Domain folds matter most when covariates are constant within domains (for
+  example, municipal or area-level covariates attached to every household in
+  the municipality). With row folds, each held-out row's domain is
+  represented in the training folds by its other rows with identical
+  covariate values, so the booster can learn the domain's mean outcome and the
+  out-of-fold residuals carry little between-domain variation. The random-
+  effect variance is then estimated at or near zero, the random effects
+  vanish, and the bootstrap intervals, whose out-of-sample width is driven by
+  \eqn{\sigma_u}, become far too narrow. Holding out whole domains makes
+  the out-of-fold residuals honest about between-domain variation that the
+  covariates do not explain, which is the variation the random effect is
+  meant to capture. In the Colombia migration evaluation, row folds gave
+  \eqn{\hat\sigma_u = 0} in about half the fits on a covariate set in which
+  half the covariates are municipality means, with out-of-sample coverage of
+  95\% intervals of 0.44 to 0.53; domain folds gave about 0.88 at the same
+  point accuracy.
+
+  Domain labels come from \code{domains}. If \code{"domain"} is requested
+  but no labels reach the booster, it falls back to row folds with a
+  message. When not supplied, the default is taken from
+  \code{getOption("megb.cv_folds", "domain")}.}
+
+\item{early_stopping}{logical. If \code{TRUE} (default), the internal
+  cross-validation stops when the held-out error has not improved for 10
+  rounds, and the full-data booster is trained to that round. If
+  \code{FALSE}, the fold models and the booster train to the full
+  \code{nrounds} in \code{gradient_params}, as \code{\link{xgb}} does.
+  When not supplied, the default is taken from
+  \code{getOption("megb.early_stopping", TRUE)}.}
 
 \item{...}{additional arguments forwarded to \code{MEGB::megb}.}
 }

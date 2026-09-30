@@ -1,5 +1,22 @@
 # povmap 1.0.1
 
+* `megb()`: new arguments `cv_folds` and `early_stopping` control the internal
+  cross-validation (`xgboost::xgb.cv`) whose out-of-fold residuals feed the random-effect
+  and error variances. **The default changes to `cv_folds = "domain"`**, which holds out
+  5 folds of whole domains; `"rows"` restores the previous 5 folds of random rows.
+  `early_stopping = TRUE` (default) is unchanged. With row folds and covariates that are
+  constant within domains, each held-out row's domain is in the training folds, the
+  out-of-fold residuals lose their between-domain variation, and the random-effect
+  variance is estimated at or near zero, which makes the bootstrap intervals far too
+  narrow (in a Colombian evaluation, zero in about half the fits and out-of-sample
+  coverage of 0.44-0.53 for 95 percent intervals; about 0.88 with domain folds, at the
+  same point accuracy). When the arguments are omitted their defaults come from
+  `getOption("megb.cv_folds", "domain")` and `getOption("megb.early_stopping", TRUE)`,
+  so code that set those options still works. If domain folds are requested but no
+  domain labels reach the booster, row folds are used with a message. The settings are
+  passed explicitly to the `bootstrap_refit = "full"` refits, rather than relying on
+  global options reaching parallel workers. Tests: `tests/testthat/test-megb-cv-options.R`.
+
 * Parametric bootstrap MSE: the truth generator drew the unit-level error for census
   units in domains without sample observations at `sigmae2est + sigmau2est` and then
   added the domain effect, drawn at `sigmau2est`, to every unit, so those units had

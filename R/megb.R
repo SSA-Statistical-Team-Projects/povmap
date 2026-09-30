@@ -133,6 +133,44 @@
 #'   both \code{smp_data} and \code{pop_data} before fitting. Defaults to
 #'   \code{FALSE}.
 #' @param seed integer seed for reproducibility. Defaults to \code{123}.
+#' @param cv_folds how the internal cross-validation (\code{xgboost::xgb.cv},
+#'   xgboost engine only) splits the sample in every EM iteration. Its
+#'   out-of-fold predictions give the residuals from which the linear mixed
+#'   model estimates the error variance \eqn{\sigma_e^2}, the random-effect
+#'   variance \eqn{\sigma_u^2} and the random effects, and the fold models set
+#'   the number of boosting rounds when \code{early_stopping = TRUE}.
+#'   \code{"domain"} (default) holds out 5 folds of whole domains, so no domain
+#'   has rows on both sides of a fold. \code{"rows"} holds out 5 folds of random
+#'   rows, the behaviour before povmap 6bd056f.
+#'
+#'   Domain folds matter most when covariates are constant within domains (for
+#'   example, municipal or area-level covariates attached to every household in
+#'   the municipality). With row folds, each held-out row's domain is
+#'   represented in the training folds by its other rows with identical
+#'   covariate values, so the booster can learn the domain's mean outcome and the
+#'   out-of-fold residuals carry little between-domain variation. The random-
+#'   effect variance is then estimated at or near zero, the random effects
+#'   vanish, and the bootstrap intervals, whose out-of-sample width is driven by
+#'   \eqn{\sigma_u}, become far too narrow. Holding out whole domains makes
+#'   the out-of-fold residuals honest about between-domain variation that the
+#'   covariates do not explain, which is the variation the random effect is
+#'   meant to capture. In the Colombia migration evaluation, row folds gave
+#'   \eqn{\hat\sigma_u = 0} in about half the fits on a covariate set in which
+#'   half the covariates are municipality means, with out-of-sample coverage of
+#'   95\% intervals of 0.44 to 0.53; domain folds gave about 0.88 at the same
+#'   point accuracy.
+#'
+#'   Domain labels come from \code{domains}. If \code{"domain"} is requested
+#'   but no labels reach the booster, it falls back to row folds with a
+#'   message. When not supplied, the default is taken from
+#'   \code{getOption("megb.cv_folds", "domain")}.
+#' @param early_stopping logical. If \code{TRUE} (default), the internal
+#'   cross-validation stops when the held-out error has not improved for 10
+#'   rounds, and the full-data booster is trained to that round. If
+#'   \code{FALSE}, the fold models and the booster train to the full
+#'   \code{nrounds} in \code{gradient_params}, as \code{\link{xgb}} does.
+#'   When not supplied, the default is taken from
+#'   \code{getOption("megb.early_stopping", TRUE)}.
 #' @param ... additional arguments forwarded to \code{MEGB::megb}.
 #'
 #' @return An object of class \code{c("megb", "xgb", "povmap")} with elements:
@@ -209,6 +247,8 @@ megb <- function(fixed,
                  benchmark_weights = NULL,
                  weightedBS       = TRUE,
                  cpus             = NULL,
+                 cv_folds         = getOption("megb.cv_folds", "domain"),
+                 early_stopping   = getOption("megb.early_stopping", TRUE),
                  ...) {
   # weightedBS: when TRUE and smp_weights is supplied, the bootstrap residual
   # sampling uses probabilities proportional to weights (mirroring xgb's
@@ -219,6 +259,9 @@ megb <- function(fixed,
   mse_type        <- match.arg(mse_type)
   bootstrap_refit <- match.arg(bootstrap_refit)
   bench_target    <- match.arg(bench_target)
+  cv_folds        <- match.arg(cv_folds, c("domain", "rows"))
+  if (!is.logical(early_stopping) || length(early_stopping) != 1L || is.na(early_stopping))
+    stop("early_stopping must be TRUE or FALSE.")
 
   # Local %||% so the diagnostic message below isn't fragile to NULLs.
   `%||%` <- function(a, b) if (is.null(a)) b else a
@@ -331,6 +374,8 @@ megb <- function(fixed,
     mse             = FALSE,
     gbm_engine      = gbm_engine,
     smp_weights_vec = fwk$smp_weights_vec,
+    cv_folds        = cv_folds,
+    early_stopping  = early_stopping,
     ...
   )
 
@@ -637,7 +682,9 @@ megb <- function(fixed,
       # (megb.R: domain_means = sum(hat*pw)/sum(pw) over pop cells). Passed so the
       # bootstrap's per-cell-then-aggregate domain means use identical weighting;
       # NULL reproduces the historical unweighted bootstrap aggregation.
-      pop_weights_vec        = if (!is.null(pop_weights)) fwk$pop_weights_vec else NULL
+      pop_weights_vec        = if (!is.null(pop_weights)) fwk$pop_weights_vec else NULL,
+      cv_folds               = cv_folds,
+      early_stopping         = early_stopping
     )
   }
 

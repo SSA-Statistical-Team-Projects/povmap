@@ -3,12 +3,15 @@
 
 train_gbmodel <- function(model_type, features_train, response_train,
                            params, cat_idx0 = integer(0),
-                           weights = NULL, fit_full = TRUE, groups = NULL, ...) {
-  # groups (xgboost only): the domain of each row. Used only when
-  # options(megb.cv_folds = "domain"), which makes xgb.cv hold out whole domains
-  # (5 folds of domains) instead of random rows. Default "rows": unchanged.
-  # options(megb.early_stopping = FALSE) trains the fold models and the booster to
-  # the full nrounds (no early stopping), as povmap::xgb does. Default TRUE: unchanged.
+                           weights = NULL, fit_full = TRUE, groups = NULL,
+                           cv_folds       = getOption("megb.cv_folds", "domain"),
+                           early_stopping = getOption("megb.early_stopping", TRUE), ...) {
+  # groups (xgboost only): the domain of each row.
+  # cv_folds (xgboost only): "domain" (default) makes xgb.cv hold out 5 folds of
+  # whole domains; "rows" uses nfold = 5 over random rows. "domain" with no groups
+  # falls back to "rows" with a message. See ?megb.
+  # early_stopping: FALSE trains the fold models and the booster to the full
+  # nrounds (no early stopping), as povmap::xgb does. Default TRUE.
   # weights: numeric vector of observation weights, length = nrow(features_train).
   # When NULL or all 1s, behaviour is unchanged from the historical default.
   #
@@ -39,9 +42,13 @@ train_gbmodel <- function(model_type, features_train, response_train,
                                       label = response_train)
       if (!is.null(weights)) xgboost::setinfo(dtrain, "weight", as.numeric(weights))
 
-      .es    <- !isFALSE(getOption("megb.early_stopping", TRUE))
+      cv_folds <- match.arg(cv_folds, c("domain", "rows"))
+      .es    <- !isFALSE(early_stopping)
       .folds <- NULL
-      if (identical(getOption("megb.cv_folds", "rows"), "domain") && !is.null(groups)) {
+      if (cv_folds == "domain" && is.null(groups))
+        message("megb: cv_folds = \"domain\" but no domain labels were supplied; ",
+                "using 5 folds of random rows instead.")
+      if (cv_folds == "domain" && !is.null(groups)) {
         g  <- as.character(groups); ug <- unique(g)
         fd <- sample(rep_len(1:5, length(ug)))            # 5 folds of whole domains
         .folds <- lapply(1:5, function(k) which(g %in% ug[fd == k]))

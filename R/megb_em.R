@@ -101,6 +101,8 @@ megb_em <- function(Y, X, dom_name, smp_data, pop_data,
                     bootstrap_cores  = 0,
                     gbm_engine       = "xgboost",
                     smp_weights_vec  = NULL,
+                    cv_folds         = getOption("megb.cv_folds", "domain"),
+                    early_stopping   = getOption("megb.early_stopping", TRUE),
                     ...) {
   # smp_weights_vec: numeric vector of observation weights for smp_data rows,
   # aligned to the same indexing as Y / X / smp_data. Forwarded to em_gb_lmm
@@ -167,6 +169,8 @@ megb_em <- function(Y, X, dom_name, smp_data, pop_data,
     cov_names              = cov_names,
     gbm_engine             = gbm_engine,
     weights                = smp_weights_vec,
+    cv_folds               = cv_folds,
+    early_stopping         = early_stopping,
     ...
   )
 
