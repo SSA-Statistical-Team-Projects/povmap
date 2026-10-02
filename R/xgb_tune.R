@@ -116,6 +116,16 @@
 #'   \code{seed = NULL} preserves that behaviour exactly.
 #' Defaults to 0.
 #' @param cpus. Number of cores to parallelize across. Defaults to 1 (no parallelization)
+#' @param keep_candidates logical. If \code{TRUE} (default), the result also
+#'   carries every candidate configuration's cross-validation score, not only
+#'   the winner's: \code{candidates}, a data frame with one row per
+#'   configuration (its parameters, \code{mse} = mean over folds, \code{rank},
+#'   1 = selected); \code{cv_by_fold}, the configurations x folds matrix of
+#'   per-fold scores; and \code{fold_assignment}, the fold of each cluster. With
+#'   the same \code{seed}, two searches on different covariate sets share draws
+#'   and folds, so their candidates can be compared one for one. These are
+#'   appended after the 14 original elements and use no random numbers, so the
+#'   search and its result are unchanged. \code{FALSE} omits them.
 #' @param verbose display progress. Defaults to FALSE.
 #' @param ... additional parameters to be passed to \code{xgb.train}.
 #'
@@ -170,6 +180,7 @@ xgb_tune <- function(fixed,
                      early_stopping_rounds = NULL,
                      nrounds_max = 2000,
                      seed = NULL,
+                     keep_candidates = TRUE,
                      cpus = 1, 
                      verbose = TRUE,
                      ...){
@@ -343,6 +354,15 @@ xgb_tune <- function(fixed,
   ## elements is unaffected.
   final_output$search    <- search
   final_output$n_configs <- nrow(tunegrid)
+  if (isTRUE(keep_candidates)) {
+    cand <- tunegrid
+    cand$mse  <- mean_mse
+    cand$rank <- rank(mean_mse, ties.method = "first")
+    if (es_on) cand$nround_learned <- round(rowMeans(ITER))
+    final_output$candidates      <- cand
+    final_output$cv_by_fold      <- OPT
+    final_output$fold_assignment <- cluster_unique
+  }
   if (es_on) {
     final_output$best_iters_by_fold <- best_iters
     ## Hitting the ceiling is the early-stopping analogue of an optimum sitting

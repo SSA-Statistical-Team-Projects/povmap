@@ -124,3 +124,33 @@ test_that("early stopping takes nrounds out of the search", {
   # the reported nround is the learned stopping point, not a grid value
   expect_equal(r$nround, round(mean(r$best_iters_by_fold)))
 })
+
+test_that("every candidate's score is returned by default, and the result is unchanged", {
+  d <- make_toy()
+  f <- function(...) suppressWarnings(xgb_tune(y ~ x1 + x2 + x3, smp_data = d, smp_weights = "wt",
+                           domains = "muni", folds = 3, search = "random", n_iter = 5,
+                           bounds = list(eta = c(0.05, 0.3), max_depth = c(2, 4)),
+                           seed = 11, verbose = FALSE, ...))
+  r <- f(); r0 <- f(keep_candidates = FALSE)
+  expect_equal(r[1:14], r0[1:14])                              # the search itself is unchanged
+  expect_null(r0$candidates); expect_null(r0$cv_by_fold)
+  expect_s3_class(r$candidates, "data.frame")
+  expect_equal(nrow(r$candidates), 5L)
+  expect_equal(dim(r$cv_by_fold), c(5L, 3L))
+  expect_equal(r$candidates$mse, rowMeans(r$cv_by_fold))     # mean over folds
+  w <- r$candidates[r$candidates$rank == 1, ]
+  expect_equal(w$mse, r$mse_oos)                               # rank 1 is the selected configuration
+  expect_equal(w$eta, r$eta); expect_equal(w$max_depth, r$max_depth); expect_equal(w$nround, r$nround)
+  expect_equal(sort(r$candidates$rank), 1:5)
+  expect_setequal(r$fold_assignment$fold, unique(r$fold_assignment$fold))
+  expect_equal(nrow(r$fold_assignment), length(unique(d$muni)))
+})
+
+test_that("grid search also returns every candidate", {
+  d <- make_toy()
+  r <- xgb_tune(y ~ x1 + x2 + x3, smp_data = d, smp_weights = "wt",
+                domains = "muni", folds = 3, nround = 10, max_depth = c(2, 3),
+                subsample = 0.8, colsample_bytree = 0.6, seed = 3, verbose = FALSE)
+  expect_equal(nrow(r$candidates), r$n_configs)
+  expect_equal(min(r$candidates$mse), r$mse_oos)
+})
