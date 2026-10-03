@@ -147,7 +147,9 @@ both \code{smp_data} and \code{pop_data} before fitting. Defaults to
   estimates from the same fit) and \code{Mean_foldmean} (unsampled domains
   predicted by the mean of the fold models). The fit itself, including
   the random effects and variance components, is the same under both.
-  \code{"crossfit"} has no bootstrap yet and requires \code{mse = FALSE}.}
+  With \code{mse = TRUE}, \code{"crossfit"} needs \code{bootstrap_refit =
+  "leaves_only"}, whose replicates then take each sampled domain's booster
+  part from its refreshed fold model.}
 
 \item{cv_nfold}{the number of folds of the internal cross-validation
   (xgboost only), of whole domains or of rows according to \code{cv_folds}.

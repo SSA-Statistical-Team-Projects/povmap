@@ -122,7 +122,7 @@ megb_em <- function(Y, X, dom_name, smp_data, pop_data,
     if (!identical(match.arg(cv_folds, c("domain", "rows")), "domain"))
       stop("predict_sampled = \"crossfit\" needs cv_folds = \"domain\": with row folds no fold model excludes a whole domain.")
     if (mse)
-      stop("predict_sampled = \"crossfit\" has no bootstrap yet; use mse = FALSE.")
+      stop("megb_em(): predict_sampled = \"crossfit\" with mse = TRUE is supported through megb() only.")
   }
 
   checked_inputs <- input_checks_megb(
