@@ -18,7 +18,22 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
                      cv_folds        = getOption("megb.cv_folds", "domain"),
                      early_stopping  = getOption("megb.early_stopping", TRUE),
                      cv_nfold        = getOption("megb.cv_nfold", 5L),
+                     fold_fit        = NULL,
+                     crossfit_predict = FALSE,
                      ...) {
+  # fold_fit (leaves_only, xgboost; .megb_fold_fit()): the fold models of the
+  #   final EM iteration, the sample rows each held out (in the fit's row order),
+  #   their out-of-fold predictions and, with domain folds, their domains. In each
+  #   replicate every fold model's leaves are refreshed on its own training rows,
+  #   and the random effects are re-estimated by ML from those fold models'
+  #   out-of-fold residuals, as the point estimate's are (em_gb_lmm). Until
+  #   3 Oct 2026 they came from the refreshed full booster's in-sample residuals
+  #   by REML, which a booster that has seen the replicate's own rows can absorb.
+  # crossfit_predict (megb(predict_sampled = "crossfit")): each sampled domain's
+  #   booster part is also taken from its refreshed fold model, as the cross-
+  #   fitted point estimate's is.
+  # Every leaf refresh uses the rescaled survey weights the booster was trained
+  # with (unweighted until 3 Oct 2026).
   # smp_weights_col: name of a column on smp_data containing observation
   #   weights. Pulling weights from a column (rather than passing a vector)
   #   guarantees row alignment under any sorting / subsetting smp_data
@@ -368,6 +383,10 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
 
       boots_models <- vector("list", B)
 
+      # Survey weights for the leaf refresh: the rescaled smp_weights_vec the
+      # booster was trained with, aligned to the domain-sorted sample rows.
+      w_ref <- smp_weights_vec
+
       # Leaf-level aggregation (options(povmap.leaves_only.leaf_aggregate); default
       # TRUE since 28 Sep 2026, FALSE restores per-row prediction). With the identity back-transform every domain mean the
       # replicate needs is linear in the refreshed leaf values, so it is computed
@@ -379,28 +398,21 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
         LA <- .megb_leaf_aggregator(orig_booster, X_pop_mat, pop_dom_idx,
                                     length(domains), pw = pw_pop)
       }
+      if (is.null(fold_fit) || is.null(fold_fit$fold_models))
+        stop("the leaves_only bootstrap needs the fit's fold models (megb keeps them when mse = TRUE).")
+      .cfp <- isTRUE(crossfit_predict)
+      CFB <- .megb_fold_boot_setup(fold_fit, X_smp_mat, sort_smp,
+                                   as.character(smp_data[[dom_name]]),
+                                   X_pop_mat, pop_dom_idx, domains,
+                                   pw_pop, .use_leaf, predict = .cfp)
 
       for (i in seq_len(B)) {
         if (i %% max(1L, B %/% 10L) == 0L)
           message("leaves_only bootstrap iteration ", i, " of ", B)
 
         # 1) Refresh leaves on the bootstrap label. Tree structure unchanged.
-        d_train <- xgboost::xgb.DMatrix(X_smp_mat, label = y_star_smp[, i])
         gb_refreshed <- tryCatch(
-          suppressMessages(suppressWarnings(
-            xgboost::xgb.train(
-              params    = list(
-                updater       = "refresh",
-                process_type  = "update",
-                refresh_leaf  = 1,
-                objective     = "reg:squarederror"
-              ),
-              data      = d_train,
-              nrounds   = orig_nrounds,
-              xgb_model = orig_booster,
-              verbose   = 0
-            )
-          )),
+          .megb_refresh(orig_booster, X_smp_mat, y_star_smp[, i], w_ref, orig_nrounds),
           error = function(e) {
             message("  refresh failed at iter ", i, ": ", conditionMessage(e))
             NULL
@@ -421,18 +433,36 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
         } else {
           gb_pop_boot <- as.numeric(predict(gb_refreshed, X_pop_mat))
         }
-        gb_smp_boot <- as.numeric(predict(gb_refreshed, X_smp_mat))
-
-        # 3) Refit LMM on residuals from refreshed predictions.
-        fit_data$r <- y_star_smp[, i] - gb_smp_boot
-        if (!is.null(smp_weights_vec)) fit_data$.megb_w <- smp_weights_vec
-        lmer_boot <- tryCatch(
-          suppressMessages(suppressWarnings(
-            lme4::lmer(
-              lmm_formula, data = fit_data, REML = TRUE,
-              weights = if (!is.null(smp_weights_vec)) fit_data$.megb_w else NULL
+        # Out-of-fold random effects: refresh each fold model on its own training
+        # rows; its held-out rows give the out-of-fold prediction and, with
+        # crossfit_predict, its domains' population means replace the full
+        # booster's for those domains.
+        {
+          cfr <- tryCatch(.megb_fold_boot_step(CFB, X_smp_mat, X_pop_mat, y_star_smp[, i],
+                                               w_ref, refresh = TRUE, use_leaf = .use_leaf,
+                                               predict = .cfp),
+                          error = function(e) {
+                            message("  fold refresh failed at iter ", i, ": ", conditionMessage(e))
+                            NULL })
+          if (is.null(cfr)) {
+            boots_models[[i]] <- list(
+              Mean_boot = NULL, Mean_boot_orig = NULL, Mean_boot_bench = NULL,
+              error_sd_boot = NA_real_, ran_eff_sd_boot = NA_real_
             )
-          )),
+            next
+          }
+          if (.cfp && .use_leaf) {
+            LM$unweighted[CFB$pos_all] <- cfr$unweighted
+            LM$weighted[CFB$pos_all]   <- cfr$weighted
+          } else if (.cfp) {
+            gb_pop_boot[CFB$ip_all] <- cfr$gb_pop
+          }
+        }
+
+        # 3) Re-estimate the random effects as the point estimate does: ML on the
+        # refreshed fold models' out-of-fold residuals.
+        lmer_boot <- tryCatch(
+          .megb_oof_re_fit(fit_data, lmm_formula, y_star_smp[, i] - cfr$oof, smp_weights_vec),
           error = function(e) NULL
         )
         if (is.null(lmer_boot)) {

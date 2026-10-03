@@ -1,5 +1,25 @@
 # povmap 1.0.1
 
+* `megb()` bootstrap (`bootstrap_refit = "leaves_only"`, the default): two fixes that
+  change its intervals; the point estimates are unchanged.
+  - The leaf refresh now uses the survey weights (rescaled within domains) that the
+    booster was trained with. It was unweighted, so even on the original data it did
+    not reproduce the fitted booster.
+  - Each replicate's random effects are now re-estimated the same way as the point
+    estimate's: the fold models of the final EM iteration are refreshed on their own
+    training rows, and the mixed model is fitted by ML to their out-of-fold residuals.
+    Until now, the replicates refitted it by REML to the refreshed full booster's
+    in-sample residuals. That booster has seen the replicate's own rows, so with
+    domain-level covariates it can absorb the drawn domain effect.
+  The fit keeps its fold models when `mse = TRUE` (about one leaf refresh per fold per
+  replicate in extra cost), and works with domain or row folds. `predict_sampled =
+  "crossfit"` now also has a bootstrap: each sampled domain's replicate estimate takes
+  its booster part from its refreshed fold model. `"lmm_only"` and `"full"` are
+  unchanged. Tests: `tests/testthat/test-megb-bootstrap-fix.R`, including one that
+  confirms the bootstrap's random-effect step reproduces the point estimate's on
+  unperturbed data, and one that confirms the weighted refresh reproduces the booster
+  on its own data while the unweighted one does not.
+
 * `megb()`: new argument `cv_nfold` (default 5), the number of folds of the internal
   cross-validation (xgboost), of whole domains or of rows according to `cv_folds`. It is
   passed through to the fit and to the `bootstrap_refit = "full"` refits. With the default,

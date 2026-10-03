@@ -86,10 +86,10 @@ test_that("predict_sampled = 'full' is the default and the fit is the same under
   expect_identical(f1$megb_model$iterations_used, f0$megb_model$iterations_used)
 })
 
-test_that("crossfit refuses the bootstrap and row folds", {
+test_that("crossfit refuses the full-refit bootstrap and row folds", {
   skip_if_not_installed("xgboost")
   M <- .cf_data()
-  expect_error(.cf_fit(M, predict_sampled = "crossfit", mse = TRUE), "no bootstrap")
+  expect_error(.cf_fit(M, predict_sampled = "crossfit", mse = TRUE, B = 2, bootstrap_refit = "full"), "leaves_only")
   expect_error(.cf_fit(M, predict_sampled = "crossfit", cv_folds = "rows"), "domain")
   expect_error(.cf_fit(M, predict_sampled = "oof"))
 })

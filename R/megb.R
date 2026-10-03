@@ -291,7 +291,8 @@ megb <- function(fixed,
     stop("cv_nfold must be a whole number of at least 2.")
   cv_nfold <- as.integer(cv_nfold)
   if (predict_sampled == "crossfit") {
-    if (mse) stop("predict_sampled = \"crossfit\" has no bootstrap yet; use mse = FALSE.")
+    if (mse && bootstrap_refit != "leaves_only")
+      stop("predict_sampled = \"crossfit\" with mse = TRUE needs bootstrap_refit = \"leaves_only\", the bootstrap consistent with it.")
     if (cv_folds != "domain") stop("predict_sampled = \"crossfit\" needs cv_folds = \"domain\".")
     if (gbm_engine != "xgboost") stop("predict_sampled = \"crossfit\" is implemented for gbm_engine = \"xgboost\" only.")
   }
@@ -411,6 +412,9 @@ megb <- function(fixed,
     early_stopping  = early_stopping,
     predict_sampled = predict_sampled,
     cv_nfold        = cv_nfold,
+    # the leaves_only bootstrap re-estimates the random effects from the fold
+    # models' out-of-fold residuals, as the point estimate does
+    keep_fold_models = mse && bootstrap_refit == "leaves_only" && gbm_engine == "xgboost",
     ...
   )
 
@@ -746,7 +750,9 @@ megb <- function(fixed,
       pop_weights_vec        = if (!is.null(pop_weights)) fwk$pop_weights_vec else NULL,
       cv_folds               = cv_folds,
       early_stopping         = early_stopping,
-      cv_nfold               = cv_nfold
+      cv_nfold               = cv_nfold,
+      fold_fit               = .megb_fold_fit(megb_fit$megb_model),
+      crossfit_predict       = predict_sampled == "crossfit"
     )
   }
 

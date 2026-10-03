@@ -105,6 +105,7 @@ megb_em <- function(Y, X, dom_name, smp_data, pop_data,
                     early_stopping   = getOption("megb.early_stopping", TRUE),
                     predict_sampled  = "full",
                     cv_nfold         = getOption("megb.cv_nfold", 5L),
+                    keep_fold_models = FALSE,
                     ...) {
   # smp_weights_vec: numeric vector of observation weights for smp_data rows,
   # aligned to the same indexing as Y / X / smp_data. Forwarded to em_gb_lmm
@@ -183,7 +184,8 @@ megb_em <- function(Y, X, dom_name, smp_data, pop_data,
     weights                = smp_weights_vec,
     cv_folds               = cv_folds,
     early_stopping         = early_stopping,
-    keep_fold_models       = .crossfit,
+    keep_fold_models       = .crossfit || isTRUE(keep_fold_models) ||
+                             (mse && gbm_engine == "xgboost"),
     cv_nfold               = cv_nfold,
     ...
   )
@@ -273,6 +275,7 @@ megb_em <- function(Y, X, dom_name, smp_data, pop_data,
       unit_pred_smp          = unit_pred_smp,
       gb_smp                 = gb_smp,
       unit_preds             = unit_preds,
+      fold_fit               = .megb_fold_fit(model),
       ...
     )
   } else {

@@ -162,10 +162,13 @@ em_gb_lmm <- function(Y,
     best_iter            = gbm_results$best_iter,   # rounds the final booster was trained to
     gradient_params      = gradient_params,
     # keep_fold_models = TRUE: the fold boosters of the FINAL EM iteration, whose
-    # out-of-fold residuals the converged effect_model was fitted to, and the
-    # domains each one held out (megb(predict_sampled = "crossfit")). NULL otherwise.
+    # out-of-fold residuals the converged effect_model was fitted to, the rows (of
+    # data) and, with domain folds, the domains each one held out, and their
+    # out-of-fold predictions (the leaves_only bootstrap; megb(predict_sampled =
+    # "crossfit")). NULL otherwise.
     fold_models          = gbm_results$fold_models,
     fold_domains         = gbm_results$fold_domains,
+    fold_rows            = gbm_results$fold_rows,
     oof_prediction       = if (isTRUE(keep_fold_models)) gbm_results$oof_prediction else NULL
   )
 }

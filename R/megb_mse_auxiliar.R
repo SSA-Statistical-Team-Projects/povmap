@@ -214,3 +214,101 @@ ran_comp <- function(unit_pred_smp, smp_data, Y, dom_name, error_sd,
   s_w <- collapse::fsum(vg * LA$w, LA$GD, use.g.names = FALSE)
   list(unweighted = info$base + s_n / LA$nd, weighted = info$base + s_w / LA$sw)
 }
+
+
+# The fit's fold models for the leaves_only bootstrap (NULL when it kept none).
+.megb_fold_fit <- function(model) {
+  if (is.null(model$fold_models)) return(NULL)
+  list(fold_models = model$fold_models, fold_rows = model$fold_rows,
+       fold_domains = model$fold_domains, oof_prediction = model$oof_prediction)
+}
+
+# Leaf refresh of an xgboost booster on label y (tree structure unchanged), with
+# observation weights w (the rescaled survey weights the booster was trained with)
+# or unweighted when w is NULL. With the booster's own training data, label and
+# weights it returns the booster unchanged.
+.megb_refresh <- function(bst, X, y, w, nr) {
+  dt <- xgboost::xgb.DMatrix(X, label = y)
+  if (!is.null(w)) xgboost::setinfo(dt, "weight", as.numeric(w))
+  suppressMessages(suppressWarnings(xgboost::xgb.train(
+    params = list(updater = "refresh", process_type = "update", refresh_leaf = 1,
+                  objective = "reg:squarederror"),
+    data = dt, nrounds = nr, xgb_model = bst, verbose = 0)))
+}
+
+# The point estimate's random-effect step (em_gb_lmm): ML, survey-weighted, on
+# out-of-fold residuals r.
+.megb_oof_re_fit <- function(fit_data, lmm_formula, r, w) {
+  fit_data$r <- r
+  .w <- if (!is.null(w)) as.numeric(w) else NULL
+  # lme4 evaluates `weights` in the data, then in the formula's environment
+  environment(lmm_formula) <- environment()
+  suppressMessages(suppressWarnings(lme4::lmer(
+    lmm_formula, data = fit_data, REML = FALSE, weights = .w)))
+}
+
+# leaves_only bootstrap setup, once per fit. sort_smp maps the bootstrap's
+# domain-sorted sample rows to the fit's row order (sorted row p is fit row
+# sort_smp[p]). Each fold model is sliced to the boosting rounds its predictions
+# use (xgb.cv trains fold models past the best round under early stopping, and
+# predict() stops there) and must reproduce the fit's out-of-fold predictions of
+# its held-out rows exactly. For crossfit prediction, also the population rows and
+# positions (in `domains`) of its domains and, for the identity back-transform, a
+# leaf aggregator over those rows.
+.megb_fold_boot_setup <- function(fold_fit, X_smp, sort_smp, d_smp, X_pop, pop_dom_idx,
+                                  domains, pw_pop, use_leaf, predict = FALSE) {
+  fm <- fold_fit$fold_models; fr <- fold_fit$fold_rows
+  if (is.null(fm) || length(fm) != length(fr)) stop("leaves_only bootstrap: no fold models.")
+  n <- nrow(X_smp)
+  inv <- match(seq_len(n), sort_smp)                     # fit row j -> sorted row inv[j]
+  oof_sorted <- fold_fit$oof_prediction[sort_smp]
+  if (length(oof_sorted) != n || anyNA(inv)) stop("leaves_only bootstrap: fold rows do not match the sample.")
+  if (predict && is.null(fold_fit$fold_domains))
+    stop("cross-fitted bootstrap needs folds of whole domains.")
+  folds <- lapply(seq_along(fm), function(k) {
+    b  <- fm[[k]]
+    bi <- xgboost::xgb.attr(b, "best_iteration")
+    nr <- if (is.null(bi)) xgboost::xgb.get.num.boosted.rounds(b) else as.integer(bi) + 1L
+    sl <- xgboost::xgb.slice.Booster(b, 1L, nr)
+    ho <- sort(inv[fr[[k]]])
+    if (!identical(as.numeric(predict(sl, X_smp[ho, , drop = FALSE])), as.numeric(oof_sorted[ho])))
+      stop("leaves_only bootstrap: fold model ", k, " does not reproduce the fit's out-of-fold predictions.")
+    out <- list(bst = sl, nr = nr, tr = setdiff(seq_len(n), ho), ho = ho)
+    if (predict) {
+      fd  <- fold_fit$fold_domains[[k]]
+      if (!setequal(unique(d_smp[ho]), fd)) stop("cross-fitted bootstrap: fold ", k, " rows and domains disagree.")
+      out$pos <- match(fd, domains); out$ip <- which(pop_dom_idx %in% out$pos)
+      if (use_leaf) {
+        loc <- match(pop_dom_idx[out$ip], out$pos)
+        out$LA <- .megb_leaf_aggregator(sl, X_pop[out$ip, , drop = FALSE], loc, length(out$pos),
+                                        pw = if (is.null(pw_pop)) NULL else pw_pop[out$ip])
+      }
+    }
+    out
+  })
+  if (anyDuplicated(unlist(lapply(folds, `[[`, "ho"))) || length(unlist(lapply(folds, `[[`, "ho"))) != n)
+    stop("leaves_only bootstrap: the folds do not partition the sample.")
+  list(folds = folds, pos_all = unlist(lapply(folds, `[[`, "pos")),
+       ip_all = unlist(lapply(folds, `[[`, "ip")))
+}
+
+# Per replicate: refresh every fold model on its training rows with weights w
+# (refresh = FALSE uses the fold models as fitted), predict its held-out rows
+# (out-of-fold) and, with predict, its domains' population means (leaf
+# aggregation) or rows, in the order of CFB$pos_all / CFB$ip_all.
+.megb_fold_boot_step <- function(CFB, X_smp, X_pop, y, w, refresh = TRUE, use_leaf = TRUE,
+                                 predict = FALSE) {
+  oof <- rep(NA_real_, length(y)); un <- wt <- gp <- list()
+  for (k in seq_along(CFB$folds)) {
+    f  <- CFB$folds[[k]]
+    fb <- if (refresh) .megb_refresh(f$bst, X_smp[f$tr, , drop = FALSE], y[f$tr],
+                                     if (is.null(w)) NULL else w[f$tr], f$nr) else f$bst
+    oof[f$ho] <- predict(fb, X_smp[f$ho, , drop = FALSE])
+    if (!predict) next
+    if (use_leaf) {
+      LM <- .megb_leaf_domain_means(f$LA, fb); un[[k]] <- LM$unweighted; wt[[k]] <- LM$weighted
+    } else gp[[k]] <- as.numeric(predict(fb, X_pop[f$ip, , drop = FALSE]))
+  }
+  if (anyNA(oof)) stop("leaves_only bootstrap: a sample row was held out by no fold model.")
+  list(oof = oof, unweighted = unlist(un), weighted = unlist(wt), gb_pop = unlist(gp))
+}
