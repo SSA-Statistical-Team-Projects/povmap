@@ -171,6 +171,21 @@
 #'   \code{nrounds} in \code{gradient_params}, as \code{\link{xgb}} does.
 #'   When not supplied, the default is taken from
 #'   \code{getOption("megb.early_stopping", TRUE)}.
+#' @param predict_sampled how the booster part of a sampled domain's prediction
+#'   is formed. \code{"full"} (default) uses the booster trained on the whole
+#'   sample. \code{"crossfit"} uses the fold model of the final EM iteration
+#'   that held the domain out (\code{cv_folds = "domain"}, xgboost only). The
+#'   random effects are estimated from those fold models' out-of-fold
+#'   residuals, so under \code{"crossfit"} the booster part and the random
+#'   effect are measured against the same baseline; under \code{"full"} the
+#'   booster has seen the domain's own rows, which, with covariates constant
+#'   within domains, can count part of the domain's deviation twice.
+#'   Unsampled domains use the full booster either way; the result's
+#'   \code{$crossfit$ind} also gives \code{Mean_full} (the \code{"full"}
+#'   estimates from the same fit) and \code{Mean_foldmean} (unsampled domains
+#'   predicted by the mean of the five fold models). The fit itself, including
+#'   the random effects and variance components, is the same under both.
+#'   \code{"crossfit"} has no bootstrap yet and requires \code{mse = FALSE}.
 #' @param ... additional arguments forwarded to \code{MEGB::megb}.
 #'
 #' @return An object of class \code{c("megb", "xgb", "povmap")} with elements:
@@ -249,6 +264,7 @@ megb <- function(fixed,
                  cpus             = NULL,
                  cv_folds         = getOption("megb.cv_folds", "domain"),
                  early_stopping   = getOption("megb.early_stopping", TRUE),
+                 predict_sampled  = c("full", "crossfit"),
                  ...) {
   # weightedBS: when TRUE and smp_weights is supplied, the bootstrap residual
   # sampling uses probabilities proportional to weights (mirroring xgb's
@@ -262,6 +278,12 @@ megb <- function(fixed,
   cv_folds        <- match.arg(cv_folds, c("domain", "rows"))
   if (!is.logical(early_stopping) || length(early_stopping) != 1L || is.na(early_stopping))
     stop("early_stopping must be TRUE or FALSE.")
+  predict_sampled <- match.arg(predict_sampled)
+  if (predict_sampled == "crossfit") {
+    if (mse) stop("predict_sampled = \"crossfit\" has no bootstrap yet; use mse = FALSE.")
+    if (cv_folds != "domain") stop("predict_sampled = \"crossfit\" needs cv_folds = \"domain\".")
+    if (gbm_engine != "xgboost") stop("predict_sampled = \"crossfit\" is implemented for gbm_engine = \"xgboost\" only.")
+  }
 
   # Local %||% so the diagnostic message below isn't fragile to NULLs.
   `%||%` <- function(a, b) if (is.null(a)) b else a
@@ -376,6 +398,7 @@ megb <- function(fixed,
     smp_weights_vec = fwk$smp_weights_vec,
     cv_folds        = cv_folds,
     early_stopping  = early_stopping,
+    predict_sampled = predict_sampled,
     ...
   )
 
@@ -463,6 +486,32 @@ megb <- function(fixed,
   .pop_dom_order <- as.character(unique(fwk$pop_data[[domains]]))
   ind <- ind[match(.pop_dom_order, as.character(ind$Domain)), , drop = FALSE]
   rownames(ind) <- NULL
+
+  # predict_sampled = "crossfit": ind$Mean is cross-fitted. The same fit's
+  # estimates with the full booster for every domain (Mean_full, what
+  # predict_sampled = "full" returns) and with unsampled domains predicted by the
+  # mean of the five fold models (Mean_foldmean) are aggregated identically.
+  crossfit_out <- NULL
+  if (predict_sampled == "crossfit") {
+    .agg <- function(u) {
+      h <- corrected_bt(u)
+      m <- if (!is.null(pop_weights))
+             tapply(h * fwk$pop_weights_vec, unit_preds_pop$dom_name, sum) /
+             tapply(fwk$pop_weights_vec,     unit_preds_pop$dom_name, sum)
+           else tapply(h, unit_preds_pop$dom_name, mean)
+      as.numeric(m[match(ind$Domain, names(m))])
+    }
+    cf <- megb_fit$crossfit
+    sampled <- ind$Domain %in% names(cf$fold_of_domain)
+    crossfit_out <- list(
+      ind = data.frame(Domain = ind$Domain, sampled = sampled,
+                       fold = unname(cf$fold_of_domain[ind$Domain]),
+                       Mean = ind$Mean, Mean_full = .agg(cf$unit_preds_full),
+                       Mean_foldmean = .agg(cf$unit_preds_foldmean),
+                       stringsAsFactors = FALSE),
+      oof_max_abs_diff = cf$oof_max_abs_diff
+    )
+  }
 
   # ── 6b. Benchmarking of point estimates ───────────────────────────────────────
   ind_bench <- NULL
@@ -936,7 +985,9 @@ megb <- function(fixed,
     out_call       = out_call,
     transformation = transformation,
     framework      = fwk,
-    boot_diag      = boot_diag
+    boot_diag      = boot_diag,
+    predict_sampled = predict_sampled,
+    crossfit       = crossfit_out
   )
 
   class(result) <- c("megb", "xgb", "povmap")

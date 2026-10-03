@@ -31,6 +31,7 @@ megb(
   cpus = NULL,
   cv_folds = getOption("megb.cv_folds", "domain"),
   early_stopping = getOption("megb.early_stopping", TRUE),
+  predict_sampled = c("full", "crossfit"),
   ...
 )
 }
@@ -130,6 +131,22 @@ both \code{smp_data} and \code{pop_data} before fitting. Defaults to
   \code{nrounds} in \code{gradient_params}, as \code{\link{xgb}} does.
   When not supplied, the default is taken from
   \code{getOption("megb.early_stopping", TRUE)}.}
+
+\item{predict_sampled}{how the booster part of a sampled domain's prediction
+  is formed. \code{"full"} (default) uses the booster trained on the whole
+  sample. \code{"crossfit"} uses the fold model of the final EM iteration
+  that held the domain out (\code{cv_folds = "domain"}, xgboost only). The
+  random effects are estimated from those fold models' out-of-fold
+  residuals, so under \code{"crossfit"} the booster part and the random
+  effect are measured against the same baseline; under \code{"full"} the
+  booster has seen the domain's own rows, which, with covariates constant
+  within domains, can count part of the domain's deviation twice.
+  Unsampled domains use the full booster either way; the result's
+  \code{$crossfit$ind} also gives \code{Mean_full} (the \code{"full"}
+  estimates from the same fit) and \code{Mean_foldmean} (unsampled domains
+  predicted by the mean of the five fold models). The fit itself, including
+  the random effects and variance components, is the same under both.
+  \code{"crossfit"} has no bootstrap yet and requires \code{mse = FALSE}.}
 
 \item{...}{additional arguments forwarded to \code{MEGB::megb}.}
 }

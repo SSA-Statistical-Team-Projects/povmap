@@ -17,6 +17,7 @@ em_gb_lmm <- function(Y,
                       weights    = NULL,
                       cv_folds       = getOption("megb.cv_folds", "domain"),
                       early_stopping = getOption("megb.early_stopping", TRUE),
+                      keep_fold_models = FALSE,
                       ...) {
   # weights: numeric vector of observation weights aligned to rows of X / data.
   # Forwarded to train_gbmodel (xgb.DMatrix weight) AND to lme4::lmer (weights).
@@ -83,7 +84,8 @@ em_gb_lmm <- function(Y,
                                     fit_full = !.defer,
                                     groups   = data[[dom_name]],
                                     cv_folds = cv_folds,
-                                    early_stopping = early_stopping)
+                                    early_stopping = early_stopping,
+                                    keep_fold_models = keep_fold_models)
     last_response  <- response_train
 
     model        <- gbm_results$boosting
@@ -156,6 +158,12 @@ em_gb_lmm <- function(Y,
     importance_matrix    = importance_matrix,
     eval_log             = gbm_results$eval_log,
     best_iter            = gbm_results$best_iter,   # rounds the final booster was trained to
-    gradient_params      = gradient_params
+    gradient_params      = gradient_params,
+    # keep_fold_models = TRUE: the fold boosters of the FINAL EM iteration, whose
+    # out-of-fold residuals the converged effect_model was fitted to, and the
+    # domains each one held out (megb(predict_sampled = "crossfit")). NULL otherwise.
+    fold_models          = gbm_results$fold_models,
+    fold_domains         = gbm_results$fold_domains,
+    oof_prediction       = if (isTRUE(keep_fold_models)) gbm_results$oof_prediction else NULL
   )
 }

@@ -103,6 +103,7 @@ megb_em <- function(Y, X, dom_name, smp_data, pop_data,
                     smp_weights_vec  = NULL,
                     cv_folds         = getOption("megb.cv_folds", "domain"),
                     early_stopping   = getOption("megb.early_stopping", TRUE),
+                    predict_sampled  = "full",
                     ...) {
   # smp_weights_vec: numeric vector of observation weights for smp_data rows,
   # aligned to the same indexing as Y / X / smp_data. Forwarded to em_gb_lmm
@@ -111,6 +112,16 @@ megb_em <- function(Y, X, dom_name, smp_data, pop_data,
 
   call       <- match.call()
   ts_gradient <- Sys.time()
+  predict_sampled <- match.arg(predict_sampled, c("full", "crossfit"))
+  .crossfit <- predict_sampled == "crossfit"
+  if (.crossfit) {
+    if (gbm_engine != "xgboost")
+      stop("predict_sampled = \"crossfit\" is implemented for gbm_engine = \"xgboost\" only.")
+    if (!identical(match.arg(cv_folds, c("domain", "rows")), "domain"))
+      stop("predict_sampled = \"crossfit\" needs cv_folds = \"domain\": with row folds no fold model excludes a whole domain.")
+    if (mse)
+      stop("predict_sampled = \"crossfit\" has no bootstrap yet; use mse = FALSE.")
+  }
 
   checked_inputs <- input_checks_megb(
     Y = Y, X = X, dom_name = dom_name, smp_data = smp_data,
@@ -171,6 +182,7 @@ megb_em <- function(Y, X, dom_name, smp_data, pop_data,
     weights                = smp_weights_vec,
     cv_folds               = cv_folds,
     early_stopping         = early_stopping,
+    keep_fold_models       = .crossfit,
     ...
   )
 
@@ -187,6 +199,30 @@ megb_em <- function(Y, X, dom_name, smp_data, pop_data,
   unit_pred_smp <- unit_level_predictions$unit_pred_smp
   gb_smp        <- unit_level_predictions$gb_smp
   unit_preds    <- unit_level_predictions$unit_pred_pop
+
+  # predict_sampled = "crossfit": each sampled domain's population rows are
+  # predicted by the fold model of the final EM iteration that held that domain
+  # out, plus its random effect, so the booster part and the random effect (fitted
+  # to those same out-of-fold residuals) share one baseline. Unsampled domains keep
+  # the full booster; the average of the five fold models is returned beside it in
+  # $crossfit. unit_pred_smp and gb_smp stay the full booster's (they feed only the
+  # bootstrap, which crossfit does not support yet).
+  crossfit <- NULL
+  if (.crossfit) {
+    cf <- .megb_crossfit(model, smp_data, pop_data, dom_name, cov_names,
+                         gb_pop = unit_level_predictions$gb_pop)
+    re_pop <- stats::predict(model$effect_model, pop_data, allow.new.levels = TRUE) -
+              lme4::fixef(model$effect_model)
+    crossfit <- list(
+      unit_preds_full     = unit_preds$unit_preds,
+      unit_preds_foldmean = cf$gb_pop_foldmean + re_pop,
+      fold_of_domain      = cf$fold_of_domain,
+      gb_smp_crossfit     = cf$gb_smp,
+      oof_max_abs_diff    = max(abs(cf$gb_smp - model$oof_prediction))
+    )
+    unit_preds$unit_preds <- cf$gb_pop + re_pop
+    unit_preds$gb_pop     <- cf$gb_pop
+  }
 
   mean_preds <- unit_preds |>
     dplyr::group_by(dom_name) |>
@@ -257,8 +293,43 @@ megb_em <- function(Y, X, dom_name, smp_data, pop_data,
     X_proc                 = X,
     pop_data_proc          = pop_data,
     cov_names_proc         = cov_names,
-    formula_random_effects = formula_random_effects
+    formula_random_effects = formula_random_effects,
+    predict_sampled        = predict_sampled,
+    crossfit               = crossfit
   )
   class(res) <- "MEGB"
   res
+}
+
+
+# Internal: cross-fitted booster predictions (megb(predict_sampled = "crossfit")).
+# model: em_gb_lmm output with fold_models / fold_domains. gb_pop: the full
+# booster's population predictions. Returns, for population and sample rows, the
+# prediction of the fold model that held the row's domain out (population rows of
+# unsampled domains keep gb_pop), the variant with unsampled rows predicted by the
+# mean of the five fold models, and the fold of each sampled domain.
+.megb_crossfit <- function(model, smp_data, pop_data, dom_name, cov_names, gb_pop) {
+  fm <- model$fold_models; fdom <- model$fold_domains
+  if (is.null(fm) || is.null(fdom) || length(fm) != length(fdom))
+    stop("crossfit: the fit kept no fold models.")
+  d_smp <- as.character(smp_data[[dom_name]])
+  d_pop <- as.character(pop_data[[dom_name]])
+  fold_of <- stats::setNames(rep(seq_along(fdom), lengths(fdom)), unlist(fdom))
+  sampled <- unique(d_smp)
+  if (anyDuplicated(names(fold_of)) || !setequal(names(fold_of), sampled))
+    stop("crossfit: the fold models' held-out domains are not a partition of the sampled domains.")
+  x_smp <- data.matrix(smp_data[, cov_names, drop = FALSE])
+  x_pop <- data.matrix(pop_data[, cov_names, drop = FALSE])
+  gb_smp <- rep(NA_real_, nrow(x_smp)); gb_pop_cf <- gb_pop
+  for (k in seq_along(fm)) {
+    is <- d_smp %in% fdom[[k]]; ip <- d_pop %in% fdom[[k]]
+    if (any(is)) gb_smp[is] <- stats::predict(fm[[k]], x_smp[is, , drop = FALSE])
+    if (any(ip)) gb_pop_cf[ip] <- stats::predict(fm[[k]], x_pop[ip, , drop = FALSE])
+  }
+  gb_pop_fm <- gb_pop_cf
+  iu <- !(d_pop %in% sampled)
+  if (any(iu))
+    gb_pop_fm[iu] <- rowMeans(matrix(vapply(fm, function(b) stats::predict(b, x_pop[iu, , drop = FALSE]),
+                                            numeric(sum(iu))), nrow = sum(iu)))
+  list(gb_pop = gb_pop_cf, gb_pop_foldmean = gb_pop_fm, gb_smp = gb_smp, fold_of_domain = fold_of)
 }

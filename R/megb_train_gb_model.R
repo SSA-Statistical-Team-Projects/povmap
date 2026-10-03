@@ -5,13 +5,18 @@ train_gbmodel <- function(model_type, features_train, response_train,
                            params, cat_idx0 = integer(0),
                            weights = NULL, fit_full = TRUE, groups = NULL,
                            cv_folds       = getOption("megb.cv_folds", "domain"),
-                           early_stopping = getOption("megb.early_stopping", TRUE), ...) {
+                           early_stopping = getOption("megb.early_stopping", TRUE),
+                           keep_fold_models = FALSE, ...) {
   # groups (xgboost only): the domain of each row.
   # cv_folds (xgboost only): "domain" (default) makes xgb.cv hold out 5 folds of
   # whole domains; "rows" uses nfold = 5 over random rows. "domain" with no groups
   # falls back to "rows" with a message. See ?megb.
   # early_stopping: FALSE trains the fold models and the booster to the full
   # nrounds (no early stopping), as povmap::xgb does. Default TRUE.
+  # keep_fold_models (xgboost, domain folds only): TRUE also returns the five fold
+  # boosters of xgb.cv (fold_models) and the domains each one held out
+  # (fold_domains), for megb(predict_sampled = "crossfit"). Saving them uses no
+  # random numbers, so the out-of-fold predictions and the booster are unchanged.
   # weights: numeric vector of observation weights, length = nrow(features_train).
   # When NULL or all 1s, behaviour is unchanged from the historical default.
   #
@@ -53,6 +58,9 @@ train_gbmodel <- function(model_type, features_train, response_train,
         fd <- sample(rep_len(1:5, length(ug)))            # 5 folds of whole domains
         .folds <- lapply(1:5, function(k) which(g %in% ug[fd == k]))
       }
+      .keep <- isTRUE(keep_fold_models)
+      if (.keep && is.null(.folds))
+        stop("keep_fold_models = TRUE needs folds of whole domains (cv_folds = \"domain\" with domain labels).")
       cv <- if (is.null(.folds)) xgboost::xgb.cv(
         params                = xgb_params,
         data                  = dtrain,
@@ -70,8 +78,15 @@ train_gbmodel <- function(model_type, features_train, response_train,
         early_stopping_rounds = if (.es) 10 else NULL,
         verbose               = 0,
         prediction            = TRUE,
+        callbacks             = if (.keep) list(xgboost::xgb.cb.cv.predict(save_models = TRUE)) else list(),
         ...
       )
+      fold_models <- fold_domains <- NULL
+      if (.keep) {
+        fold_models  <- cv$cv_predict$models
+        fold_domains <- lapply(1:5, function(k) ug[fd == k])
+        if (length(fold_models) != 5L) stop("xgb.cv did not return the five fold models.")
+      }
       # xgboost >= 3 reports the early-stopping round in cv$early_stop$best_iteration
       # (1-based: the number of rounds); cv$best_iteration no longer exists there and
       # reading it returned NULL, so until 28 Sep 2026 every booster fell back to the
@@ -104,6 +119,8 @@ train_gbmodel <- function(model_type, features_train, response_train,
                     oof_prediction = oof,
                     eval_log       = cv$evaluation_log,
                     train_pool_schema = NULL,
+                    fold_models    = fold_models,
+                    fold_domains   = fold_domains,
                     deferred       = list(rng_state = rng_state, params = xgb_params,
                                           nrounds = best_iter, weights = weights)))
       }
@@ -122,7 +139,9 @@ train_gbmodel <- function(model_type, features_train, response_train,
            prediction    = stats::predict(booster, dtrain),
            oof_prediction = oof,
            eval_log      = cv$evaluation_log,
-           train_pool_schema = NULL)
+           train_pool_schema = NULL,
+           fold_models   = fold_models,
+           fold_domains  = fold_domains)
     },
 
     "lightgbm" = {

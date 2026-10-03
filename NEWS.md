@@ -1,5 +1,24 @@
 # povmap 1.0.1
 
+* `megb()`: new argument `predict_sampled = c("full", "crossfit")`. `"full"` (default)
+  is unchanged. Under `"crossfit"`, each sampled domain's population rows are predicted by
+  the fold model of the final EM iteration that held that domain out, plus its random
+  effect. Those are the fold models whose out-of-fold residuals the random effects were
+  estimated from, so the booster part and the random effect share one baseline. Under
+  `"full"`, the booster has seen the domain's own rows; with covariates constant within
+  domains (area-level covariates) it can learn the domain's level from them, and part of
+  the deviation is then counted twice. Unsampled domains keep the full booster.
+  `$crossfit$ind` also returns `Mean_full` (the `"full"` estimates from the same fit) and
+  `Mean_foldmean` (unsampled domains predicted by the mean of the five fold models). The
+  fit itself, including the random effects and variance components, is the same under
+  both settings. **`"crossfit"` requires `cv_folds = "domain"`** (with row folds, no fold
+  model excludes a whole domain), the xgboost engine, and `mse = FALSE`, since there is no
+  bootstrap consistent with it yet; any other combination is an error. In a Colombian
+  evaluation (20 replicates), it reduced in-sample RMSE by 7.3 percent with 19
+  municipal-level covariates. With sub-area covariates it made no difference (+0.4
+  percent, within about one or two standard errors). Test:
+  `tests/testthat/test-megb-crossfit.R`.
+
 * `estimators()`, `write.excel()` and `write.ods()` with `CV = TRUE` (or `MSE`/`var = TRUE`)
   now pair each variance or MSE column with the point estimate it measures by name, not by
   column position. Since the `xgb()` change below, `$ind` carries `Mean_agg` while `$var`
