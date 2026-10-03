@@ -17,6 +17,7 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
                      pop_weights_vec = NULL,
                      cv_folds        = getOption("megb.cv_folds", "domain"),
                      early_stopping  = getOption("megb.early_stopping", TRUE),
+                     cv_nfold        = getOption("megb.cv_nfold", 5L),
                      ...) {
   # smp_weights_col: name of a column on smp_data containing observation
   #   weights. Pulling weights from a column (rather than passing a vector)
@@ -524,7 +525,8 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
       gbm_engine             = .gbm_engine,
       weights                = .smp_weights_vec,
       cv_folds               = .cv_folds,
-      early_stopping         = .early_stopping
+      early_stopping         = .early_stopping,
+      cv_nfold               = .cv_nfold
     )
 
     unit_level_predictions <- gbm_predict(
@@ -598,7 +600,8 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
       .smp_weights_vec = smp_weights_vec,
       .pw_pop          = pw_pop,         # per-cell pop weights (sorted pop order), or NULL
       .cv_folds        = cv_folds,       # passed explicitly: parallel workers do not see options()
-      .early_stopping  = early_stopping
+      .early_stopping  = early_stopping,
+      .cv_nfold        = cv_nfold
     ),
     parent = getNamespace("povmap")
   )

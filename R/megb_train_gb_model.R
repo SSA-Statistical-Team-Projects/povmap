@@ -6,13 +6,17 @@ train_gbmodel <- function(model_type, features_train, response_train,
                            weights = NULL, fit_full = TRUE, groups = NULL,
                            cv_folds       = getOption("megb.cv_folds", "domain"),
                            early_stopping = getOption("megb.early_stopping", TRUE),
-                           keep_fold_models = FALSE, ...) {
+                           keep_fold_models = FALSE,
+                           cv_nfold = getOption("megb.cv_nfold", 5L), ...) {
   # groups (xgboost only): the domain of each row.
   # cv_folds (xgboost only): "domain" (default) makes xgb.cv hold out 5 folds of
   # whole domains; "rows" uses nfold = 5 over random rows. "domain" with no groups
   # falls back to "rows" with a message. See ?megb.
   # early_stopping: FALSE trains the fold models and the booster to the full
   # nrounds (no early stopping), as povmap::xgb does. Default TRUE.
+  # cv_nfold (xgboost only): the number of cross-validation folds, of whole domains
+  # or of rows. Default 5; with 5 the fold assignment and RNG stream are exactly
+  # those of the historical code.
   # keep_fold_models (xgboost, domain folds only): TRUE also returns the five fold
   # boosters of xgb.cv (fold_models) and the domains each one held out
   # (fold_domains), for megb(predict_sampled = "crossfit"). Saving them uses no
@@ -48,15 +52,18 @@ train_gbmodel <- function(model_type, features_train, response_train,
       if (!is.null(weights)) xgboost::setinfo(dtrain, "weight", as.numeric(weights))
 
       cv_folds <- match.arg(cv_folds, c("domain", "rows"))
+      K <- as.integer(cv_nfold)
+      if (length(K) != 1L || is.na(K) || K < 2L) stop("cv_nfold must be an integer of at least 2.")
       .es    <- !isFALSE(early_stopping)
       .folds <- NULL
       if (cv_folds == "domain" && is.null(groups))
         message("megb: cv_folds = \"domain\" but no domain labels were supplied; ",
-                "using 5 folds of random rows instead.")
+                "using ", K, " folds of random rows instead.")
       if (cv_folds == "domain" && !is.null(groups)) {
         g  <- as.character(groups); ug <- unique(g)
-        fd <- sample(rep_len(1:5, length(ug)))            # 5 folds of whole domains
-        .folds <- lapply(1:5, function(k) which(g %in% ug[fd == k]))
+        if (length(ug) < K) stop("cv_nfold = ", K, " exceeds the number of domains (", length(ug), ").")
+        fd <- sample(rep_len(seq_len(K), length(ug)))     # K folds of whole domains
+        .folds <- lapply(seq_len(K), function(k) which(g %in% ug[fd == k]))
       }
       .keep <- isTRUE(keep_fold_models)
       if (.keep && is.null(.folds))
@@ -65,7 +72,7 @@ train_gbmodel <- function(model_type, features_train, response_train,
         params                = xgb_params,
         data                  = dtrain,
         nrounds               = nrounds,
-        nfold                 = 5,
+        nfold                 = as.numeric(K),   # double, as the historical literal 5
         early_stopping_rounds = if (.es) 10 else NULL,
         verbose               = 0,
         prediction            = TRUE,   # keep out-of-fold preds for honest sigma_e
@@ -84,8 +91,8 @@ train_gbmodel <- function(model_type, features_train, response_train,
       fold_models <- fold_domains <- NULL
       if (.keep) {
         fold_models  <- cv$cv_predict$models
-        fold_domains <- lapply(1:5, function(k) ug[fd == k])
-        if (length(fold_models) != 5L) stop("xgb.cv did not return the five fold models.")
+        fold_domains <- lapply(seq_len(K), function(k) ug[fd == k])
+        if (length(fold_models) != K) stop("xgb.cv did not return the ", K, " fold models.")
       }
       # xgboost >= 3 reports the early-stopping round in cv$early_stop$best_iteration
       # (1-based: the number of rounds); cv$best_iteration no longer exists there and

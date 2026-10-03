@@ -1,5 +1,15 @@
 # povmap 1.0.1
 
+* `megb()`: new argument `cv_nfold` (default 5), the number of folds of the internal
+  cross-validation (xgboost), of whole domains or of rows according to `cv_folds`. It is
+  passed through to the fit and to the `bootstrap_refit = "full"` refits. With the default,
+  `xgb.cv` receives exactly the historical arguments and fold assignment. More folds train
+  each fold model on a larger share of the sample, at roughly proportional cost per EM
+  iteration. Under `predict_sampled = "crossfit"` there is one fold model per fold, and ten
+  folds removed the small in-sample cost cross-fitting had with five in a Colombian
+  evaluation, while keeping its gain with area-level covariates. When omitted, the default
+  comes from `getOption("megb.cv_nfold", 5L)`. Test: `tests/testthat/test-megb-crossfit.R`.
+
 * `megb()`: new argument `predict_sampled = c("full", "crossfit")`. `"full"` (default)
   is unchanged. Under `"crossfit"`, each sampled domain's population rows are predicted by
   the fold model of the final EM iteration that held that domain out, plus its random

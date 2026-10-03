@@ -104,6 +104,7 @@ megb_em <- function(Y, X, dom_name, smp_data, pop_data,
                     cv_folds         = getOption("megb.cv_folds", "domain"),
                     early_stopping   = getOption("megb.early_stopping", TRUE),
                     predict_sampled  = "full",
+                    cv_nfold         = getOption("megb.cv_nfold", 5L),
                     ...) {
   # smp_weights_vec: numeric vector of observation weights for smp_data rows,
   # aligned to the same indexing as Y / X / smp_data. Forwarded to em_gb_lmm
@@ -183,6 +184,7 @@ megb_em <- function(Y, X, dom_name, smp_data, pop_data,
     cv_folds               = cv_folds,
     early_stopping         = early_stopping,
     keep_fold_models       = .crossfit,
+    cv_nfold               = cv_nfold,
     ...
   )
 
@@ -204,7 +206,7 @@ megb_em <- function(Y, X, dom_name, smp_data, pop_data,
   # predicted by the fold model of the final EM iteration that held that domain
   # out, plus its random effect, so the booster part and the random effect (fitted
   # to those same out-of-fold residuals) share one baseline. Unsampled domains keep
-  # the full booster; the average of the five fold models is returned beside it in
+  # the full booster; the average of the fold models is returned beside it in
   # $crossfit. unit_pred_smp and gb_smp stay the full booster's (they feed only the
   # bootstrap, which crossfit does not support yet).
   crossfit <- NULL
@@ -307,7 +309,7 @@ megb_em <- function(Y, X, dom_name, smp_data, pop_data,
 # booster's population predictions. Returns, for population and sample rows, the
 # prediction of the fold model that held the row's domain out (population rows of
 # unsampled domains keep gb_pop), the variant with unsampled rows predicted by the
-# mean of the five fold models, and the fold of each sampled domain.
+# mean of the fold models, and the fold of each sampled domain.
 .megb_crossfit <- function(model, smp_data, pop_data, dom_name, cov_names, gb_pop) {
   fm <- model$fold_models; fdom <- model$fold_domains
   if (is.null(fm) || is.null(fdom) || length(fm) != length(fdom))

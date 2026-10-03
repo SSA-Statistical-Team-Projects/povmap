@@ -93,3 +93,17 @@ test_that("crossfit refuses the bootstrap and row folds", {
   expect_error(.cf_fit(M, predict_sampled = "crossfit", cv_folds = "rows"), "domain")
   expect_error(.cf_fit(M, predict_sampled = "oof"))
 })
+
+test_that("cv_nfold = 10: ten folds of whole domains, ten fold models under crossfit", {
+  skip_if_not_installed("xgboost")
+  M <- .cf_data(); rec <- new.env()
+  local_mocked_bindings(xgb.cv = .cf_record_cv(rec), .package = "xgboost")
+  f <- .cf_fit(M, predict_sampled = "crossfit", cv_nfold = 10)
+  expect_length(rec$args$folds, 10L)
+  expect_length(f$megb_model$fold_models, 10L)
+  expect_setequal(unlist(f$megb_model$fold_domains), as.character(unique(M$smp$dom)))
+  expect_lt(f$crossfit$oof_max_abs_diff, 1e-6)
+  expect_error(.cf_fit(M, cv_nfold = 1))
+  ## the default is five folds
+  .cf_fit(M); expect_length(rec$args$folds, 5L)
+})

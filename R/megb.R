@@ -183,9 +183,16 @@
 #'   Unsampled domains use the full booster either way; the result's
 #'   \code{$crossfit$ind} also gives \code{Mean_full} (the \code{"full"}
 #'   estimates from the same fit) and \code{Mean_foldmean} (unsampled domains
-#'   predicted by the mean of the five fold models). The fit itself, including
+#'   predicted by the mean of the fold models). The fit itself, including
 #'   the random effects and variance components, is the same under both.
 #'   \code{"crossfit"} has no bootstrap yet and requires \code{mse = FALSE}.
+#' @param cv_nfold the number of folds of the internal cross-validation
+#'   (xgboost only), of whole domains or of rows according to \code{cv_folds}.
+#'   Default 5. More folds train each fold model on a larger share of the
+#'   sample, at proportionally more cost per EM iteration. Under
+#'   \code{predict_sampled = "crossfit"} there is one fold model per fold.
+#'   When not supplied, the default is taken from
+#'   \code{getOption("megb.cv_nfold", 5L)}.
 #' @param ... additional arguments forwarded to \code{MEGB::megb}.
 #'
 #' @return An object of class \code{c("megb", "xgb", "povmap")} with elements:
@@ -265,6 +272,7 @@ megb <- function(fixed,
                  cv_folds         = getOption("megb.cv_folds", "domain"),
                  early_stopping   = getOption("megb.early_stopping", TRUE),
                  predict_sampled  = c("full", "crossfit"),
+                 cv_nfold         = getOption("megb.cv_nfold", 5L),
                  ...) {
   # weightedBS: when TRUE and smp_weights is supplied, the bootstrap residual
   # sampling uses probabilities proportional to weights (mirroring xgb's
@@ -279,6 +287,9 @@ megb <- function(fixed,
   if (!is.logical(early_stopping) || length(early_stopping) != 1L || is.na(early_stopping))
     stop("early_stopping must be TRUE or FALSE.")
   predict_sampled <- match.arg(predict_sampled)
+  if (!is.numeric(cv_nfold) || length(cv_nfold) != 1L || is.na(cv_nfold) || cv_nfold < 2 || cv_nfold != round(cv_nfold))
+    stop("cv_nfold must be a whole number of at least 2.")
+  cv_nfold <- as.integer(cv_nfold)
   if (predict_sampled == "crossfit") {
     if (mse) stop("predict_sampled = \"crossfit\" has no bootstrap yet; use mse = FALSE.")
     if (cv_folds != "domain") stop("predict_sampled = \"crossfit\" needs cv_folds = \"domain\".")
@@ -399,6 +410,7 @@ megb <- function(fixed,
     cv_folds        = cv_folds,
     early_stopping  = early_stopping,
     predict_sampled = predict_sampled,
+    cv_nfold        = cv_nfold,
     ...
   )
 
@@ -490,7 +502,7 @@ megb <- function(fixed,
   # predict_sampled = "crossfit": ind$Mean is cross-fitted. The same fit's
   # estimates with the full booster for every domain (Mean_full, what
   # predict_sampled = "full" returns) and with unsampled domains predicted by the
-  # mean of the five fold models (Mean_foldmean) are aggregated identically.
+  # mean of the fold models (Mean_foldmean) are aggregated identically.
   crossfit_out <- NULL
   if (predict_sampled == "crossfit") {
     .agg <- function(u) {
@@ -733,7 +745,8 @@ megb <- function(fixed,
       # NULL reproduces the historical unweighted bootstrap aggregation.
       pop_weights_vec        = if (!is.null(pop_weights)) fwk$pop_weights_vec else NULL,
       cv_folds               = cv_folds,
-      early_stopping         = early_stopping
+      early_stopping         = early_stopping,
+      cv_nfold               = cv_nfold
     )
   }
 

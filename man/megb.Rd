@@ -32,6 +32,7 @@ megb(
   cv_folds = getOption("megb.cv_folds", "domain"),
   early_stopping = getOption("megb.early_stopping", TRUE),
   predict_sampled = c("full", "crossfit"),
+  cv_nfold = getOption("megb.cv_nfold", 5L),
   ...
 )
 }
@@ -144,9 +145,17 @@ both \code{smp_data} and \code{pop_data} before fitting. Defaults to
   Unsampled domains use the full booster either way; the result's
   \code{$crossfit$ind} also gives \code{Mean_full} (the \code{"full"}
   estimates from the same fit) and \code{Mean_foldmean} (unsampled domains
-  predicted by the mean of the five fold models). The fit itself, including
+  predicted by the mean of the fold models). The fit itself, including
   the random effects and variance components, is the same under both.
   \code{"crossfit"} has no bootstrap yet and requires \code{mse = FALSE}.}
+
+\item{cv_nfold}{the number of folds of the internal cross-validation
+  (xgboost only), of whole domains or of rows according to \code{cv_folds}.
+  Default 5. More folds train each fold model on a larger share of the
+  sample, at proportionally more cost per EM iteration. Under
+  \code{predict_sampled = "crossfit"} there is one fold model per fold.
+  When not supplied, the default is taken from
+  \code{getOption("megb.cv_nfold", 5L)}.}
 
 \item{...}{additional arguments forwarded to \code{MEGB::megb}.}
 }
