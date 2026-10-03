@@ -121,7 +121,6 @@ estimators.povmap <- function(object, indicator = "all", MSE = FALSE, var= FALSE
 
   # Only point estimates
   all_ind <- point_povmap(object = object, indicator = indicator)
-  selected <- colnames(all_ind$ind)[-1]
 
   if (MSE == TRUE || var==TRUE || CV == TRUE) {
     all_precisions <- mse_povmap(
@@ -135,14 +134,21 @@ estimators.povmap <- function(object, indicator = "all", MSE = FALSE, var= FALSE
     else {
         suffix <- "_MSE"
      }
-    colnames(all_precisions$ind_cv) <- c("Domain",paste0(selected,"CV"))
-    colnames(all_precisions$ind_cv) <- c("Domain",paste0(selected,"_CV"))
-    colnames(all_precisions$ind) <- c("Domain",paste0(selected,suffix))
-    
-    combined <- data.frame(all_ind$ind, all_precisions$ind[,-1], 
-                           all_precisions$ind_cv[,-1])
+    # Name the precision and CV columns after the point estimate each one measures.
+    # mse_povmap() pairs them by name (see align_precision()), so this no longer
+    # relies on column positions. A point column with no precision (xgb's Mean_agg)
+    # gets no _Var/_MSE or _CV column. Rows are matched on Domain.
+    prec_names <- colnames(all_precisions$ind)[-1]
+    colnames(all_precisions$ind) <- c("Domain", paste0(prec_names, suffix))
+    colnames(all_precisions$ind_cv) <- c("Domain", paste0(prec_names, "_CV"))
+    rows <- match(as.character(all_ind$ind[[1]]),
+                  as.character(all_precisions$ind[[1]]))
+    combined <- data.frame(all_ind$ind,
+                           all_precisions$ind[rows, -1, drop = FALSE],
+                           all_precisions$ind_cv[rows, -1, drop = FALSE])
     colnames(combined) <- c(colnames(all_ind$ind),colnames(all_precisions$ind)[-1],
                             colnames(all_precisions$ind_cv)[-1])
+    rownames(combined) <- NULL
   } else {
     combined <- all_ind$ind
   }

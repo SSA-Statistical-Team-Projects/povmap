@@ -18,7 +18,8 @@ mse_emdi <- function(object, indicator = "all", CV = FALSE) {
     object$MSE <- object$MSE[, c("Domain", "Direct", "FH")]
     object$ind <- object$ind[, c("Domain", "Direct", "FH")]
   }
-  all_cv <- sqrt(object$MSE[, -1]) / object$ind[, -1] # DATA FRAME
+  object <- align_precision(object)
+  all_cv <- sqrt(object$MSE[, -1, drop = FALSE]) / object$ind[, -1, drop = FALSE] # DATA FRAME
 
   if (any(indicator == "Quantiles") || any(indicator == "quantiles")) {
     indicator <- c(

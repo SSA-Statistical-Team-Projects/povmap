@@ -1,5 +1,17 @@
 # povmap 1.0.1
 
+* `estimators()`, `write.excel()` and `write.ods()` with `CV = TRUE` (or `MSE`/`var = TRUE`)
+  now pair each variance or MSE column with the point estimate it measures by name, not by
+  column position. Since the `xgb()` change below, `$ind` carries `Mean_agg` while `$var`
+  has no variance for it, so the CV division stopped with "'/' only defined for
+  equally-sized data frames". Even had the division gone through, the positional pairing
+  would have labelled `Var_bench` as `Mean_agg_Var`. `$var$Mean` is paired with `$ind$Mean`,
+  and `$var$Var_bench` with `$ind$Mean_bench`, so `Mean_bench_CV` is
+  `sqrt(Var_bench) / Mean_bench`, as before. `Mean_agg` is exported without `_Var` or `_CV`
+  columns. Rows are matched on `Domain`. A variance column with no matching point estimate
+  is now an error. Objects without `Mean_agg` export exactly as before. Estimation is
+  unchanged. Test: `tests/testthat/test_cv_export_pairing.R`.
+
 * `megb()`: new arguments `cv_folds` and `early_stopping` control the internal
   cross-validation (`xgboost::xgb.cv`) whose out-of-fold residuals feed the random-effect
   and error variances. **The default changes to `cv_folds = "domain"`**, which holds out
