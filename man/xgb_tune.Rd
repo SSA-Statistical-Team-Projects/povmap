@@ -31,6 +31,7 @@ xgb_tune(
   nrounds_max = 2000,
   seed = NULL,
   keep_candidates = TRUE,
+  rescale_weights = TRUE,
   cpus = 1,
   verbose = TRUE,
   ...
@@ -183,6 +184,19 @@ Defaults to 0.}
   and folds, so their candidates can be compared one for one. These are
   appended after the 14 original elements and use no random numbers, so the
   search and its result are unchanged. \code{FALSE} omits them.}
+
+\item{rescale_weights}{logical. The candidate models are weighted exactly as
+  \code{\link{xgb}} weights its fit with the same argument: if \code{TRUE}
+  (default), the survey weights are rescaled within each domain to sum to the
+  domain's sample size, and in either case they are then divided by their
+  mean. Each fold model's weights are computed from its own training rows, as
+  \code{xgb()} would compute them if fitted on those rows. The held-out domain
+  means that score the candidates keep the survey weights. Until 2026-10 the
+  candidate models were fitted on the raw survey weights, so
+  \code{min_child_weight} and \code{lambda} were tuned on a scale far larger
+  than the one \code{xgb()} fits on (see NEWS). Pass the value you will give
+  \code{xgb()}. \code{variance_y} is not mirrored: tuning with a
+  heteroscedasticity weight is not supported.}
 
 \item{verbose}{display progress. Defaults to FALSE.}
 

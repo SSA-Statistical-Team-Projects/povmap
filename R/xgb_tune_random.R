@@ -136,10 +136,33 @@
 #' @return list with `OPT` and `ITER`, both configurations x folds, and
 #'   `domain_labels`, the held-out domain means per fold
 #' @keywords internal
+#' Training weights exactly as xgb() passes them to xgboost
+#'
+#' xgb() rescales the survey weights within each domain to sum to the domain's
+#' row count (rescale_weights = TRUE), divides by their mean (whether or not it
+#' rescaled), and point_estim_xgb() divides by the mean once more (with the
+#' heteroscedasticity factor, 1 when variance_y is NULL). The second division is
+#' reproduced rather than skipped so the weights match bit for bit. xgb_tune
+#' scored its fold models on the raw survey weights until 2026-10, so
+#' min_child_weight and lambda acted on a scale hundreds of times larger than
+#' the fit's.
+#' @keywords internal
+.xgb_fit_weights <- function(w, dom, rescale_weights = TRUE) {
+  w <- as.numeric(w)
+  if (rescale_weights) {
+    domain_sum_wts <- ave(w, dom, FUN = sum)
+    domain_n <- ave(w, dom, FUN = length)
+    w <- w * domain_n / domain_sum_wts
+  }
+  w <- w / mean(w)
+  w * 1 / mean(w * 1)
+}
+
 .xgb_score_configs <- function(tunegrid, X_final, X_smp, Y_smp, smp_weights,
                                cluster_col, cluster, domains, folds,
                                early_stopping_rounds = NULL, nrounds_max = 2000,
-                               seed = NULL, dots = list()) {
+                               seed = NULL, dots = list(), rescale_weights = TRUE) {
+  dom_all <- X_smp[[paste0(domains)]]
   nrow_g <- nrow(tunegrid)
   es_on  <- !is.null(early_stopping_rounds)
   OPT    <- matrix(NA_real_, nrow = nrow_g, ncol = folds)
@@ -166,7 +189,13 @@
     } else {
       es_val <- NULL; es_train <- train_rows
     }
-    fold_info[[fold]] <- list(hold = hold, es_train = es_train, es_val = es_val)
+    ## Each fold model is weighted as xgb() would weight a fit on its training
+    ## rows. Scoring below keeps the survey weights: they define the held-out
+    ## direct means, and a within-domain constant would not change them anyway.
+    w_train <- .xgb_fit_weights(as.matrix(smp_weights)[es_train, ], dom_all[es_train], rescale_weights)
+    w_val   <- if (es_on) .xgb_fit_weights(as.matrix(smp_weights)[es_val, ], dom_all[es_val], rescale_weights) else NULL
+    fold_info[[fold]] <- list(hold = hold, es_train = es_train, es_val = es_val,
+                              w_train = w_train, w_val = w_val)
   }
 
   tasks <- expand.grid(row = seq_len(nrow_g), fold = seq_len(folds))
@@ -189,11 +218,11 @@
 
     dtrain <- xgboost::xgb.DMatrix(data = data.matrix(X_final[fi$es_train, ]),
                                    label = Y_smp[fi$es_train, ],
-                                   weight = as.matrix(smp_weights)[fi$es_train, ])
+                                   weight = fi$w_train)
     if (es_on) {
       dvalid <- xgboost::xgb.DMatrix(data = data.matrix(X_final[fi$es_val, ]),
                                      label = Y_smp[fi$es_val, ],
-                                     weight = as.matrix(smp_weights)[fi$es_val, ])
+                                     weight = fi$w_val)
       fit <- xgboost::xgb.train(data = dtrain, params = params, nrounds = nrounds_max,
                                 evals = list(valid = dvalid),
                                 early_stopping_rounds = early_stopping_rounds, verbose = 0)

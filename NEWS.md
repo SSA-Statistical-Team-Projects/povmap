@@ -1,5 +1,24 @@
 # povmap 1.0.1
 
+* **`xgb_tune()` now fits its candidate models on the weights `xgb()` fits on (bug fix).**
+  - **The bug.** The tuner passed the raw survey weights to xgboost, while `xgb()`
+    rescales them within each domain (`rescale_weights = TRUE`) and divides them by
+    their mean. With weights summing to population counts, the tuner's scale was
+    hundreds to thousands of times the fit's, so `min_child_weight` almost never bound
+    and `lambda` barely shrank a leaf during tuning, then both acted at full strength
+    in the fit. The tuned values of those two parameters were effectively arbitrary.
+  - **The fix.** New argument `rescale_weights = TRUE`, mirroring `xgb()`: each fold
+    model's weights are computed from its own training rows exactly as `xgb()` would
+    compute them, including the division by the mean when `rescale_weights = FALSE`.
+    The held-out domain means that score the candidates keep the survey weights.
+    The result records `rescale_weights`.
+  - **Unchanged.** The fold assignment, the random draws and `xgb()` itself, so a
+    search with the same `seed` evaluates the same candidates on the same folds as
+    before; only their scores change. Equal weights (all 1) give the same result as
+    before.
+  - **Action.** Configurations tuned with an earlier `xgb_tune()` and survey weights
+    should be retuned. `tidy_xgb_tune()` is not changed.
+
 * **`megb()` defaults change: ten domain folds, cross-fitted prediction for sampled
   domains, the fold-model average for unsampled domains, and bootstraps that predict
   their replicates the same way.**
