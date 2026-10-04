@@ -141,13 +141,13 @@
 #' xgb() rescales the survey weights within each domain to sum to the domain's
 #' row count (rescale_weights = TRUE), divides by their mean (whether or not it
 #' rescaled), and point_estim_xgb() divides by the mean once more (with the
-#' heteroscedasticity factor, 1 when variance_y is NULL). The second division is
-#' reproduced rather than skipped so the weights match bit for bit. xgb_tune
-#' scored its fold models on the raw survey weights until 2026-10, so
-#' min_child_weight and lambda acted on a scale hundreds of times larger than
-#' the fit's.
+#' heteroscedasticity factor `het`, variance_y^-0.5 row by row, or 1 when
+#' variance_y is NULL). The second division is reproduced rather than skipped
+#' so the weights match bit for bit. xgb_tune scored its fold models on the raw
+#' survey weights until 2026-10, so min_child_weight and lambda acted on a scale
+#' hundreds of times larger than the fit's.
 #' @keywords internal
-.xgb_fit_weights <- function(w, dom, rescale_weights = TRUE) {
+.xgb_fit_weights <- function(w, dom, rescale_weights = TRUE, het = 1) {
   w <- as.numeric(w)
   if (rescale_weights) {
     domain_sum_wts <- ave(w, dom, FUN = sum)
@@ -155,14 +155,17 @@
     w <- w * domain_n / domain_sum_wts
   }
   w <- w / mean(w)
-  w * 1 / mean(w * 1)
+  w * het / mean(w * het)
 }
 
 .xgb_score_configs <- function(tunegrid, X_final, X_smp, Y_smp, smp_weights,
                                cluster_col, cluster, domains, folds,
                                early_stopping_rounds = NULL, nrounds_max = 2000,
-                               seed = NULL, dots = list(), rescale_weights = TRUE) {
+                               seed = NULL, dots = list(), rescale_weights = TRUE,
+                               het = NULL) {
   dom_all <- X_smp[[paste0(domains)]]
+  ## heteroscedasticity factor for rows `r` (variance_y^-0.5), or 1 without variance_y
+  het_rows <- function(r) if (is.null(het)) 1 else het[r]
   nrow_g <- nrow(tunegrid)
   es_on  <- !is.null(early_stopping_rounds)
   OPT    <- matrix(NA_real_, nrow = nrow_g, ncol = folds)
@@ -192,8 +195,10 @@
     ## Each fold model is weighted as xgb() would weight a fit on its training
     ## rows. Scoring below keeps the survey weights: they define the held-out
     ## direct means, and a within-domain constant would not change them anyway.
-    w_train <- .xgb_fit_weights(as.matrix(smp_weights)[es_train, ], dom_all[es_train], rescale_weights)
-    w_val   <- if (es_on) .xgb_fit_weights(as.matrix(smp_weights)[es_val, ], dom_all[es_val], rescale_weights) else NULL
+    w_train <- .xgb_fit_weights(as.matrix(smp_weights)[es_train, ], dom_all[es_train], rescale_weights,
+                                het_rows(es_train))
+    w_val   <- if (es_on) .xgb_fit_weights(as.matrix(smp_weights)[es_val, ], dom_all[es_val], rescale_weights,
+                                           het_rows(es_val)) else NULL
     fold_info[[fold]] <- list(hold = hold, es_train = es_train, es_val = es_val,
                               w_train = w_train, w_val = w_val)
   }

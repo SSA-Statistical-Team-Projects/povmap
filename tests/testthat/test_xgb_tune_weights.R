@@ -120,3 +120,78 @@ test_that("xgb_tune records the weighting it used", {
   ## the fold assignment uses no weights, so it is the same either way
   expect_identical(r$fold_assignment, r2$fold_assignment)
 })
+
+## variance_y: xgb() multiplies its fit's weights by variance_y^-0.5 and divides by
+## their mean once more (point_estim_xgb); the tuner must pass the same weights.
+with_variance <- function(d, seed = 11) {
+  set.seed(seed)
+  d$smp$v <- runif(nrow(d$smp), 0.2, 3)
+  d
+}
+
+xgb_fit_weights_var_on <- function(d, rows, rescale_weights) {
+  w <- capture_train_weights(suppressWarnings(povmap::xgb(
+    fixed = y ~ x1 + x2, smp_data = d$smp[rows, ], smp_weights = "wt",
+    pop_data = d$pop, pop_weights = "npop", domains = "dom", sub_domains = "sub",
+    transformation = "no", bootstrap = FALSE, L = 1, seed = 1, nrounds = 3, eta = 0.3,
+    max_depth = 2, colsample_bylevel = 1, colsample_bynode = 1,
+    rescale_weights = rescale_weights, variance_y = "v")))
+  expect_length(w, 1L)
+  w[[1]]
+}
+
+test_that("with variance_y, the tuner's fold models get xgb()'s weights", {
+  skip_if_not_installed("xgboost")
+  d <- with_variance(make_data()); f <- fold_of_dom(d)
+  for (rw in c(TRUE, FALSE)) {
+    ## the factor exactly as xgb_tune(variance_y = "v") computes it
+    wt <- tuner_fold_weights(d, f, rescale_weights = rw, het = as.numeric(d$smp[["v"]])^-0.5)
+    expect_length(wt, 3L)
+    for (k in 1:3) {
+      tr <- f[d$smp$dom] != k
+      wx <- xgb_fit_weights_var_on(d, which(tr), rescale_weights = rw)
+      expect_identical(wt[[k]], wx, info = paste("rescale_weights =", rw, "fold", k))
+      ## the factor matters: these are not the weights without variance_y
+      expect_false(isTRUE(all.equal(wx, xgb_fit_weights_on(d, which(tr), rescale_weights = rw))))
+    }
+  }
+})
+
+test_that("xgb_tune(variance_y =) scores with those weights and records variance_y", {
+  skip_if_not_installed("xgboost")
+  d <- with_variance(make_data())
+  args <- list(y ~ x1 + x2, smp_data = d$smp, smp_weights = "wt", domains = "dom", folds = 3,
+               nround = 3, max_depth = 2, colsample_bytree = 1, subsample = 1,
+               min_child_weight = 1, lambda = 1, seed = 1, cpus = 1, verbose = FALSE)
+  r  <- suppressWarnings(do.call(xgb_tune, c(args, list(variance_y = "v"))))
+  r0 <- suppressWarnings(do.call(xgb_tune, args))
+  expect_identical(r$variance_y, "v")
+  expect_null(r0$variance_y)
+  expect_identical(r$fold_assignment, r0$fold_assignment)
+  expect_false(isTRUE(all.equal(r$cv_by_fold, r0$cv_by_fold)))
+  ## the same scores as the scorer given variance_y^-0.5 directly, on the same folds
+  foreach::registerDoSEQ()
+  fa <- r$fold_assignment
+  X_smp <- d$smp[, c("x1", "x2", "dom")]
+  sc <- .xgb_score_configs(
+    tunegrid = r$candidates[1, names(r$candidates) %in% c("nround", "max_depth", "colsample_bytree",
+      "colsample_bylevel", "colsample_bynode", "subsample", "min_child_weight", "eta", "gamma",
+      "max_delta_step", "lambda", "alpha")],
+    X_final = X_smp[, c("x1", "x2")], X_smp = X_smp, Y_smp = data.frame(labels = d$smp$y),
+    smp_weights = d$smp$wt, cluster_col = data.frame(dom = d$smp$dom, fold = fa$fold[match(d$smp$dom, fa$dom)]),
+    cluster = "dom", domains = "dom", folds = 3, seed = 1, het = as.numeric(d$smp$v)^-0.5)
+  expect_equal(unname(sc$OPT), unname(r$cv_by_fold), tolerance = 1e-12)
+})
+
+test_that("variance_y must name a positive numeric variable", {
+  skip_if_not_installed("xgboost")
+  d <- with_variance(make_data())
+  run <- function(smp, vy) suppressWarnings(xgb_tune(y ~ x1 + x2, smp_data = smp, smp_weights = "wt",
+    domains = "dom", folds = 3, nround = 3, max_depth = 2, colsample_bytree = 1,
+    min_child_weight = 1, lambda = 1, seed = 1, cpus = 1, verbose = FALSE, variance_y = vy))
+  expect_error(run(d$smp, "nope"), "variance_y must name")
+  s <- d$smp; s$v[1] <- 0
+  expect_error(run(s, "v"), "positive")
+  s <- d$smp; s$v[2] <- NA
+  expect_error(run(s, "v"), "positive")
+})

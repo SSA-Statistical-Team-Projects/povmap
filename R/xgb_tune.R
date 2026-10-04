@@ -136,8 +136,14 @@
 #'   candidate models were fitted on the raw survey weights, so
 #'   \code{min_child_weight} and \code{lambda} were tuned on a scale far larger
 #'   than the one \code{xgb()} fits on (see NEWS). Pass the value you will give
-#'   \code{xgb()}. \code{variance_y} is not mirrored: tuning with a
-#'   heteroscedasticity weight is not supported.
+#'   \code{xgb()}, and likewise \code{variance_y}.
+#' @param variance_y character or NULL. The name of the variable in
+#'   \code{smp_data} holding the variance of the outcome, as in \code{\link{xgb}}.
+#'   If given, each fold model's weights are multiplied by
+#'   \code{variance_y^-0.5} and divided by their mean once more, exactly as
+#'   \code{xgb()} applies its heteroscedasticity correction to the fit's
+#'   weights. \code{NULL} (default) leaves the weights as described under
+#'   \code{rescale_weights}. Pass the value you will give \code{xgb()}.
 #' @param verbose display progress. Defaults to FALSE.
 #' @param ... additional parameters to be passed to \code{xgb.train}.
 #'
@@ -194,6 +200,7 @@ xgb_tune <- function(fixed,
                      seed = NULL,
                      keep_candidates = TRUE,
                      rescale_weights = TRUE,
+                     variance_y = NULL,
                      cpus = 1, 
                      verbose = TRUE,
                      ...){
@@ -318,12 +325,22 @@ xgb_tune <- function(fixed,
   on.exit(parallel::stopCluster(cl), add = TRUE)
   dots <- list(...)
 
+  ## Heteroscedasticity factor, as xgb()'s point_estim_xgb() computes it
+  het <- NULL
+  if (!is.null(variance_y)) {
+    if (!is.character(variance_y) || length(variance_y) != 1L || !variance_y %in% names(smp_data))
+      stop("variance_y must name one variable in smp_data.", call. = FALSE)
+    het <- as.numeric(smp_data[[variance_y]])^-0.5
+    if (!is.numeric(het) || anyNA(het) || any(!is.finite(het)))
+      stop("variance_y must be numeric, positive and not missing.", call. = FALSE)
+  }
+
   score_args <- list(X_final = X_final, X_smp = X_smp, Y_smp = Y_smp,
                      smp_weights = smp_weights, cluster_col = cluster_col,
                      cluster = cluster, domains = domains, folds = folds,
                      early_stopping_rounds = early_stopping_rounds,
                      nrounds_max = nrounds_max, seed = seed, dots = dots,
-                     rescale_weights = rescale_weights)
+                     rescale_weights = rescale_weights, het = het)
 
   sc <- do.call(.xgb_score_configs, c(list(tunegrid = tunegrid), score_args))
   OPT <- sc$OPT; ITER <- sc$ITER; domain_labels_list <- sc$domain_labels
@@ -369,6 +386,7 @@ xgb_tune <- function(fixed,
   final_output$search    <- search
   final_output$n_configs <- nrow(tunegrid)
   final_output$rescale_weights <- rescale_weights
+  final_output$variance_y <- variance_y    # NULL adds no element
   if (isTRUE(keep_candidates)) {
     cand <- tunegrid
     cand$mse  <- mean_mse

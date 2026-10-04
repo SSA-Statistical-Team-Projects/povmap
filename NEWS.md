@@ -1,5 +1,15 @@
 # povmap 1.0.1
 
+* **`xgb_tune()` gains `variance_y`, so tuning also mirrors `xgb()`'s
+  heteroscedasticity correction.** If given, each fold model's weights are multiplied
+  by `variance_y^-0.5` and divided by their mean once more, exactly as `xgb()` weights
+  its fit, so the tuner and `xgb()` pass identical weights to xgboost for the same
+  training rows. Pass the same `variance_y` to both. With the default `NULL` the
+  weights are bit-identical to those of the `rescale_weights` fix below. Tests:
+  `tests/testthat/test_xgb_tune_weights.R` (the `variance_y` case) and
+  `tests/testthat/test_xgb_tune_fit_weights.R` (`min_child_weight` and `lambda`
+  change the CV scores; the scores do not depend on the scale of the survey weights).
+
 * **`xgb_tune()` now fits its candidate models on the weights `xgb()` fits on (bug fix).**
   - **The bug.** The tuner passed the raw survey weights to xgboost, while `xgb()`
     rescales them within each domain (`rescale_weights = TRUE`) and divides them by

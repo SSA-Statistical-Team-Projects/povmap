@@ -32,6 +32,7 @@ xgb_tune(
   seed = NULL,
   keep_candidates = TRUE,
   rescale_weights = TRUE,
+  variance_y = NULL,
   cpus = 1,
   verbose = TRUE,
   ...
@@ -195,8 +196,15 @@ Defaults to 0.}
   candidate models were fitted on the raw survey weights, so
   \code{min_child_weight} and \code{lambda} were tuned on a scale far larger
   than the one \code{xgb()} fits on (see NEWS). Pass the value you will give
-  \code{xgb()}. \code{variance_y} is not mirrored: tuning with a
-  heteroscedasticity weight is not supported.}
+  \code{xgb()}, and likewise \code{variance_y}.}
+
+\item{variance_y}{character or NULL. The name of the variable in
+  \code{smp_data} holding the variance of the outcome, as in \code{\link{xgb}}.
+  If given, each fold model's weights are multiplied by
+  \code{variance_y^-0.5} and divided by their mean once more, exactly as
+  \code{xgb()} applies its heteroscedasticity correction to the fit's
+  weights. \code{NULL} (default) leaves the weights as described under
+  \code{rescale_weights}. Pass the value you will give \code{xgb()}.}
 
 \item{verbose}{display progress. Defaults to FALSE.}
 
