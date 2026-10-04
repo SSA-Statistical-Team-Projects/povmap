@@ -22,13 +22,14 @@
 .fit <- function(S, groups = S$g, nrounds = 200, ...)
   povmap:::train_gbmodel("xgboost", S$X, S$y, params = list(eta = 0.3, max_depth = 3, nrounds = nrounds),
                          groups = groups, ...)
-.is_domain_folds <- function(args, g) {
+## K: the number of folds expected, 10 by default from povmap 1.0.1 (it was 5)
+.is_domain_folds <- function(args, g, K = 10L) {
   f <- args$folds
-  if (is.null(f) || length(f) != 5L || !is.null(args$nfold)) return(FALSE)
+  if (is.null(f) || length(f) != K || !is.null(args$nfold)) return(FALSE)
   if (!setequal(unlist(f), seq_along(g)) || length(unlist(f)) != length(g)) return(FALSE)
   all(tapply(rep(seq_along(f), lengths(f)), g[unlist(f)], function(k) length(unique(k))) == 1L)
 }
-.is_row_folds <- function(args) is.null(args$folds) && identical(args$nfold, 5)
+.is_row_folds <- function(args, K = 10) is.null(args$folds) && identical(args$nfold, K)
 
 test_that("default, no argument and no option: domain folds with early stopping", {
   skip_if_not_installed("xgboost")
@@ -42,7 +43,7 @@ test_that("default, no argument and no option: domain folds with early stopping"
   expect_length(r$oof_prediction, length(S$y))
 })
 
-test_that("cv_folds = 'rows': 5 folds of random rows", {
+test_that("cv_folds = 'rows': folds of random rows (ten by default)", {
   skip_if_not_installed("xgboost")
   S <- .cv_setup(); rec <- new.env()
   local_mocked_bindings(xgb.cv = .record_cv(rec), .package = "xgboost")

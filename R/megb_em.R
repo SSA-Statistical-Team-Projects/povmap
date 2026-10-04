@@ -104,7 +104,8 @@ megb_em <- function(Y, X, dom_name, smp_data, pop_data,
                     cv_folds         = getOption("megb.cv_folds", "domain"),
                     early_stopping   = getOption("megb.early_stopping", TRUE),
                     predict_sampled  = "full",
-                    cv_nfold         = getOption("megb.cv_nfold", 5L),
+                    predict_unsampled = "full",
+                    cv_nfold         = getOption("megb.cv_nfold", 10L),
                     keep_fold_models = FALSE,
                     ...) {
   # smp_weights_vec: numeric vector of observation weights for smp_data rows,
@@ -114,15 +115,18 @@ megb_em <- function(Y, X, dom_name, smp_data, pop_data,
 
   call       <- match.call()
   ts_gradient <- Sys.time()
-  predict_sampled <- match.arg(predict_sampled, c("full", "crossfit"))
-  .crossfit <- predict_sampled == "crossfit"
+  predict_sampled   <- match.arg(predict_sampled, c("full", "crossfit"))
+  predict_unsampled <- match.arg(predict_unsampled, c("full", "foldmean"))
+  # fold-model prediction: crossfit for sampled domains and/or the fold-model
+  # average for unsampled ones; both use the fold models of the final EM iteration
+  .crossfit <- predict_sampled == "crossfit" || predict_unsampled == "foldmean"
   if (.crossfit) {
     if (gbm_engine != "xgboost")
-      stop("predict_sampled = \"crossfit\" is implemented for gbm_engine = \"xgboost\" only.")
+      stop("predict_sampled = \"crossfit\" and predict_unsampled = \"foldmean\" are implemented for gbm_engine = \"xgboost\" only.")
     if (!identical(match.arg(cv_folds, c("domain", "rows")), "domain"))
-      stop("predict_sampled = \"crossfit\" needs cv_folds = \"domain\": with row folds no fold model excludes a whole domain.")
+      stop("predict_sampled = \"crossfit\" and predict_unsampled = \"foldmean\" need cv_folds = \"domain\": with row folds no fold model excludes a whole domain.")
     if (mse)
-      stop("megb_em(): predict_sampled = \"crossfit\" with mse = TRUE is supported through megb() only.")
+      stop("megb_em(): fold-model prediction with mse = TRUE is supported through megb() only.")
   }
 
   checked_inputs <- input_checks_megb(
@@ -211,21 +215,17 @@ megb_em <- function(Y, X, dom_name, smp_data, pop_data,
   # the full booster; the average of the fold models is returned beside it in
   # $crossfit. unit_pred_smp and gb_smp stay the full booster's (they feed only the
   # bootstrap, which crossfit does not support yet).
+  # predict_unsampled = "foldmean": unsampled domains' booster part is the average
+  # of the fold models' predictions instead of the full booster's.
   crossfit <- NULL
   if (.crossfit) {
-    cf <- .megb_crossfit(model, smp_data, pop_data, dom_name, cov_names,
-                         gb_pop = unit_level_predictions$gb_pop)
-    re_pop <- stats::predict(model$effect_model, pop_data, allow.new.levels = TRUE) -
-              lme4::fixef(model$effect_model)
-    crossfit <- list(
-      unit_preds_full     = unit_preds$unit_preds,
-      unit_preds_foldmean = cf$gb_pop_foldmean + re_pop,
-      fold_of_domain      = cf$fold_of_domain,
-      gb_smp_crossfit     = cf$gb_smp,
-      oof_max_abs_diff    = max(abs(cf$gb_smp - model$oof_prediction))
-    )
-    unit_preds$unit_preds <- cf$gb_pop + re_pop
-    unit_preds$gb_pop     <- cf$gb_pop
+    cp <- .megb_compose_preds(model, smp_data, pop_data, dom_name, cov_names,
+                              gb_pop = unit_level_predictions$gb_pop,
+                              predict_sampled = predict_sampled,
+                              predict_unsampled = predict_unsampled)
+    crossfit <- c(cp$diag, list(unit_preds_full = unit_preds$unit_preds))
+    unit_preds$unit_preds <- cp$unit_preds
+    unit_preds$gb_pop     <- cp$gb_pop
   }
 
   mean_preds <- unit_preds |>
@@ -300,6 +300,7 @@ megb_em <- function(Y, X, dom_name, smp_data, pop_data,
     cov_names_proc         = cov_names,
     formula_random_effects = formula_random_effects,
     predict_sampled        = predict_sampled,
+    predict_unsampled      = predict_unsampled,
     crossfit               = crossfit
   )
   class(res) <- "MEGB"
@@ -337,4 +338,29 @@ megb_em <- function(Y, X, dom_name, smp_data, pop_data,
     gb_pop_fm[iu] <- rowMeans(matrix(vapply(fm, function(b) stats::predict(b, x_pop[iu, , drop = FALSE]),
                                             numeric(sum(iu))), nrow = sum(iu)))
   list(gb_pop = gb_pop_cf, gb_pop_foldmean = gb_pop_fm, gb_smp = gb_smp, fold_of_domain = fold_of)
+}
+
+
+# Internal: the population predictions under fold-model prediction. Sampled rows
+# take the crossfit booster part (predict_sampled = "crossfit") or the full
+# booster's; unsampled rows the average of the fold models (predict_unsampled =
+# "foldmean") or the full booster's; each plus its random effect (0 for unsampled
+# domains). Used by megb_em and by the full-refit bootstrap. diag: the other
+# combinations, for megb()'s $crossfit, and the out-of-fold check.
+.megb_compose_preds <- function(model, smp_data, pop_data, dom_name, cov_names, gb_pop,
+                                predict_sampled, predict_unsampled) {
+  cf <- .megb_crossfit(model, smp_data, pop_data, dom_name, cov_names, gb_pop = gb_pop)
+  re_pop <- stats::predict(model$effect_model, pop_data, allow.new.levels = TRUE) -
+            lme4::fixef(model$effect_model)
+  s <- as.character(pop_data[[dom_name]]) %in% names(cf$fold_of_domain)
+  g <- gb_pop
+  if (predict_sampled == "crossfit")   g[s]  <- cf$gb_pop[s]
+  if (predict_unsampled == "foldmean") g[!s] <- cf$gb_pop_foldmean[!s]
+  list(unit_preds = g + re_pop, gb_pop = g,
+       diag = list(unit_preds_foldmean = cf$gb_pop_foldmean + re_pop,   # crossfit sampled + fold-mean unsampled
+                   unit_preds_crossfit = cf$gb_pop + re_pop,            # crossfit sampled + full unsampled
+                   fold_of_domain      = cf$fold_of_domain,
+                   gb_smp_crossfit     = cf$gb_smp,
+                   oof_max_abs_diff    = if (is.null(model$oof_prediction)) NA_real_
+                                         else max(abs(cf$gb_smp - model$oof_prediction))))
 }

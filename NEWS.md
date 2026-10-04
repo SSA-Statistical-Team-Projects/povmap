@@ -1,5 +1,47 @@
 # povmap 1.0.1
 
+* **`megb()` defaults change: ten domain folds, cross-fitted prediction for sampled
+  domains, the fold-model average for unsampled domains, and bootstraps that predict
+  their replicates the same way.**
+  - **New option.** `predict_unsampled = c("foldmean", "full")`: with `"foldmean"`, an
+    unsampled domain's booster part is the average of the predictions of the fold
+    models of the final EM iteration, rather than the full booster's.
+  - **New defaults.**
+    - `cv_nfold` defaults to 10 (was 5).
+    - `predict_sampled` and `predict_unsampled` default to `NULL`, which means
+      `"crossfit"` and `"foldmean"` wherever fold-model prediction applies: the
+      xgboost engine, `cv_folds = "domain"` and, with `mse = TRUE`, a `"leaves_only"`
+      or `"full"` bootstrap. Otherwise they fall back to `"full"` with a message.
+      Asking explicitly for `"crossfit"` or `"foldmean"` where they cannot apply is
+      an error.
+  - **The bootstraps follow the prediction.**
+    - The `"leaves_only"` bootstrap refreshes every fold model and takes sampled
+      domains' booster parts from their refreshed fold models and unsampled
+      domains' from the average of them.
+    - The `"full"` bootstrap now supports fold-model prediction: each replicate fit
+      keeps its own fold models and predicts from them as the point estimate does.
+  - **Why.** In a Colombian evaluation (100 replicates), the new settings lowered
+    RMSE against the old defaults:
+    - by 4.3 percent with 19 municipal covariates and 3.5 percent with 24 (8.4 and
+      6.4 percent in sample; the fold-model average 0.8 percent out of sample);
+    - neutrally with sub-area covariates.
+    The fold-model bootstrap was the best calibrated in sample (bootstrap variance
+    over actual MSE 1.07-1.11, against 1.25-1.27 for the five-fold full-prediction
+    bootstrap).
+  - **Run-time cost.** A point fit takes 1.6 to 1.9 times as long as with five folds,
+    and a fit with the default bootstrap (B = 100) about 2.1 times as long as the
+    five-fold, full-prediction configuration.
+  - **To reproduce results from before 1.0.1,** pass `cv_nfold = 5, predict_sampled =
+    "full", predict_unsampled = "full"`.
+  - **What is unchanged.** The fit (random effects, variance components) does not
+    depend on the prediction settings. `$crossfit$ind` reports the estimates of the
+    same fit under the other settings (`Mean_full`, `Mean_crossfit`, `Mean_foldmean`).
+    The internal default of `train_gbmodel()` and `em_gb_lmm()` is also ten folds.
+  - **Tests:** `tests/testthat/test-megb-defaults.R`, including one confirming that,
+    on unperturbed data, the bootstrap's fold-model average for unsampled domains
+    reproduces the point estimate's. Earlier megb tests pin the settings they were
+    written for.
+
 * `megb()` bootstrap (`bootstrap_refit = "leaves_only"`, the default): two fixes that
   change its intervals; the point estimates are unchanged.
   - The leaf refresh now uses the survey weights (rescaled within domains) that the

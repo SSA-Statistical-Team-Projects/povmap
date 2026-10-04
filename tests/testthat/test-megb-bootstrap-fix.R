@@ -16,11 +16,15 @@
   list(pop = pop, smp = smp)
 }
 .bf_params <- list(eta = 0.3, max_depth = 3, subsample = 1, nrounds = 100)
-.bf_fit <- function(M, mse = TRUE, B = 5, ...) suppressMessages(suppressWarnings(povmap::megb(
+## The fix is tested in the configuration the exhibits ran (five folds, full prediction) unless a test sets otherwise;
+## the defaults from povmap 1.0.1 are tested in test-megb-defaults.R.
+.bf_fit <- function(M, mse = TRUE, B = 5, cv_nfold = 5, predict_sampled = "full", predict_unsampled = "full", ...)
+  suppressMessages(suppressWarnings(povmap::megb(
   fixed = y ~ x1 + x2 + xm, smp_data = M$smp, smp_weights = "wt",
   pop_data = M$pop[, c("dom", "x1", "x2", "xm", "w")], pop_weights = "w", domains = "dom",
   transformation = "no", mse = mse, B = B, na.rm = FALSE, seed = 5,
-  gradient_params = .bf_params, ...)))
+  gradient_params = .bf_params, cv_nfold = cv_nfold, predict_sampled = predict_sampled,
+  predict_unsampled = predict_unsampled, ...)))
 .rescale <- function(w, d) { s <- ave(w, d, FUN = sum); n <- ave(w, d, FUN = length); w * n / s }
 
 test_that("the weighted leaf refresh reproduces a booster on its own data; the unweighted one does not", {
@@ -104,5 +108,5 @@ test_that("cross-fitted prediction now has a bootstrap: intervals around the cro
   expect_identical(f$CI$Domain, f$ind$Domain)
   expect_true(all(f$CI$Lower <= f$CI$Upper))
   expect_true(all(is.finite(f$var$Mean)))
-  expect_error(.bf_fit(M, B = 2, predict_sampled = "crossfit", bootstrap_refit = "lmm_only"), "leaves_only")
+  expect_error(.bf_fit(M, B = 2, predict_sampled = "crossfit", bootstrap_refit = "lmm_only"), "lmm_only")
 })

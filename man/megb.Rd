@@ -31,8 +31,9 @@ megb(
   cpus = NULL,
   cv_folds = getOption("megb.cv_folds", "domain"),
   early_stopping = getOption("megb.early_stopping", TRUE),
-  predict_sampled = c("full", "crossfit"),
-  cv_nfold = getOption("megb.cv_nfold", 5L),
+  predict_sampled = NULL,
+  predict_unsampled = NULL,
+  cv_nfold = getOption("megb.cv_nfold", 10L),
   ...
 )
 }
@@ -134,30 +135,56 @@ both \code{smp_data} and \code{pop_data} before fitting. Defaults to
   \code{getOption("megb.early_stopping", TRUE)}.}
 
 \item{predict_sampled}{how the booster part of a sampled domain's prediction
-  is formed. \code{"full"} (default) uses the booster trained on the whole
-  sample. \code{"crossfit"} uses the fold model of the final EM iteration
-  that held the domain out (\code{cv_folds = "domain"}, xgboost only). The
-  random effects are estimated from those fold models' out-of-fold
-  residuals, so under \code{"crossfit"} the booster part and the random
-  effect are measured against the same baseline; under \code{"full"} the
-  booster has seen the domain's own rows, which, with covariates constant
-  within domains, can count part of the domain's deviation twice.
-  Unsampled domains use the full booster either way; the result's
-  \code{$crossfit$ind} also gives \code{Mean_full} (the \code{"full"}
-  estimates from the same fit) and \code{Mean_foldmean} (unsampled domains
-  predicted by the mean of the fold models). The fit itself, including
-  the random effects and variance components, is the same under both.
-  With \code{mse = TRUE}, \code{"crossfit"} needs \code{bootstrap_refit =
-  "leaves_only"}, whose replicates then take each sampled domain's booster
-  part from its refreshed fold model.}
+  is formed. \code{"crossfit"} uses the fold model of the final EM iteration
+  that held the domain out; \code{"full"} uses the booster trained on the
+  whole sample. The random effects are estimated from the fold models'
+  out-of-fold residuals, so under \code{"crossfit"} the booster part and the
+  random effect are measured against the same baseline. Under \code{"full"}
+  the booster has seen the domain's own rows, which, with covariates constant
+  within domains (area-level covariates), can count part of the domain's
+  deviation twice. The default, \code{NULL}, is \code{"crossfit"} wherever it
+  applies (xgboost, \code{cv_folds = "domain"}, and with \code{mse = TRUE} a
+  \code{"leaves_only"} or \code{"full"} bootstrap) and \code{"full"}, with a
+  message, otherwise; asking for \code{"crossfit"} where it does not apply is
+  an error. Until povmap 1.0.1 the default was \code{"full"}. In a Colombian
+  evaluation with 19 and 24 municipal covariates, cross-fitting with ten folds
+  and \code{predict_unsampled = "foldmean"} lowered RMSE by 4.3 and 3.5
+  percent against \code{"full"} with five folds (8.4 and 6.4 percent in
+  sample); with sub-area covariates it was neutral. The fit itself, including
+  the random effects and variance components, does not depend on this
+  argument. The result's \code{$crossfit$ind} gives the estimates of the same
+  fit under the other settings: \code{Mean_full} (full booster everywhere),
+  \code{Mean_crossfit} (cross-fitted sampled, full unsampled) and
+  \code{Mean_foldmean} (cross-fitted sampled, fold-model average unsampled).
+  With \code{mse = TRUE} the bootstrap predicts its replicates the same way:
+  the \code{"leaves_only"} bootstrap from each refreshed fold model, the
+  \code{"full"} bootstrap from each replicate fit's own fold models.}
+
+\item{predict_unsampled}{how the booster part of an unsampled domain's
+  prediction is formed. \code{"foldmean"} averages the predictions of the fold
+  models of the final EM iteration; \code{"full"} uses the booster trained on
+  the whole sample. Unsampled domains have no random effect either way. The
+  default, \code{NULL}, is \code{"foldmean"} wherever fold-model prediction
+  applies (as for \code{predict_sampled}) and \code{"full"}, with a message,
+  otherwise. Until povmap 1.0.1 unsampled domains always used the full
+  booster. In the Colombian evaluation the fold-model average lowered
+  out-of-sample RMSE by 0.3 to 0.8 percent. With \code{mse = TRUE} the
+  \code{"leaves_only"} bootstrap averages the refreshed fold models, and the
+  \code{"full"} bootstrap each replicate fit's fold models.}
 
 \item{cv_nfold}{the number of folds of the internal cross-validation
   (xgboost only), of whole domains or of rows according to \code{cv_folds}.
-  Default 5. More folds train each fold model on a larger share of the
-  sample, at proportionally more cost per EM iteration. Under
-  \code{predict_sampled = "crossfit"} there is one fold model per fold.
+  Default 10 (5 until povmap 1.0.1). More folds train each fold model on a
+  larger share of the sample: with fold-model prediction, ten folds beat five
+  by 0.3 to 0.5 percent in sample in the Colombian evaluation. Each EM
+  iteration costs proportionally more: a point fit took 1.6 to 1.9 times as
+  long with ten folds as with five, and a fit with the default bootstrap
+  (B = 100) about 2.1 times as long as the five-fold, full-prediction
+  configuration. Under fold-model prediction there is one fold model per fold.
   When not supplied, the default is taken from
-  \code{getOption("megb.cv_nfold", 5L)}.}
+  \code{getOption("megb.cv_nfold", 10L)}. For the settings before povmap
+  1.0.1 use \code{cv_nfold = 5, predict_sampled = "full",
+  predict_unsampled = "full"}.}
 
 \item{...}{additional arguments forwarded to \code{MEGB::megb}.}
 }

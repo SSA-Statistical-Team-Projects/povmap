@@ -256,7 +256,8 @@ ran_comp <- function(unit_pred_smp, smp_data, Y, dom_name, error_sd,
 # positions (in `domains`) of its domains and, for the identity back-transform, a
 # leaf aggregator over those rows.
 .megb_fold_boot_setup <- function(fold_fit, X_smp, sort_smp, d_smp, X_pop, pop_dom_idx,
-                                  domains, pw_pop, use_leaf, predict = FALSE) {
+                                  domains, pw_pop, use_leaf, predict = FALSE,
+                                  predict_unsampled = FALSE) {
   fm <- fold_fit$fold_models; fr <- fold_fit$fold_rows
   if (is.null(fm) || length(fm) != length(fr)) stop("leaves_only bootstrap: no fold models.")
   n <- nrow(X_smp)
@@ -265,6 +266,11 @@ ran_comp <- function(unit_pred_smp, smp_data, Y, dom_name, error_sd,
   if (length(oof_sorted) != n || anyNA(inv)) stop("leaves_only bootstrap: fold rows do not match the sample.")
   if (predict && is.null(fold_fit$fold_domains))
     stop("cross-fitted bootstrap needs folds of whole domains.")
+  ## unsampled domains (positions in `domains`) and their population rows, for the
+  ## fold-model average (predict_unsampled)
+  posU <- if (predict_unsampled && !is.null(pop_dom_idx)) which(!(domains %in% unique(d_smp))) else integer(0)
+  ipU  <- if (length(posU)) which(pop_dom_idx %in% posU) else integer(0)
+  locU <- if (length(posU)) match(pop_dom_idx[ipU], posU) else integer(0)
   folds <- lapply(seq_along(fm), function(k) {
     b  <- fm[[k]]
     bi <- xgboost::xgb.attr(b, "best_iteration")
@@ -284,12 +290,15 @@ ran_comp <- function(unit_pred_smp, smp_data, Y, dom_name, error_sd,
                                         pw = if (is.null(pw_pop)) NULL else pw_pop[out$ip])
       }
     }
+    if (length(posU) && use_leaf)
+      out$LAu <- .megb_leaf_aggregator(sl, X_pop[ipU, , drop = FALSE], locU, length(posU),
+                                       pw = if (is.null(pw_pop)) NULL else pw_pop[ipU])
     out
   })
   if (anyDuplicated(unlist(lapply(folds, `[[`, "ho"))) || length(unlist(lapply(folds, `[[`, "ho"))) != n)
     stop("leaves_only bootstrap: the folds do not partition the sample.")
   list(folds = folds, pos_all = unlist(lapply(folds, `[[`, "pos")),
-       ip_all = unlist(lapply(folds, `[[`, "ip")))
+       ip_all = unlist(lapply(folds, `[[`, "ip")), posU = posU, ipU = ipU)
 }
 
 # Per replicate: refresh every fold model on its training rows with weights w
@@ -297,18 +306,28 @@ ran_comp <- function(unit_pred_smp, smp_data, Y, dom_name, error_sd,
 # (out-of-fold) and, with predict, its domains' population means (leaf
 # aggregation) or rows, in the order of CFB$pos_all / CFB$ip_all.
 .megb_fold_boot_step <- function(CFB, X_smp, X_pop, y, w, refresh = TRUE, use_leaf = TRUE,
-                                 predict = FALSE) {
+                                 predict = FALSE, predict_unsampled = FALSE) {
   oof <- rep(NA_real_, length(y)); un <- wt <- gp <- list()
+  .u <- predict_unsampled && length(CFB$posU)
+  uu <- uw <- if (.u) numeric(length(CFB$posU)) else NULL
+  ug <- if (.u && !use_leaf) numeric(length(CFB$ipU)) else NULL
   for (k in seq_along(CFB$folds)) {
     f  <- CFB$folds[[k]]
     fb <- if (refresh) .megb_refresh(f$bst, X_smp[f$tr, , drop = FALSE], y[f$tr],
                                      if (is.null(w)) NULL else w[f$tr], f$nr) else f$bst
     oof[f$ho] <- predict(fb, X_smp[f$ho, , drop = FALSE])
+    if (.u) {                                    # unsampled: accumulate for the fold-model average
+      if (use_leaf) { LU <- .megb_leaf_domain_means(f$LAu, fb); uu <- uu + LU$unweighted; uw <- uw + LU$weighted }
+      else ug <- ug + as.numeric(predict(fb, X_pop[CFB$ipU, , drop = FALSE]))
+    }
     if (!predict) next
     if (use_leaf) {
       LM <- .megb_leaf_domain_means(f$LA, fb); un[[k]] <- LM$unweighted; wt[[k]] <- LM$weighted
     } else gp[[k]] <- as.numeric(predict(fb, X_pop[f$ip, , drop = FALSE]))
   }
   if (anyNA(oof)) stop("leaves_only bootstrap: a sample row was held out by no fold model.")
-  list(oof = oof, unweighted = unlist(un), weighted = unlist(wt), gb_pop = unlist(gp))
+  K <- length(CFB$folds)
+  list(oof = oof, unweighted = unlist(un), weighted = unlist(wt), gb_pop = unlist(gp),
+       u_unweighted = if (.u && use_leaf) uu / K else NULL, u_weighted = if (.u && use_leaf) uw / K else NULL,
+       u_gb_pop = if (.u && !use_leaf) ug / K else NULL)
 }

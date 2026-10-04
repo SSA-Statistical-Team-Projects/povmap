@@ -7,7 +7,7 @@ train_gbmodel <- function(model_type, features_train, response_train,
                            cv_folds       = getOption("megb.cv_folds", "domain"),
                            early_stopping = getOption("megb.early_stopping", TRUE),
                            keep_fold_models = FALSE,
-                           cv_nfold = getOption("megb.cv_nfold", 5L), ...) {
+                           cv_nfold = getOption("megb.cv_nfold", 10L), ...) {
   # groups (xgboost only): the domain of each row.
   # cv_folds (xgboost only): "domain" (default) makes xgb.cv hold out 5 folds of
   # whole domains; "rows" uses nfold = 5 over random rows. "domain" with no groups
@@ -15,8 +15,8 @@ train_gbmodel <- function(model_type, features_train, response_train,
   # early_stopping: FALSE trains the fold models and the booster to the full
   # nrounds (no early stopping), as povmap::xgb does. Default TRUE.
   # cv_nfold (xgboost only): the number of cross-validation folds, of whole domains
-  # or of rows. Default 5; with 5 the fold assignment and RNG stream are exactly
-  # those of the historical code.
+  # or of rows. Default 10 (from povmap 1.0.1; it was 5). With 5 the fold
+  # assignment and RNG stream are exactly those of the historical code.
   # keep_fold_models (xgboost): TRUE also returns the fold boosters of xgb.cv
   # (fold_models), the sample rows each one held out (fold_rows) and, with domain
   # folds, the domains each one held out (fold_domains). Used by the leaves_only

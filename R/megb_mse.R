@@ -17,9 +17,10 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
                      pop_weights_vec = NULL,
                      cv_folds        = getOption("megb.cv_folds", "domain"),
                      early_stopping  = getOption("megb.early_stopping", TRUE),
-                     cv_nfold        = getOption("megb.cv_nfold", 5L),
+                     cv_nfold        = getOption("megb.cv_nfold", 10L),
                      fold_fit        = NULL,
-                     crossfit_predict = FALSE,
+                     predict_sampled = "full",
+                     predict_unsampled = "full",
                      ...) {
   # fold_fit (leaves_only, xgboost; .megb_fold_fit()): the fold models of the
   #   final EM iteration, the sample rows each held out (in the fit's row order),
@@ -29,9 +30,12 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
   #   out-of-fold residuals, as the point estimate's are (em_gb_lmm). Until
   #   3 Oct 2026 they came from the refreshed full booster's in-sample residuals
   #   by REML, which a booster that has seen the replicate's own rows can absorb.
-  # crossfit_predict (megb(predict_sampled = "crossfit")): each sampled domain's
-  #   booster part is also taken from its refreshed fold model, as the cross-
-  #   fitted point estimate's is.
+  # predict_sampled / predict_unsampled (megb()'s): with "crossfit", each sampled
+  #   domain's replicate booster part comes from its refreshed fold model; with
+  #   "foldmean", each unsampled domain's is the average of the refreshed fold
+  #   models; as in the point estimate. The full-refit bootstrap
+  #   (bootstrap_refit = "full") predicts each replicate the same way from that
+  #   replicate's own fold models.
   # Every leaf refresh uses the rescaled survey weights the booster was trained
   # with (unweighted until 3 Oct 2026).
   # smp_weights_col: name of a column on smp_data containing observation
@@ -400,11 +404,13 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
       }
       if (is.null(fold_fit) || is.null(fold_fit$fold_models))
         stop("the leaves_only bootstrap needs the fit's fold models (megb keeps them when mse = TRUE).")
-      .cfp <- isTRUE(crossfit_predict)
+      .cfp <- identical(predict_sampled, "crossfit")
+      .cfu <- identical(predict_unsampled, "foldmean")
       CFB <- .megb_fold_boot_setup(fold_fit, X_smp_mat, sort_smp,
                                    as.character(smp_data[[dom_name]]),
                                    X_pop_mat, pop_dom_idx, domains,
-                                   pw_pop, .use_leaf, predict = .cfp)
+                                   pw_pop, .use_leaf, predict = .cfp,
+                                   predict_unsampled = .cfu)
 
       for (i in seq_len(B)) {
         if (i %% max(1L, B %/% 10L) == 0L)
@@ -435,12 +441,12 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
         }
         # Out-of-fold random effects: refresh each fold model on its own training
         # rows; its held-out rows give the out-of-fold prediction and, with
-        # crossfit_predict, its domains' population means replace the full
-        # booster's for those domains.
+        # predict_sampled = "crossfit", its domains' population means replace the
+        # full booster's for those domains.
         {
           cfr <- tryCatch(.megb_fold_boot_step(CFB, X_smp_mat, X_pop_mat, y_star_smp[, i],
                                                w_ref, refresh = TRUE, use_leaf = .use_leaf,
-                                               predict = .cfp),
+                                               predict = .cfp, predict_unsampled = .cfu),
                           error = function(e) {
                             message("  fold refresh failed at iter ", i, ": ", conditionMessage(e))
                             NULL })
@@ -456,6 +462,14 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
             LM$weighted[CFB$pos_all]   <- cfr$weighted
           } else if (.cfp) {
             gb_pop_boot[CFB$ip_all] <- cfr$gb_pop
+          }
+          # predict_unsampled = "foldmean": unsampled domains' booster part is the
+          # average of the refreshed fold models
+          if (.cfu && length(CFB$posU) && .use_leaf) {
+            LM$unweighted[CFB$posU] <- cfr$u_unweighted
+            LM$weighted[CFB$posU]   <- cfr$u_weighted
+          } else if (.cfu && length(CFB$posU)) {
+            gb_pop_boot[CFB$ipU] <- cfr$u_gb_pop
           }
         }
 
@@ -556,7 +570,8 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
       weights                = .smp_weights_vec,
       cv_folds               = .cv_folds,
       early_stopping         = .early_stopping,
-      cv_nfold               = .cv_nfold
+      cv_nfold               = .cv_nfold,
+      keep_fold_models       = .fold_pred
     )
 
     unit_level_predictions <- gbm_predict(
@@ -570,6 +585,14 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
     )
 
     upp <- unit_level_predictions$unit_pred_pop
+    # Fold-model prediction: each replicate predicts as the point estimate does,
+    # from the replicate fit's own fold models.
+    if (.fold_pred) {
+      upp$unit_preds <- .megb_compose_preds(model_boot, x, .pop_data, .dom_name, .cov_names,
+                                            gb_pop = unit_level_predictions$gb_pop,
+                                            predict_sampled = .predict_sampled,
+                                            predict_unsampled = .predict_unsampled)$unit_preds
+    }
     mean_preds <- upp |>
       dplyr::group_by(dom_name) |>
       dplyr::summarise(Mean = mean(unit_preds)) |>
@@ -631,7 +654,10 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
       .pw_pop          = pw_pop,         # per-cell pop weights (sorted pop order), or NULL
       .cv_folds        = cv_folds,       # passed explicitly: parallel workers do not see options()
       .early_stopping  = early_stopping,
-      .cv_nfold        = cv_nfold
+      .cv_nfold        = cv_nfold,
+      .predict_sampled   = predict_sampled,
+      .predict_unsampled = predict_unsampled,
+      .fold_pred       = identical(predict_sampled, "crossfit") || identical(predict_unsampled, "foldmean")
     ),
     parent = getNamespace("povmap")
   )

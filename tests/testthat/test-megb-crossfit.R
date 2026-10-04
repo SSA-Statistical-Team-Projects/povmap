@@ -14,10 +14,14 @@
   smp$wt <- 1
   list(pop = pop, smp = smp)
 }
-.cf_fit <- function(M, mse = FALSE, cv_folds = "domain", ...) suppressMessages(suppressWarnings(povmap::megb(
+## Five folds and full prediction unless a test sets otherwise (the settings these tests were written for; the
+## defaults from povmap 1.0.1 are tested in test-megb-defaults.R).
+.cf_fit <- function(M, mse = FALSE, cv_folds = "domain", cv_nfold = 5, predict_sampled = "full",
+                    predict_unsampled = "full", ...) suppressMessages(suppressWarnings(povmap::megb(
   fixed = y ~ x1 + x2 + xm, smp_data = M$smp, smp_weights = "wt",
   pop_data = M$pop[, c("dom", "x1", "x2", "xm", "w")], pop_weights = "w", domains = "dom",
-  transformation = "no", mse = mse, na.rm = FALSE, seed = 5, cv_folds = cv_folds,
+  transformation = "no", mse = mse, na.rm = FALSE, seed = 5, cv_folds = cv_folds, cv_nfold = cv_nfold,
+  predict_sampled = predict_sampled, predict_unsampled = predict_unsampled,
   gradient_params = list(eta = 0.3, max_depth = 3, subsample = 1, nrounds = 100), ...)))
 .cf_record_cv <- function(env) {
   orig <- xgboost::xgb.cv
@@ -72,7 +76,7 @@ test_that("crossfit: unsampled domains keep the full booster; Mean_foldmean aver
   }
 })
 
-test_that("predict_sampled = 'full' is the default and the fit is the same under both", {
+test_that("predict_sampled = 'full' (the setting before 1.0.1) and 'crossfit' share one fit", {
   skip_if_not_installed("xgboost")
   M  <- .cf_data()
   f0 <- .cf_fit(M)
@@ -86,10 +90,10 @@ test_that("predict_sampled = 'full' is the default and the fit is the same under
   expect_identical(f1$megb_model$iterations_used, f0$megb_model$iterations_used)
 })
 
-test_that("crossfit refuses the full-refit bootstrap and row folds", {
+test_that("crossfit refuses the lmm_only bootstrap and row folds", {
   skip_if_not_installed("xgboost")
   M <- .cf_data()
-  expect_error(.cf_fit(M, predict_sampled = "crossfit", mse = TRUE, B = 2, bootstrap_refit = "full"), "leaves_only")
+  expect_error(.cf_fit(M, predict_sampled = "crossfit", mse = TRUE, B = 2, bootstrap_refit = "lmm_only"), "not available")
   expect_error(.cf_fit(M, predict_sampled = "crossfit", cv_folds = "rows"), "domain")
   expect_error(.cf_fit(M, predict_sampled = "oof"))
 })
@@ -104,6 +108,6 @@ test_that("cv_nfold = 10: ten folds of whole domains, ten fold models under cros
   expect_setequal(unlist(f$megb_model$fold_domains), as.character(unique(M$smp$dom)))
   expect_lt(f$crossfit$oof_max_abs_diff, 1e-6)
   expect_error(.cf_fit(M, cv_nfold = 1))
-  ## the default is five folds
+  ## five folds when asked for
   .cf_fit(M); expect_length(rec$args$folds, 5L)
 })

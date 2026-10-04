@@ -18,7 +18,7 @@ em_gb_lmm <- function(Y,
                       cv_folds       = getOption("megb.cv_folds", "domain"),
                       early_stopping = getOption("megb.early_stopping", TRUE),
                       keep_fold_models = FALSE,
-                      cv_nfold       = getOption("megb.cv_nfold", 5L),
+                      cv_nfold       = getOption("megb.cv_nfold", 10L),
                       ...) {
   # weights: numeric vector of observation weights aligned to rows of X / data.
   # Forwarded to train_gbmodel (xgb.DMatrix weight) AND to lme4::lmer (weights).
