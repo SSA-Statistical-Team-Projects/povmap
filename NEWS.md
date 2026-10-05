@@ -1,5 +1,31 @@
 # povmap 1.0.1
 
+* **Configuration averaging for `xgb()` (opt-in).** Tuned configurations are often
+  near-equivalent: their cross-validation errors differ by less than their standard
+  error, yet the single best one, and with it the domain estimates, changes with the
+  fold split. New argument `xgb(configs = )` takes several configurations (one per
+  row, optional `weight`) and averages their domain estimates; benchmarking is applied
+  once to the average. In the bootstrap each replicate uses one configuration, drawn
+  with probability equal to its weight from its own stream (`config_seed`, default
+  `seed`), whose fit generates the replicate's population and whose hyperparameters
+  refit it, so the intervals include the choice of configuration. The replicate random
+  streams are unchanged. The result adds `configs`, `config_draws`, `ind_by_config` and
+  `models`. With `configs = NULL` (default) nothing changes, and a one-row `configs` is
+  identical to passing the same values as arguments.
+  - New `xgb_top_configs(tune, rule = "one_se_paired", floor = 3, cap = 8)` picks the
+    set from one or several `xgb_tune()` results on the same grid: scored by the mean
+    cross-validation error over the fold splits, kept if the mean paired difference
+    from the best is within its standard error, filled to `floor` and cut to `cap`.
+    `rule = "one_se"` and `"k_best"` are also available.
+  - New `xgb_tune(grid = )`: score a given list of configurations (for example more
+    rounds only at the smaller `eta`) instead of the full cross of the vectors.
+  - In a seed check on four Nigeria ward indicators (three fold splits per replicate,
+    480 configurations), the averaged estimates moved 0 to 0.4 percent of wards by more
+    than half their interval width between seeds, against 13 to 19 percent for the
+    single best configuration on the original 32-configuration grid.
+  - Tests: `tests/testthat/test_xgb_configs.R`; the default path is covered by
+    `tests/testthat/test_xgb_nga_reproduction.R`.
+
 * **`xgb_tune()` gains `variance_y`, so tuning also mirrors `xgb()`'s
   heteroscedasticity correction.** If given, each fold model's weights are multiplied
   by `variance_y^-0.5` and divided by their mean once more, exactly as `xgb()` weights

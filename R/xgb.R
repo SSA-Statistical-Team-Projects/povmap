@@ -165,6 +165,32 @@
 #'   the perturbation injects exactly the uncertainty the target is reported
 #'   with. An error is raised if any benchmark group is missing from the vector.
 #'   Defaults to \code{NULL} (use the internal Horvitz-Thompson SE).
+#' @param configs optional data.frame of hyperparameter configurations to
+#'   average over (configuration averaging), one per row, typically the result
+#'   of \code{\link{xgb_top_configs}}. Columns are \code{xgb()}'s hyperparameter
+#'   names (\code{nrounds} or \code{nround}, \code{max_depth}, ...; one missing
+#'   from it takes \code{xgb()}'s default) and an optional \code{weight} (equal
+#'   weights if absent). The point estimate is the weighted average of the
+#'   configurations' domain estimates (\code{Mean} and \code{Mean_agg}), each
+#'   formed by the usual point path from the same \code{seed}, and benchmarking
+#'   is applied once to that average. In the bootstrap each replicate uses one
+#'   configuration, drawn with probability equal to its weight from a stream
+#'   seeded by \code{config_seed}; the replicate's simulated population comes
+#'   from that configuration's fit and its refit uses that configuration's
+#'   hyperparameters, so the intervals include the uncertainty in the choice of
+#'   configuration. The replicate random-number streams are the same as without
+#'   \code{configs}. When \code{configs} is used, the scalar hyperparameter
+#'   arguments must be left at their defaults. \code{NULL} (default) fits the
+#'   single configuration given by the hyperparameter arguments, as before; a
+#'   one-row \code{configs} gives exactly the same result as passing those
+#'   values as arguments. The result then also contains \code{configs} (with
+#'   normalised weights), \code{config_draws} (the configuration used by each
+#'   bootstrap replicate), \code{ind_by_config} (each configuration's
+#'   unbenchmarked domain estimate) and \code{models} (each configuration's
+#'   fitted booster; \code{model} is the first one's).
+#' @param config_seed integer seed for the bootstrap's configuration draws.
+#'   Defaults to \code{seed}. The draws are made with the global random-number
+#'   state saved and restored, so nothing else changes.
 #' @importFrom purrr as_vector
 #' @importFrom collapse fmean
 #' @importFrom foreach foreach %dopar% %do%
@@ -314,6 +340,8 @@ xgb <- function(fixed,
                 perturb_benchmark = FALSE,
                 benchmark_target_se = NULL,
                 verbose = FALSE,
+                configs = NULL,
+                config_seed = NULL,
                 ...){
 
   #1. Initialize
@@ -325,6 +353,7 @@ xgb <- function(fixed,
     benchmark_weights <- smp_weights
   }
   collapse:::set_collapse(sort = FALSE)
+  config_draws <- NULL
 
   # 1. Framework for xgb
   #_____________________________________________________________________________
@@ -428,6 +457,7 @@ xgb <- function(fixed,
   }
 
   # Estimate model
+  if (is.null(configs)) {
   xgb_model <- point_estim_xgb(smearing=smearing,params=params,smp_X=X_smp_xgb,
                                smp_Y=sub_domains_direct$outcome,
                                smp_weight= smp_weights_rescaled/mean(smp_weights_rescaled),
@@ -440,9 +470,56 @@ xgb <- function(fixed,
                                fwk=fwk,
                                variance_y = variance_y,
                                transformation = transformation)
+  } else {
+    ## Configuration averaging: the usual point path for each configuration, each from set.seed(seed),
+    ## so configuration 1 is fitted exactly as a scalar call with its values would be. The RNG state
+    ## after configuration 1 is restored afterwards, so the draws that follow (benchmark
+    ## perturbations) do not depend on how many configurations there are.
+    hp_xgb <- names(.xgb_xgb_defaults())
+    given <- intersect(names(out_call)[-1], hp_xgb)
+    if (length(given))
+      stop("with configs, leave the hyperparameter arguments at their defaults (given: ",
+           paste(given, collapse = ", "), ").", call. = FALSE)
+    configs <- .xgb_check_configs(configs, defaults = .xgb_xgb_defaults())
+    cfg_params <- vector("list", nrow(configs))
+    cfg_fits <- vector("list", nrow(configs))
+    for (k in seq_len(nrow(configs))) {
+      set.seed(seed)
+      cfg_params[[k]] <- params
+      for (h in setdiff(hp_xgb, "nrounds")) cfg_params[[k]][[h]] <- configs[[h]][k]
+      cfg_fits[[k]] <- point_estim_xgb(smearing=smearing,params=cfg_params[[k]],smp_X=X_smp_xgb,
+                                       smp_Y=sub_domains_direct$outcome,
+                                       smp_weight= smp_weights_rescaled/mean(smp_weights_rescaled),
+                                       pop_X=X_pop_xgb,
+                                       sub_domains=sub_domains,
+                                       nrounds=configs$nrounds[k],
+                                       transform_outcome=transform_outcome,
+                                       back_transform_outcome = back_transform_outcome,
+                                       L=L,
+                                       fwk=fwk,
+                                       variance_y = variance_y,
+                                       transformation = transformation)
+      if (k == 1) rng_after_first <- get(".Random.seed", envir = globalenv())
+    }
+    assign(".Random.seed", rng_after_first, envir = globalenv())
+    xgb_model <- cfg_fits[[1]]
+    ## the bootstrap below runs on configuration 1's parameters unless a replicate draws another
+    params <- cfg_params[[1]]
+    nrounds <- configs$nrounds[1]
+  }
 
   xgb_fit <-  xgb_model$model
   domains_pred <- xgb_model$predictions
+  if (!is.null(configs)) {
+    ## weighted average of the configurations' domain estimates (both orders), aligned by domain
+    cfg_dom <- domains_pred$domains
+    cfg_hat_pc <- matrix(vapply(cfg_fits, function(f) f$predictions$hat_pc[match(cfg_dom, f$predictions$domains)],
+                                numeric(length(cfg_dom))), nrow = length(cfg_dom))
+    cfg_hat <- matrix(vapply(cfg_fits, function(f) f$predictions$hat[match(cfg_dom, f$predictions$domains)],
+                             numeric(length(cfg_dom))), nrow = length(cfg_dom))
+    domains_pred$hat_pc <- as.numeric(cfg_hat_pc %*% configs$weight)
+    domains_pred$hat <- as.numeric(cfg_hat %*% configs$weight)
+  }
 
   ### write predictions to file if needed
   if (!is.null(ydump)) {
@@ -576,6 +653,29 @@ xgb <- function(fixed,
     }
 
 
+    ## Configuration averaging: each replicate uses one configuration, drawn with probability equal to
+    ## its weight. The draws come from their own stream (config_seed) with the global RNG state saved
+    ## and restored, so the replicate streams below (doRNG, keyed by seed) are unchanged. With one
+    ## configuration nothing is drawn and the loop runs exactly as without configs.
+    cfg_boot <- NULL
+    if (!is.null(configs) && nrow(configs) > 1) {
+      cfg_boot <- lapply(seq_along(cfg_fits), function(k) {
+        f <- cfg_fits[[k]]
+        rs <- f$resid_sub_domains; rd <- f$resid_domains
+        if (center_residuals==T) {
+          rs <- rs - weighted.mean(rs, w = pop_subarea_d)
+          rd <- rd - weighted.mean(rd, w = pop_area_d)
+        }
+        list(B_sub = f$sub_predictions, resid_sub_domains = rs, resid_domains = rd,
+             params = cfg_params[[k]], nrounds = configs$nrounds[k])
+      })
+      had_seed <- exists(".Random.seed", envir = globalenv(), inherits = FALSE)
+      if (had_seed) saved_seed <- get(".Random.seed", envir = globalenv())
+      set.seed(if (is.null(config_seed)) seed else config_seed)
+      config_draws <- sample.int(nrow(configs), B, replace = TRUE, prob = configs$weight)
+      if (had_seed) assign(".Random.seed", saved_seed, envir = globalenv()) else rm(".Random.seed", envir = globalenv())
+    }
+
     clusters <- unique(smp_data[,fwk$domains])
     if (cpus>1) {
       cl <- parallel::makeCluster(cpus)
@@ -613,6 +713,18 @@ xgb <- function(fixed,
                                 #if (j %% displayevery==0) {
                                 #cat(paste0("replication ",j," of ",B,"\n"))
                                 #}
+
+                                ## configuration averaging: this replicate's configuration (its fit's
+                                ## predictions and residual pools generate the population; its
+                                ## hyperparameters refit). Local to the replicate.
+                                if (!is.null(cfg_boot)) {
+                                  cfg_j <- cfg_boot[[config_draws[j]]]
+                                  B_sub <- cfg_j$B_sub
+                                  resid_sub_domains <- cfg_j$resid_sub_domains
+                                  resid_domains <- cfg_j$resid_domains
+                                  params <- cfg_j$params
+                                  nrounds <- cfg_j$nrounds
+                                }
 
                                 if (bootstrap_type=="residual") {
                                   # First implement a standard residual bootstrap
@@ -980,7 +1092,14 @@ xgb <- function(fixed,
   sub_domains_direct$outcome_t <- transform_outcome(sub_domains_direct$outcome)$y
   sub_domains_direct$hat <- NA
   in_pop <- sub_domains_direct[,sub_domains] %in% fwk$X_pop[,sub_domains]
+  if (is.null(configs) || nrow(configs) == 1) {
   sub_domains_direct$hat[in_pop] <- back_transform_outcome(sub_domains_direct$outcome_t[in_pop] - xgb_model$resid_total)
+  } else {
+    ## configuration averaging: weighted average of the configurations' fitted sub-area values
+    cfg_yhat <- matrix(vapply(cfg_fits, function(f) back_transform_outcome(sub_domains_direct$outcome_t[in_pop] - f$resid_total),
+                              numeric(sum(in_pop))), nrow = sum(in_pop))
+    sub_domains_direct$hat[in_pop] <- as.numeric(cfg_yhat %*% configs$weight)
+  }
 
   #sub_domains_direct$hat <- back_transform_outcome(sub_domains_direct$outcome_t-xgb_model$resid_total)
 
@@ -1086,6 +1205,18 @@ xgb <- function(fixed,
     }
   }
 
+
+  if (!is.null(configs)) {
+    result$configs <- configs
+    result$config_draws <- if (bootstrap == TRUE) {
+      if (is.null(config_draws)) rep(1L, B) else config_draws
+    } else NULL
+    by_cfg <- data.frame(Domain = result$ind$Domain)
+    for (k in seq_len(nrow(configs)))
+      by_cfg[[paste0("Mean_config", k)]] <- cfg_hat_pc[match(as.character(result$ind$Domain), as.character(cfg_dom)), k]
+    result$ind_by_config <- by_cfg
+    result$models <- lapply(cfg_fits, `[[`, "model")
+  }
 
   class(result) <- c("xgb","povmap")
   return(result)

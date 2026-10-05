@@ -33,6 +33,7 @@ xgb_tune(
   keep_candidates = TRUE,
   rescale_weights = TRUE,
   variance_y = NULL,
+  grid = NULL,
   cpus = 1,
   verbose = TRUE,
   ...
@@ -205,6 +206,13 @@ Defaults to 0.}
   \code{xgb()} applies its heteroscedasticity correction to the fit's
   weights. \code{NULL} (default) leaves the weights as described under
   \code{rescale_weights}. Pass the value you will give \code{xgb()}.}
+
+\item{grid}{optional data.frame of configurations to score, one per row, for
+  grids that are not a full cross of the hyperparameter vectors (for example
+  more rounds only at the smaller \code{eta}). Columns are hyperparameter
+  names (\code{nround}, \code{max_depth}, ...); a hyperparameter missing from
+  it takes the first value of its argument. Only with \code{search = "grid"}.
+  \code{NULL} (default) scores the full cross of the vectors as before.}
 
 \item{verbose}{display progress. Defaults to FALSE.}
 

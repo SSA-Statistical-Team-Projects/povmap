@@ -43,6 +43,8 @@ xgb(
   center_residuals = F,
   variance_y = NULL,
   rescale_weights = TRUE,
+  configs = NULL,
+  config_seed = NULL,
   ...
 )
 }
@@ -188,6 +190,34 @@ Defaults to NULL.}
 they sum to the domain sample size. This prevents populous domains from dominating
 the loss function, analogous to the treatment of weights in mixed models.
 Defaults to TRUE.}
+
+\item{configs}{optional data.frame of hyperparameter configurations to
+  average over (configuration averaging), one per row, typically the result
+  of \code{\link{xgb_top_configs}}. Columns are \code{xgb()}'s hyperparameter
+  names (\code{nrounds} or \code{nround}, \code{max_depth}, ...; one missing
+  from it takes \code{xgb()}'s default) and an optional \code{weight} (equal
+  weights if absent). The point estimate is the weighted average of the
+  configurations' domain estimates (\code{Mean} and \code{Mean_agg}), each
+  formed by the usual point path from the same \code{seed}, and benchmarking
+  is applied once to that average. In the bootstrap each replicate uses one
+  configuration, drawn with probability equal to its weight from a stream
+  seeded by \code{config_seed}; the replicate's simulated population comes
+  from that configuration's fit and its refit uses that configuration's
+  hyperparameters, so the intervals include the uncertainty in the choice of
+  configuration. The replicate random-number streams are the same as without
+  \code{configs}. When \code{configs} is used, the scalar hyperparameter
+  arguments must be left at their defaults. \code{NULL} (default) fits the
+  single configuration given by the hyperparameter arguments, as before; a
+  one-row \code{configs} gives exactly the same result as passing those
+  values as arguments. The result then also contains \code{configs} (with
+  normalised weights), \code{config_draws} (the configuration used by each
+  bootstrap replicate), \code{ind_by_config} (each configuration's
+  unbenchmarked domain estimate) and \code{models} (each configuration's
+  fitted booster; \code{model} is the first one's).}
+
+\item{config_seed}{integer seed for the bootstrap's configuration draws.
+  Defaults to \code{seed}. The draws are made with the global random-number
+  state saved and restored, so nothing else changes.}
 
 \item{...}{additional parameters to be passed to \code{xgboost}.}
 

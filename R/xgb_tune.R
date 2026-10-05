@@ -144,6 +144,12 @@
 #'   \code{xgb()} applies its heteroscedasticity correction to the fit's
 #'   weights. \code{NULL} (default) leaves the weights as described under
 #'   \code{rescale_weights}. Pass the value you will give \code{xgb()}.
+#' @param grid optional data.frame of configurations to score, one per row, for
+#'   grids that are not a full cross of the hyperparameter vectors (for example
+#'   more rounds only at the smaller \code{eta}). Columns are hyperparameter
+#'   names (\code{nround}, \code{max_depth}, ...); a hyperparameter missing from
+#'   it takes the first value of its argument. Only with \code{search = "grid"}.
+#'   \code{NULL} (default) scores the full cross of the vectors as before.
 #' @param verbose display progress. Defaults to FALSE.
 #' @param ... additional parameters to be passed to \code{xgb.train}.
 #'
@@ -201,6 +207,7 @@ xgb_tune <- function(fixed,
                      keep_candidates = TRUE,
                      rescale_weights = TRUE,
                      variance_y = NULL,
+                     grid = NULL,
                      cpus = 1, 
                      verbose = TRUE,
                      ...){
@@ -280,7 +287,23 @@ xgb_tune <- function(fixed,
 
   # Grid
   #_____________________________________________________________________________
-  if (search == "grid") {
+  if (!is.null(grid) && search != "grid")
+    stop("grid can only be used with search = \"grid\".", call. = FALSE)
+  if (!is.null(grid)) {
+    ## user-supplied configurations; anything not given takes its argument's first value
+    if (!is.data.frame(grid) || nrow(grid) < 1)
+      stop("grid must be a data.frame with one configuration per row.", call. = FALSE)
+    first <- list(nround = nround[1], max_depth = max_depth[1], colsample_bytree = colsample_bytree[1],
+                  colsample_bylevel = colsample_bylevel[1], colsample_bynode = colsample_bynode[1],
+                  subsample = subsample[1], min_child_weight = min_child_weight[1], eta = eta[1],
+                  gamma = gamma[1], max_delta_step = max_delta_step[1], lambda = lambda[1], alpha = alpha[1])
+    bad <- setdiff(names(grid), names(first))
+    if (length(bad)) stop("grid columns not recognised: ", paste(bad, collapse = ", "), call. = FALSE)
+    tunegrid <- as.data.frame(lapply(names(first), function(p)
+      if (p %in% names(grid)) as.numeric(grid[[p]]) else rep(first[[p]], nrow(grid))))
+    names(tunegrid) <- names(first)
+    if (anyNA(tunegrid)) stop("grid has missing values.", call. = FALSE)
+  } else if (search == "grid") {
   tunegrid <- expand.grid(
     nround             = nround,
     max_depth          = max_depth,
