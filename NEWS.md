@@ -1,5 +1,10 @@
 # povmap 1.0.1
 
+* **`xgb_cv()` gains `configs`**, so cross-validation scores the configuration-averaged
+  estimator: every fold's model averages the configurations as `xgb(configs = )` does
+  (benchmarked once if a benchmark is passed), with the same set in every fold. With
+  `configs = NULL` (default) nothing changes. Test: `tests/testthat/test_xgb_cv_configs.R`.
+
 * **Configuration averaging for `xgb()` (opt-in).** Tuned configurations are often
   near-equivalent: their cross-validation errors differ by less than their standard
   error, yet the single best one, and with it the domain estimates, changes with the

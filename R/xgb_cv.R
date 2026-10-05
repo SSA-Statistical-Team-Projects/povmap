@@ -47,6 +47,15 @@
 #' @param plot_filename optional file path to save a ggplot2 scatter plot of
 #' predicted vs. direct estimates (e.g. "cv_plot.png"). If NULL, no plot is
 #' generated. Defaults to NULL.
+#' @param configs optional data.frame of hyperparameter configurations, as in
+#'   \code{\link{xgb}} (typically \code{\link{xgb_top_configs}}). Each fold's
+#'   model then averages these configurations exactly as \code{xgb(configs = )}
+#'   does (weighted average of the configurations' domain estimates, benchmarked
+#'   once if a benchmark is passed), so the held-out predictions are those of the
+#'   averaged estimator. The same set is used in every fold; it is not re-selected
+#'   within folds. The scalar hyperparameter arguments must then be left at their
+#'   defaults. \code{NULL} (default): a single configuration, as before. The
+#'   result then also contains \code{configs}.
 #' @param ... additional parameters passed to \code{xgb}.
 #'
 #' @return A list containing (all fit statistics are scored against the direct
@@ -100,6 +109,7 @@ xgb_cv <- function(fixed,
                    cpus = 1,
                    verbose = TRUE,
                    plot_filename = NULL,
+                   configs = NULL,
                    ...) {
 
   # Pinned-version guard (see BUILD_PIN_xgb.txt) -- fail before any model fit
@@ -136,6 +146,17 @@ xgb_cv <- function(fixed,
 
   # Capture extra arguments for xgb
   dots <- list(...)
+
+  # Configuration averaging: every fold's model averages the configurations in configs, as
+  # xgb(configs = ) does; the scalar hyperparameters are then not passed to xgb()
+  hp_cv <- names(.xgb_xgb_defaults())
+  if (!is.null(configs)) {
+    given <- intersect(names(match.call())[-1], hp_cv)
+    if (length(given))
+      stop("with configs, leave the hyperparameter arguments at their defaults (given: ",
+           paste(given, collapse = ", "), ").", call. = FALSE)
+    configs <- .xgb_check_configs(configs, defaults = .xgb_xgb_defaults())
+  }
 
   if (verbose) {
     cat("Beginning cross-validation with population data\n")
@@ -209,6 +230,10 @@ xgb_cv <- function(fixed,
       # Override with any user-supplied arguments (including benchmark args if provided)
       if (length(dots) > 0) {
         xgb_args[names(dots)] <- dots
+      }
+      if (!is.null(configs)) {
+        xgb_args[hp_cv] <- NULL
+        xgb_args$configs <- configs
       }
 
       fold_model <- suppressMessages(do.call(xgb, xgb_args))
@@ -295,6 +320,10 @@ xgb_cv <- function(fixed,
       if (length(dots) > 0) {
         xgb_args[names(dots)] <- dots
       }
+      if (!is.null(configs)) {
+        xgb_args[hp_cv] <- NULL
+        xgb_args$configs <- configs
+      }
 
       fold_model <- tryCatch({
         suppressMessages(do.call(xgb, xgb_args))
@@ -373,6 +402,7 @@ xgb_cv <- function(fixed,
     skewness_domains = skewness_domains,
     domain_results = cv_results
   )
+  if (!is.null(configs)) result$configs <- configs
 
   if (verbose) {
     cat("Cross-validation results (with population data):\n")

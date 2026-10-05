@@ -34,6 +34,7 @@ xgb_cv(
   cpus = 1,
   verbose = TRUE,
   plot_filename = NULL,
+  configs = NULL,
   ...
 )
 }
@@ -107,6 +108,16 @@ Defaults to NULL.}
 \item{plot_filename}{optional file path to save a ggplot2 scatter plot of
 predicted vs. direct estimates (e.g. "cv_plot.png"). If NULL, no plot is
 generated. Defaults to NULL.}
+
+\item{configs}{optional data.frame of hyperparameter configurations, as in
+\code{\link{xgb}} (typically \code{\link{xgb_top_configs}}). Each fold's
+model then averages these configurations exactly as \code{xgb(configs = )}
+does (weighted average of the configurations' domain estimates, benchmarked
+once if a benchmark is passed), so the held-out predictions are those of the
+averaged estimator. The same set is used in every fold; it is not re-selected
+within folds. The scalar hyperparameter arguments must then be left at their
+defaults. \code{NULL} (default): a single configuration, as before. The
+result then also contains \code{configs}.}
 
 \item{...}{additional parameters passed to \code{xgb}.}
 }
