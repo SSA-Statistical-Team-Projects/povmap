@@ -50,6 +50,26 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
   # smp_weights_vec is extracted from the column AFTER the domain sort below
   # to guarantee alignment with smp_data row order.
 
+  # The bootstrap world is centred on the fit the point estimate predicts with
+  # (5 Oct 2026). With predict_sampled = "crossfit" each sampled domain is
+  # predicted by the fold model that held it out, and so is the bootstrap truth
+  # tau* (unit_preds' gb_pop is the composed booster part). Until 5 Oct 2026 y*
+  # was centred on the full booster's in-sample fit (gb_smp) and its residual
+  # pool taken around that fit plus the random effect, while tau* and every
+  # replicate's prediction were cross-fitted. Now y* is centred on the fold
+  # models' out-of-fold predictions, and the residual pool is taken around them
+  # plus the point fit's random effect (unchanged). All bootstrap_refit options
+  # build their replicates from this world.
+  if (identical(predict_sampled, "crossfit")) {
+    oof <- model$oof_prediction
+    if (is.null(gb_smp) || is.null(unit_pred_smp) || is.null(oof) ||
+        length(oof) != length(gb_smp) || anyNA(oof))
+      stop("predict_sampled = \"crossfit\": the bootstrap needs the fit's out-of-fold ",
+           "predictions, one per sample row.")
+    unit_pred_smp <- unit_pred_smp - gb_smp + oof   # out-of-fold fit + the random effect
+    gb_smp        <- oof
+  }
+
   # Function-scoped definition so any branch that references collect_diag has
   # it in scope; branches that don't use it just leave it FALSE.
   collect_diag <- !is.null(getOption("povmap.leaves_only.diag_env"))
@@ -209,8 +229,9 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
   # corrected_bt) in .mse_megb_collate), i.e. aggregate-then-back-transform, which
   # is Jensen-biased relative to the point estimate for internally heterogeneous
   # domains. Here ONLY the aggregation order changes: the same corrected_bt (with
-  # the original fit's sigma^2_e), the same area-term draws u_d_star (0 for OOS
-  # domains, as built above), and the same unweighted domain aggregation are used.
+  # the original fit's sigma^2_e), the same area-term draws u_d_star (drawn for
+  # every domain, sampled or not: the truth carries an area effect everywhere), and
+  # the point estimate's population-weighted domain aggregation (agg_dom) are used.
   # Column b pairs with replicate iteration b downstream (keep_orig indexing).
   tau_star_orig_pc <- NULL
   if (!is.null(corrected_bt)) {
@@ -416,9 +437,42 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
         if (i %% max(1L, B %/% 10L) == 0L)
           message("leaves_only bootstrap iteration ", i, " of ", B)
 
-        # 1) Refresh leaves on the bootstrap label. Tree structure unchanged.
+        # 1) The leaf refresh. Default: a single pass, a documented approximation
+        # to the point fit's EM (5 Oct 2026): every fold model's leaves (on its
+        # own training rows) are refreshed once on y* itself, random effect
+        # included, and the random effect is fitted once by ML from those fold
+        # models' out-of-fold residuals of y*. options(povmap.leaves_only.em =
+        # TRUE) runs the point fit's EM with the trees fixed instead: as
+        # em_gb_lmm does, start from a random-effect-only fit on y* (or, with
+        # options(povmap.leaves_only.em_start = "point"), from the point fit's
+        # random effect), then alternate the fold refresh on y* net of the
+        # current random effect and the ML random-effect fit, until the
+        # log-likelihood changes by less than ErrorTolerance (relative) or after
+        # MaxIterations (.megb_em_max_iterations). On the Colombian M19 gate
+        # (six outcomes, B = 100) the EM took a median 4 iterations, cost 3.3
+        # times the single pass (2.8 with the warm start), and changed coverage
+        # by under 0.4 points and mean width by under 0.8 percent, in and out of
+        # sample; hence the single pass by default.
+        y_i <- y_star_smp[, i]
+        em  <- tryCatch(
+          .megb_leaf_em(CFB, X_smp_mat, X_pop_mat, y_i, w_ref, fit_data, lmm_formula, smp_weights_vec,
+                        use_leaf = .use_leaf, predict = .cfp, predict_unsampled = .cfu,
+                        max_iterations = if (isFALSE(getOption("povmap.leaves_only.em", FALSE))) 0L else MaxIterations,
+                        error_tolerance = ErrorTolerance,
+                        start_re = if (identical(getOption("povmap.leaves_only.em_start", "fit"), "point"))
+                          unit_pred_smp - gb_smp else NULL),
+          error = function(e) { message("  leaf EM failed at iter ", i, ": ", conditionMessage(e)); NULL })
+        if (is.null(em)) {
+          boots_models[[i]] <- list(
+            Mean_boot = NULL, Mean_boot_orig = NULL, Mean_boot_bench = NULL,
+            error_sd_boot = NA_real_, ran_eff_sd_boot = NA_real_, em_iterations = NA_integer_
+          )
+          next
+        }
+        # the full booster, refreshed on the outcome its fold models saw last (the
+        # point fit trains its full booster on the last EM iteration's target)
         gb_refreshed <- tryCatch(
-          .megb_refresh(orig_booster, X_smp_mat, y_star_smp[, i], w_ref, orig_nrounds),
+          .megb_refresh(orig_booster, X_smp_mat, em$target, w_ref, orig_nrounds),
           error = function(e) {
             message("  refresh failed at iter ", i, ": ", conditionMessage(e))
             NULL
@@ -444,19 +498,7 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
         # predict_sampled = "crossfit", its domains' population means replace the
         # full booster's for those domains.
         {
-          cfr <- tryCatch(.megb_fold_boot_step(CFB, X_smp_mat, X_pop_mat, y_star_smp[, i],
-                                               w_ref, refresh = TRUE, use_leaf = .use_leaf,
-                                               predict = .cfp, predict_unsampled = .cfu),
-                          error = function(e) {
-                            message("  fold refresh failed at iter ", i, ": ", conditionMessage(e))
-                            NULL })
-          if (is.null(cfr)) {
-            boots_models[[i]] <- list(
-              Mean_boot = NULL, Mean_boot_orig = NULL, Mean_boot_bench = NULL,
-              error_sd_boot = NA_real_, ran_eff_sd_boot = NA_real_
-            )
-            next
-          }
+          cfr <- em$cfr
           if (.cfp && .use_leaf) {
             LM$unweighted[CFB$pos_all] <- cfr$unweighted
             LM$weighted[CFB$pos_all]   <- cfr$weighted
@@ -475,10 +517,7 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
 
         # 3) Re-estimate the random effects as the point estimate does: ML on the
         # refreshed fold models' out-of-fold residuals.
-        lmer_boot <- tryCatch(
-          .megb_oof_re_fit(fit_data, lmm_formula, y_star_smp[, i] - cfr$oof, smp_weights_vec),
-          error = function(e) NULL
-        )
+        lmer_boot <- em$lmer
         if (is.null(lmer_boot)) {
           boots_models[[i]] <- list(
             Mean_boot = NULL, Mean_boot_orig = NULL, Mean_boot_bench = NULL,
@@ -531,7 +570,8 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
           Mean_boot_orig  = mean_boot_orig,
           Mean_boot_bench = mean_boot_bench,
           error_sd_boot   = err_sd,
-          ran_eff_sd_boot = ran_sd
+          ran_eff_sd_boot = ran_sd,
+          em_iterations   = em$iterations
         )
       }
 
@@ -563,8 +603,8 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
       gradient_params        = .gradient_params,
       formula_random_effects = .formula_re,
       initial_random_effects = 0,
-      max_iterations         = 10,
-      error_tolerance        = 1e-04,
+      max_iterations         = .max_iterations,
+      error_tolerance        = .error_tolerance,
       cov_names              = .cov_names,
       gbm_engine             = .gbm_engine,
       weights                = .smp_weights_vec,
@@ -655,6 +695,8 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
       .cv_folds        = cv_folds,       # passed explicitly: parallel workers do not see options()
       .early_stopping  = early_stopping,
       .cv_nfold        = cv_nfold,
+      .max_iterations  = MaxIterations,  # the point fit's EM settings (.megb_em_max_iterations)
+      .error_tolerance = ErrorTolerance,
       .predict_sampled   = predict_sampled,
       .predict_unsampled = predict_unsampled,
       .fold_pred       = identical(predict_sampled, "crossfit") || identical(predict_unsampled, "foldmean")
@@ -762,6 +804,7 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
 
   boot_error_sd        <- sapply(boots_models, getElement, "error_sd_boot")   |> unlist()
   boot_ran_eff_sd_boot <- sapply(boots_models, getElement, "ran_eff_sd_boot") |> unlist()
+  boot_em_iterations   <- vapply(boots_models, function(b) if (is.null(b$em_iterations)) NA_integer_ else as.integer(b$em_iterations), integer(1))
 
   list(
     call                 = match.call(),
@@ -777,6 +820,7 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
     domains              = domains,
     boot_error_sd        = boot_error_sd,
     boot_ran_eff_sd_boot = boot_ran_eff_sd_boot,
+    boot_em_iterations   = boot_em_iterations,
     error_sd_input       = error_sd
   )
 }

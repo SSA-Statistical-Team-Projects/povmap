@@ -48,8 +48,9 @@ matrix and used only as the LMM grouping variable).}
 the domain identifier.}
 
 \item{smp_weights}{character string naming the survey-weight variable in
-\code{smp_data}. Used only for domain-level aggregation of sample
-predictions (not passed to the GB engine). Defaults to \code{NULL}.}
+\code{smp_data}. Rescaled within each domain to average 1, the weights
+weight the booster's training rows, the linear mixed model fits, and the
+bootstrap's leaf refresh and residual draws. Defaults to \code{NULL}.}
 
 \item{pop_data}{a data frame containing the domain identifier and all
 predictor variables from \code{fixed}.}
@@ -68,8 +69,9 @@ fitting. One of \code{"no"} (default), \code{"log"}, \code{"log.shift"},
 population predictions are back-transformed before domain aggregation.}
 
 \item{mse}{logical. If \code{TRUE} (default), estimates MSE via the MEGB
-parametric bootstrap. Confidence intervals use a normal approximation with
-a delta-method correction when a transformation is applied.}
+parametric bootstrap. The interval is the basic bootstrap interval from the
+bootstrap prediction-error quantiles (point estimate minus the upper and
+lower quantiles).}
 
 \item{B}{number of parametric bootstrap iterations for MSE estimation.
 Defaults to \code{100}.}
@@ -100,8 +102,8 @@ both \code{smp_data} and \code{pop_data} before fitting. Defaults to
   model estimates the error variance \eqn{\sigma_e^2}, the random-effect
   variance \eqn{\sigma_u^2} and the random effects, and the fold models set
   the number of boosting rounds when \code{early_stopping = TRUE}.
-  \code{"domain"} (default) holds out 5 folds of whole domains, so no domain
-  has rows on both sides of a fold. \code{"rows"} holds out 5 folds of random
+  \code{"domain"} (default) holds out \code{cv_nfold} folds of whole domains, so no domain
+  has rows on both sides of a fold. \code{"rows"} holds out \code{cv_nfold} folds of random
   rows, the behaviour before povmap 6bd056f.
 
   Domain folds matter most when covariates are constant within domains (for
@@ -193,11 +195,14 @@ An object of class \code{c("megb", "xgb", "povmap")} with elements:
   \describe{
     \item{\code{ind}}{data frame of domain-level point estimates
       (\code{Domain}, \code{Mean}).}
-    \item{\code{var}}{data frame of delta-method-corrected MSE estimates
-      (\code{Domain}, \code{Mean}), or \code{NULL} if \code{mse = FALSE}.}
-    \item{\code{CI}}{data frame of normal-approximation confidence intervals
-      (\code{Domain}, \code{Lower}, \code{Upper}), or \code{NULL} if
-      \code{mse = FALSE}.}
+    \item{\code{var}}{data frame of uncertainty estimates (\code{Domain},
+      \code{Mean}): the variance of the centred bootstrap prediction errors
+      (\code{mse_type = "var"}), or the delta-method-corrected MSE (\code{"mse"});
+      \code{NULL} if \code{mse = FALSE}.}
+    \item{\code{CI}}{data frame of confidence intervals (\code{Domain},
+      \code{Lower}, \code{Upper}): the basic bootstrap interval from the
+      prediction-error quantiles (\code{"var"}), or a normal approximation
+      (\code{"mse"}); \code{NULL} if \code{mse = FALSE}.}
     \item{\code{yhat}}{data frame of back-transformed sample-unit predictions
       (\code{obs_id}, \code{hat}).}
     \item{\code{model}}{the fitted GB model object (xgboost booster when

@@ -96,8 +96,11 @@ test_that("the default bootstrap refreshes all fold models and averages them for
     .megb_refresh = function(...) { rec$refresh <- rec$refresh + 1L; orig_r(...) },
     .package = "povmap")
   f <- suppressMessages(.df_fit(M, mse = TRUE, B = 3))
-  expect_equal(rec$pu, rep(TRUE, 3L))
-  expect_equal(rec$refresh, 3L * (1L + 10L))           # per replicate: the full booster and ten fold models
+  ## per replicate (default single pass, 5 Oct 2026): one fold step (all ten fold models), averaging the fold models for
+  ## unsampled domains, and the full booster once
+  it <- f$boot_diag$boot_em_iterations; expect_equal(it, rep(0L, 3L))
+  expect_equal(rec$pu, rep(TRUE, sum(pmax(it, 1L))))
+  expect_equal(rec$refresh, sum(1L + 10L * pmax(it, 1L)))
   expect_true(all(is.finite(f$var$Mean)))
 })
 

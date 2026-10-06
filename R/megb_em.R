@@ -88,6 +88,13 @@ input_checks_megb <- function(Y, X, dom_name, smp_data, pop_data,
 }
 
 
+# The EM settings of megb's point fit, used also by every replicate fit of the
+# full-refit bootstrap (bootstrap_refit = "full"), so the replicates converge as the
+# point estimate does. Until 5 Oct 2026 the replicates were capped at 10 iterations
+# against the point fit's 25.
+.megb_em_max_iterations  <- 25L
+.megb_em_error_tolerance <- 1e-04
+
 # Internal core MEGB fitter (renamed from MEGB::megb to avoid namespace collision)
 #' @importFrom dplyr group_by summarise
 #' @importFrom stats predict
@@ -180,8 +187,8 @@ megb_em <- function(Y, X, dom_name, smp_data, pop_data,
     gradient_params        = gradient_params,
     data                   = smp_data,
     initial_random_effects = 0,
-    max_iterations         = 25,
-    error_tolerance        = 1e-04,
+    max_iterations         = .megb_em_max_iterations,
+    error_tolerance        = .megb_em_error_tolerance,
     dom_name               = dom_name,
     cov_names              = cov_names,
     gbm_engine             = gbm_engine,
@@ -213,8 +220,8 @@ megb_em <- function(Y, X, dom_name, smp_data, pop_data,
   # out, plus its random effect, so the booster part and the random effect (fitted
   # to those same out-of-fold residuals) share one baseline. Unsampled domains keep
   # the full booster; the average of the fold models is returned beside it in
-  # $crossfit. unit_pred_smp and gb_smp stay the full booster's (they feed only the
-  # bootstrap, which crossfit does not support yet).
+  # $crossfit. unit_pred_smp and gb_smp stay the full booster's; they feed only the
+  # bootstrap, which under "crossfit" re-centres them on the out-of-fold fit (mse_megb).
   # predict_unsampled = "foldmean": unsampled domains' booster part is the average
   # of the fold models' predictions instead of the full booster's.
   crossfit <- NULL
@@ -264,8 +271,8 @@ megb_em <- function(Y, X, dom_name, smp_data, pop_data,
       pop_data               = pop_data,
       B                      = B,
       initial_random_effects = 0,
-      ErrorTolerance         = 0.0001,
-      MaxIterations          = 10,
+      ErrorTolerance         = .megb_em_error_tolerance,
+      MaxIterations          = .megb_em_max_iterations,
       cov_names              = cov_names,
       gradient_params        = gradient_params,
       formula_random_effects = formula_random_effects,

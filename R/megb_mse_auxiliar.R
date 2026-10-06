@@ -331,3 +331,62 @@ ran_comp <- function(unit_pred_smp, smp_data, Y, dom_name, error_sd,
        u_unweighted = if (.u && use_leaf) uu / K else NULL, u_weighted = if (.u && use_leaf) uw / K else NULL,
        u_gb_pop = if (.u && !use_leaf) ug / K else NULL)
 }
+
+# Interval from the bootstrap prediction errors (5 Oct 2026). `err` is D x B:
+# each replicate's estimate minus its bootstrap truth, e* = tau_b - tau*. The
+# errors are centred per domain (the bootstrap bias is not carried into the
+# interval) and their variance is returned as the domain's variance. Treating e*
+# as the law of the error e = theta_hat - theta, the interval for theta is
+#   [theta_hat - q(1 - alpha/2), theta_hat - q(alpha/2)],
+# the basic bootstrap interval: the error quantiles are SUBTRACTED. Until
+# 5 Oct 2026 megb added them ([theta_hat + q(alpha/2), theta_hat + q(1 - alpha/2)]),
+# which is the same interval only when the errors are symmetric; with skewed
+# errors it put the long tail on the wrong side.
+.megb_error_interval <- function(err, alpha) {
+  err <- err - rowMeans(err, na.rm = TRUE)
+  list(var  = apply(err, 1, stats::var, na.rm = TRUE),
+       q_lo = apply(err, 1, stats::quantile, probs = alpha / 2,     na.rm = TRUE, names = FALSE),
+       q_hi = apply(err, 1, stats::quantile, probs = 1 - alpha / 2, na.rm = TRUE, names = FALSE))
+}
+
+# The leaf refresh for one leaves_only replicate, with every tree fixed
+# (5 Oct 2026). The default (max_iterations = 0) is the single pass; with
+# options(povmap.leaves_only.em = TRUE) it is the point fit's EM. y: the replicate outcome y*, in the sorted sample order. Mirrors
+# em_gb_lmm: a random-effect-only ML fit on y* gives the first target, y* minus
+# the estimated random effect; then each iteration refreshes the fold models on
+# the target (.megb_fold_boot_step, each on its own training rows), fits the
+# random effect by ML on the out-of-fold residuals y* - oof, and forms the next
+# target y* - (fitted - fixed intercept). It stops when the relative change in
+# the log-likelihood is at most error_tolerance or after max_iterations, as
+# em_gb_lmm does. max_iterations = 0: the single pass, the default (fold models
+# refreshed on y* itself, one random-effect fit). Returns the last iteration's
+# fold step (cfr), random-effect fit (lmer), the target its fold models were
+# refreshed on, and the number of iterations.
+.megb_leaf_em <- function(CFB, X_smp, X_pop, y, w_ref, fit_data, lmm_formula, w_lmm,
+                          use_leaf, predict, predict_unsampled, max_iterations, error_tolerance,
+                          start_re = NULL) {
+  # start_re (opt-in, options(povmap.leaves_only.em_start = "point"), EM only): start the EM from
+  # the point fit's random effect per sample row instead of a random-effect-only fit on y*.
+  step <- function(target) .megb_fold_boot_step(CFB, X_smp, X_pop, target, w_ref, refresh = TRUE,
+                                                 use_leaf = use_leaf, predict = predict,
+                                                 predict_unsampled = predict_unsampled)
+  if (max_iterations < 1L) {
+    cfr <- step(y)
+    return(list(cfr = cfr, lmer = .megb_oof_re_fit(fit_data, lmm_formula, y - cfr$oof, w_lmm),
+                target = y, iterations = 0L))
+  }
+  re_part <- function(m) as.numeric(stats::fitted(m)) - as.numeric(lme4::fixef(m)[1])
+  target <- if (!is.null(start_re)) y - start_re else y - re_part(.megb_oof_re_fit(fit_data, lmm_formula, y, w_lmm))
+  old_ll <- 0; it <- 0L
+  repeat {
+    it  <- it + 1L
+    cfr <- step(target)
+    lm1 <- .megb_oof_re_fit(fit_data, lmm_formula, y - cfr$oof, w_lmm)
+    ll  <- as.numeric(stats::logLik(lm1))
+    go  <- abs((ll - old_ll) / old_ll) > error_tolerance && it < max_iterations
+    old_ll <- ll
+    if (!go) break
+    target <- y - re_part(lm1)
+  }
+  list(cfr = cfr, lmer = lm1, target = target, iterations = it)
+}

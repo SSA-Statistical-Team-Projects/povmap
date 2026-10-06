@@ -19,8 +19,9 @@
 #' @param smp_data a data frame containing all variables in \code{fixed} plus
 #'   the domain identifier.
 #' @param smp_weights character string naming the survey-weight variable in
-#'   \code{smp_data}. Used only for domain-level aggregation of sample
-#'   predictions (not passed to the GB engine). Defaults to \code{NULL}.
+#'   \code{smp_data}. Rescaled within each domain to average 1, the weights
+#'   weight the booster's training rows, the linear mixed model fits, and the
+#'   bootstrap's leaf refresh and residual draws. Defaults to \code{NULL}.
 #' @param pop_data a data frame containing the domain identifier and all
 #'   predictor variables from \code{fixed}.
 #' @param pop_weights character string naming a population-count or expansion-
@@ -89,7 +90,10 @@
 #'   gives results within ~20\% of \code{"full"}; for sparse indicators the
 #'   two can differ by an order of magnitude. Recommended default and aligned
 #'   with how most SAE methods report SEs (conditional on chosen model
-#'   structure).
+#'   structure). Each replicate refreshes the leaves once on the replicate
+#'   outcome and fits the random effect once, an approximation to the point
+#'   fit's EM; \code{options(povmap.leaves_only.em = TRUE)} runs that EM with
+#'   the trees fixed (about three times the cost; see NEWS).
 #'   \code{"full"}: refit both the gradient booster and the linear mixed model
 #'   in every bootstrap iteration. This additionally captures GB
 #'   tree-selection variance and is appropriate when that is the inferential
@@ -107,9 +111,10 @@
 #'   trees, where it typically understates SE by an order of magnitude. Use
 #'   only if you explicitly want the classical-EBLUP variance decomposition.
 #' @param mse_type one of \code{"var"} (default) or \code{"mse"}. \code{"var"}
-#'   reports the empirical bootstrap variance of back-transformed domain means
-#'   and uses bootstrap quantiles (recentred at the point estimate) for the CI,
-#'   matching \code{\link{xgb}}. Benchmarked CIs use the centred residual
+#'   reports the variance of the bootstrap prediction errors (each replicate's
+#'   domain mean minus its bootstrap truth, centred per domain) and forms the CI
+#'   as the basic bootstrap interval: the point estimate minus the errors' upper
+#'   and lower quantiles (the quantiles were added before 5 Oct 2026). Benchmarked CIs use the centred residual
 #'   between benchmarked-bootstrap and bootstrap-truth, again as in \code{xgb}.
 #'   \code{"mse"} reports the prediction MSE \eqn{E[(\hat\theta-\theta)^2]} —
 #'   computed in transformed space and back-mapped via the delta method for the
@@ -139,8 +144,8 @@
 #'   model estimates the error variance \eqn{\sigma_e^2}, the random-effect
 #'   variance \eqn{\sigma_u^2} and the random effects, and the fold models set
 #'   the number of boosting rounds when \code{early_stopping = TRUE}.
-#'   \code{"domain"} (default) holds out 5 folds of whole domains, so no domain
-#'   has rows on both sides of a fold. \code{"rows"} holds out 5 folds of random
+#'   \code{"domain"} (default) holds out \code{cv_nfold} folds of whole domains, so no domain
+#'   has rows on both sides of a fold. \code{"rows"} holds out \code{cv_nfold} folds of random
 #'   rows, the behaviour before povmap 6bd056f.
 #'
 #'   Domain folds matter most when covariates are constant within domains (for
@@ -226,11 +231,14 @@
 #'   \describe{
 #'     \item{\code{ind}}{data frame of domain-level point estimates
 #'       (\code{Domain}, \code{Mean}).}
-#'     \item{\code{var}}{data frame of delta-method-corrected MSE estimates
-#'       (\code{Domain}, \code{Mean}), or \code{NULL} if \code{mse = FALSE}.}
-#'     \item{\code{CI}}{data frame of normal-approximation confidence intervals
-#'       (\code{Domain}, \code{Lower}, \code{Upper}), or \code{NULL} if
-#'       \code{mse = FALSE}.}
+#'     \item{\code{var}}{data frame of uncertainty estimates (\code{Domain},
+#'       \code{Mean}): with \code{mse_type = "var"} the variance of the centred
+#'       bootstrap prediction errors, with \code{"mse"} the delta-method-corrected
+#'       MSE; \code{NULL} if \code{mse = FALSE}.}
+#'     \item{\code{CI}}{data frame of confidence intervals (\code{Domain},
+#'       \code{Lower}, \code{Upper}): with \code{mse_type = "var"} the basic
+#'       bootstrap interval from the prediction-error quantiles, with \code{"mse"}
+#'       a normal approximation; \code{NULL} if \code{mse = FALSE}.}
 #'     \item{\code{yhat}}{data frame of back-transformed sample-unit predictions
 #'       (\code{obs_id}, \code{hat}).}
 #'     \item{\code{model}}{the fitted GB model object (xgboost booster when
@@ -772,8 +780,8 @@ megb <- function(fixed,
       pop_data               = boot_pop_data,
       B                      = B,
       initial_random_effects = 0,
-      ErrorTolerance         = 0.0001,
-      MaxIterations          = 10,
+      ErrorTolerance         = .megb_em_error_tolerance,
+      MaxIterations          = .megb_em_max_iterations,
       cov_names              = megb_fit$cov_names_proc,
       gradient_params        = gradient_params,
       formula_random_effects = megb_fit$formula_random_effects,
@@ -845,22 +853,18 @@ megb <- function(fixed,
       truth_u    <- mse_estimated$tau_star_orig_unb  # truth restricted to same B'
 
       resid_u <- tau_b_orig - truth_u
-      resid_u_centred <- resid_u - rowMeans(resid_u, na.rm = TRUE)
-
-      var_boot <- apply(resid_u_centred, 1, var,      na.rm = TRUE)
-      lo_boot  <- apply(resid_u_centred, 1, quantile, probs = alpha / 2,     na.rm = TRUE)
-      hi_boot  <- apply(resid_u_centred, 1, quantile, probs = 1 - alpha / 2, na.rm = TRUE)
+      EB <- .megb_error_interval(resid_u, alpha)
 
       ind$Domain <- as.character(ind$Domain)
       idx        <- match(ind$Domain, boot_domains)
 
-      var_df <- data.frame(Domain = ind$Domain, Mean = var_boot[idx],
+      var_df <- data.frame(Domain = ind$Domain, Mean = EB$var[idx],
                            stringsAsFactors = FALSE)
 
       ci_df <- data.frame(
         Domain = ind$Domain,
-        Lower  = ind$Mean + lo_boot[idx],
-        Upper  = ind$Mean + hi_boot[idx],
+        Lower  = ind$Mean - EB$q_hi[idx],
+        Upper  = ind$Mean - EB$q_lo[idx],
         stringsAsFactors = FALSE
       )
       ci_df <- clamp_ci(ci_df)
@@ -873,13 +877,8 @@ megb <- function(fixed,
         tau_b_bench <- mse_estimated$tau_b_bench
         truth_bench <- mse_estimated$tau_star_orig_bench
         if (ncol(tau_b_bench) > 0L) {
-          resid_mat     <- tau_b_bench - truth_bench
-          row_means     <- rowMeans(resid_mat, na.rm = TRUE)
-          resid_centred <- resid_mat - row_means
-
-          var_bench_vec <- apply(resid_centred, 1, var,      na.rm = TRUE)
-          lo_bench_vec  <- apply(resid_centred, 1, quantile, probs = alpha / 2,     na.rm = TRUE)
-          hi_bench_vec  <- apply(resid_centred, 1, quantile, probs = 1 - alpha / 2, na.rm = TRUE)
+          EBb <- .megb_error_interval(tau_b_bench - truth_bench, alpha)
+          var_bench_vec <- EBb$var
 
           ind_bench$Domain <- as.character(ind_bench$Domain)
           idx_b <- match(ind_bench$Domain, boot_domains)
@@ -889,8 +888,8 @@ megb <- function(fixed,
                                      stringsAsFactors = FALSE)
           ci_bench_df <- data.frame(
             Domain = ind_bench$Domain,
-            Lower  = ind_bench$Mean + lo_bench_vec[idx_b],
-            Upper  = ind_bench$Mean + hi_bench_vec[idx_b],
+            Lower  = ind_bench$Mean - EBb$q_hi[idx_b],
+            Upper  = ind_bench$Mean - EBb$q_lo[idx_b],
             stringsAsFactors = FALSE
           )
           ci_bench_df <- clamp_ci(ci_bench_df)
@@ -1021,6 +1020,7 @@ megb <- function(fixed,
       error_sd_orig      = megb_fit$megb_model$error_sd,
       boot_ran_eff_sd    = mse_estimated$boot_ran_eff_sd_boot,
       boot_error_sd      = mse_estimated$boot_error_sd,
+      boot_em_iterations = mse_estimated$boot_em_iterations,
       boot_ran_eff_sd_q  = qsum(mse_estimated$boot_ran_eff_sd_boot),
       boot_error_sd_q    = qsum(mse_estimated$boot_error_sd)
     )

@@ -85,9 +85,13 @@ test_that("megb's default bootstrap refreshes every booster with the survey weig
     .megb_oof_re_fit = function(...) { l <- orig_l(...); rec$reml <- c(rec$reml, lme4::isREML(l)); l },
     .package = "povmap")
   f <- .bf_fit(M, B = 4)
-  expect_equal(rec$calls, 4L * (1L + 5L))           # per replicate: the full booster and five fold models
+  ## per replicate (default single pass, 5 Oct 2026): the full booster once, the five fold models once, the random effect
+  ## fitted once, every fit by ML. (With options(povmap.leaves_only.em = TRUE): the fold models once per EM iteration and the
+  ## random effect once to start and once per iteration; see test-megb-bootstrap-interval-em.R.)
+  it <- f$boot_diag$boot_em_iterations; expect_equal(it, rep(0L, 4L))
+  expect_equal(rec$calls, sum(1L + 5L * pmax(it, 1L)))
   expect_equal(rec$w_null, 0L)
-  expect_equal(rec$reml, rep(FALSE, 4L))
+  expect_equal(rec$reml, rep(FALSE, sum(1L + it)))
   expect_true(all(is.finite(f$var$Mean)))
   expect_true(all(f$CI$Lower <= f$CI$Upper))
 })

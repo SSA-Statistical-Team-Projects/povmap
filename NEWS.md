@@ -1,5 +1,48 @@
 # povmap 1.0.1
 
+* **megb's bootstrap is centred on the cross-fitted fit.** With
+  `predict_sampled = "crossfit"`, each sampled domain is predicted by the fold model
+  that held it out, and so is the bootstrap truth. The bootstrap outcome, however, was
+  centred on the full booster's in-sample fit, and its residual pool was taken around
+  that fit plus the random effect. Both now use the fold models' out-of-fold
+  predictions instead. The random effect is the point fit's, as before. This applies
+  to every `bootstrap_refit` option, including the default `"leaves_only"`. With
+  `predict_sampled = "full"` nothing changes.
+  - The full-refit bootstrap's replicate fits now use the point fit's EM settings
+    (25 iterations, tolerance 1e-4), defined in one place
+    (`.megb_em_max_iterations`). They were capped at 10.
+  - Point estimates are unchanged. Intervals change under `predict_sampled = "crossfit"`
+    (the default since 1.0.1), and under `bootstrap_refit = "full"`.
+  - Test: `tests/testthat/test-megb-bootstrap-centre.R`.
+
+* **megb's interval had its bootstrap error quantiles on the wrong side.** The interval
+  is built from each replicate's prediction error, estimate minus bootstrap truth. It
+  was the point estimate *plus* the error quantiles. The basic bootstrap interval
+  *subtracts* them: [estimate - q(1 - alpha/2), estimate - q(alpha/2)]. The two agree only
+  when the errors are symmetric. With skewed errors the old interval put its long tail
+  on the wrong side of the estimate. This applies to every `mse_type = "var"` interval,
+  benchmarked or not. The variance (of the centred errors) is unchanged.
+
+* **The `leaves_only` bootstrap can run the point fit's EM in each replicate (opt-in).**
+  By default each replicate still refreshes the leaves once on the replicate outcome,
+  random effect included, and fits the random effect once. This single pass is a
+  documented approximation to the point fit's EM.
+  - `options(povmap.leaves_only.em = TRUE)` runs the EM with the trees fixed. It
+    starts from a random-effect-only fit on the replicate outcome, then alternates:
+    the fold models' leaves are refreshed on the outcome net of the estimated random
+    effect, and the random effect is re-estimated by ML from those models'
+    out-of-fold residuals. It stops at the point fit's iteration cap and tolerance.
+  - `options(povmap.leaves_only.em_start = "point")` starts the EM from the point
+    fit's random effect instead.
+  - Why the single pass is the default: on the Colombian M19 gate (six outcomes,
+    B = 100, same seeds), the EM took a median of 4 iterations (range 3 to 6) and
+    cost 3.3 times the single pass (2.8 times with the warm start). It changed
+    coverage by -0.4 points in sample and -0.2 out of sample, and mean width by
+    -0.1 and -0.7 percent.
+  - `boot_diag$boot_em_iterations` reports each replicate's iteration count (0 for
+    the single pass).
+  - Test: `tests/testthat/test-megb-bootstrap-interval-em.R`.
+
 * **`xgb_cv()` gains `configs`**, so cross-validation scores the configuration-averaged
   estimator: every fold's model averages the configurations as `xgb(configs = )` does
   (benchmarked once if a benchmark is passed), with the same set in every fold. With

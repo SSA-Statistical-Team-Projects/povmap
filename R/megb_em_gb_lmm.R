@@ -100,8 +100,10 @@ em_gb_lmm <- function(Y,
     # unshrunk and the RE over-absorbs covariate-predictable area structure). Using
     # held-out residuals restores the proper area-specific shrinkage gradient
     # (census-validated: gamma 0.99->~0.38 at n_d=1, ~0.85 at n_d>8) and removes the
-    # over-absorption. The point prediction still uses the in-sample GB
-    # (unit_pred_smp); only the variance/RE decomposition uses the held-out residual.
+    # over-absorption. With predict_sampled = "full" the point prediction still uses
+    # the in-sample GB (unit_pred_smp) and only the variance/RE decomposition uses the
+    # held-out residual; with "crossfit" (the default) sampled domains are predicted by
+    # the fold model that held them out (megb_em.R, .megb_compose_preds).
     # Applied every EM iteration so the corrected variance feeds the next iteration.
     # Disable with options(megb.oof_sigma = FALSE) to recover the legacy behaviour.
     .use_oof <- !isFALSE(getOption("megb.oof_sigma", TRUE)) &&
