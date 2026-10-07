@@ -71,7 +71,30 @@ xgb_check1 <- function(transformation,
                    vector of class character containing the names of the chosen
                    indicators."))
     }
-    if (is.numeric(benchmark)) {
+    if (is.numeric(benchmark) && !is.null(benchmark_level)) {
+      # External targets for each benchmark_level group (e.g. published province
+      # direct estimates): a numeric vector named by the group values.
+      # benchmark_xgb_level() already benchmarks to such a vector; until this
+      # branch the check below rejected anything but a national Mean/Head_Count,
+      # and a data.frame of targets was silently replaced by the sample mean.
+      nm <- names(benchmark)
+      if (is.null(nm) || any(is.na(nm) | nm == "") || anyDuplicated(nm)) {
+        stop(strwrap(prefix = " ", initial = "",
+                     "With benchmark_level, a numeric benchmark must be named by
+                     the values of benchmark_level, one unique name per target."))
+      }
+      if (anyNA(benchmark)) {
+        stop("benchmark: the targets for ", paste(nm[is.na(benchmark)], collapse = ", "), " are NA.")
+      }
+      lv <- unique(as.character(X_pop[[benchmark_level]]))
+      miss <- setdiff(lv, nm)
+      if (length(miss)) {
+        stop(strwrap(prefix = " ", initial = "",
+                     paste0("benchmark has no target for the ", benchmark_level,
+                            " group(s) ", paste(miss, collapse = ", "),
+                            " present in the population data.")))
+      }
+    } else if (is.numeric(benchmark)) {
       if (!length(benchmark) %in% 1:2) {
         stop(strwrap(prefix = " ", initial = "",
                      "Benchmark must be a named vector containing the numeric
