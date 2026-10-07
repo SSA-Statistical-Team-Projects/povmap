@@ -15,25 +15,17 @@
 benchmark_xgb_level <- function (point_estim, framework, fixed, benchmark,
                                  benchmark_type, benchmark_level,benchmark_weights = NULL) {
 
-  # Alignment guard: this function positionally zips point_estim$ind$Mean against
-  # unique(framework$pop_data[[domains]]) and the per-domain weights, i.e. it
-  # assumes the i-th point estimate belongs to the i-th unique pop_data domain. A
-  # caller whose point estimates are in a different domain order (e.g. megb's
-  # tapply/alphabetical order vs pop_data's first-appearance order) would be
-  # silently mis-benchmarked. When the caller supplies labels on
-  # point_estim$ind$Domain, verify the contract and error loudly on any mismatch.
+  # Alignment guard. When the caller labels the point estimates
+  # (point_estim$ind$Domain), they are matched to domains BY NAME below, so their
+  # order is free, but they must cover exactly the domains of pop_data, once each.
+  # Unlabelled estimates are assumed to be in unique(pop_data[[domains]]) order.
   if (!is.null(point_estim$ind$Domain)) {
     .pe_dom  <- as.character(point_estim$ind$Domain)
     .pop_dom <- as.character(unique(framework$pop_data[[framework$domains]]))
-    if (length(.pe_dom) != length(.pop_dom) || !identical(.pe_dom, .pop_dom)) {
-      .ndiff <- if (length(.pe_dom) == length(.pop_dom))
-                  sum(.pe_dom != .pop_dom) else NA_integer_
-      stop(sprintf(paste0("benchmark_xgb_level: point-estimate domain order does ",
-        "not match unique(pop_data[['%s']]) order (%s of %d positions differ). ",
-        "Benchmarking positionally zips these, so a mismatch silently mis-assigns ",
-        "territories to the wrong benchmark target."),
-        framework$domains, ifelse(is.na(.ndiff), "a differing number", .ndiff),
-        length(.pop_dom)))
+    if (anyDuplicated(.pe_dom) || !setequal(.pe_dom, .pop_dom)) {
+      stop(sprintf(paste0("benchmark_xgb_level: the labelled point estimates do not ",
+        "cover the domains of pop_data[['%s']] exactly once (%d labels, %d domains, %d not in pop_data)."),
+        framework$domains, length(.pe_dom), length(.pop_dom), length(setdiff(.pe_dom, .pop_dom))))
     }
   }
 
@@ -49,7 +41,12 @@ benchmark_xgb_level <- function (point_estim, framework, fixed, benchmark,
     }
 
 
-  benchmark_df <- data.frame(point_estim$ind$Mean, unique(framework$pop_data[[framework$domains]]),1:length(point_estim$ind$Mean))
+  # Label each point estimate with its domain: the caller's labels when given
+  # (add_benchmark passes them), otherwise the pop_data first-appearance order
+  # the guard above has verified.
+  dom_labels <- if (!is.null(point_estim$ind$Domain)) as.character(point_estim$ind$Domain) else
+                  as.character(unique(framework$pop_data[[framework$domains]]))
+  benchmark_df <- data.frame(point_estim$ind$Mean, dom_labels, 1:length(point_estim$ind$Mean))
   colnames(benchmark_df) <- c("point_estim",framework$domains,"order")
   crosswalk <- data.frame(unique(framework$pop_data[,c(framework$domains,benchmark_level)]))
 
@@ -59,10 +56,15 @@ benchmark_xgb_level <- function (point_estim, framework, fixed, benchmark,
   benchmark_df <- merge(benchmark_df,benchmark_,by=benchmark_level,all.x=T,sort=F)
   # unfortunately because it is a many to one merge the sort order is not preserved, so we need to reorder by hand
   benchmark_df <- benchmark_df[order(benchmark_df$order),]
-  popwts <- data.frame(collapse::fsum(framework$pop_data[,framework$pop_weights],g=framework$pop_data[,framework$domains]))
-  population_lga2 <- collapse:::fsum(framework$pop_data$population,g=framework$pop_data$lgacode)
-  colnames(popwts) <- framework$pop_weights
-  benchmark_df <- data.frame(benchmark_df,popwts)
+  # Domain population totals, matched to benchmark_df BY NAME. They were bound by
+  # position, but fsum() returns groups in sorted order when collapse's `sort`
+  # option is TRUE (its default, and the state of every PSOCK bootstrap worker)
+  # and in first-appearance order when it is FALSE (set by xgb() on the master),
+  # so on a worker each domain took another domain's population weight.
+  popwts <- collapse::fsum(framework$pop_data[,framework$pop_weights],g=framework$pop_data[,framework$domains],use.g.names=TRUE)
+  benchmark_df[[framework$pop_weights]] <- as.numeric(popwts[as.character(benchmark_df[[framework$domains]])])
+  if (anyNA(benchmark_df[[framework$pop_weights]]))
+    stop("benchmark_xgb_level: no population total for some domains of the point estimates")
   weighted_pe <- data.frame(collapse::fmean(benchmark_df$point_estim,g=benchmark_df[,benchmark_level],w=benchmark_df[,framework$pop_weights],TRA=1))
   colnames(weighted_pe) <- "weighted_pe"
   benchmark_df <- data.frame(benchmark_df,weighted_pe)
