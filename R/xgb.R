@@ -562,7 +562,8 @@ xgb <- function(fixed,
     # the same per-cell back-transform order as sim_truth. The non-benchmarked
     # point (domains_pred$hat, aggregate order) is left untouched.
     domains_pred$hat_bench <- add_benchmark(x=domains_pred$hat_pc,benchmark_level=benchmark_level,
-                                            fwk=fwk,fixed=fixed,benchmark=benchmark,benchmark_type=benchmark_type)
+                                            fwk=fwk,fixed=fixed,benchmark=benchmark,benchmark_type=benchmark_type,
+                                            domains=domains_pred$domains)
     domains_pred$hat_bench_t <- transform_outcome(domains_pred$hat_bench)$y
     # construct residuals from transformed benchmark estimate
     domains_direct_t <- transform_outcome(collapse:::fmean(sub_domains_direct$outcome,g=sub_domains_direct$domains,w=sub_domains_direct$smp_weights))$y
@@ -731,6 +732,12 @@ xgb <- function(fixed,
                               .packages = c("xgboost"),
                               .options.snow = list(progress = progress)) %dopar% {
 
+                                # A PSOCK worker starts with collapse's default sort = TRUE;
+                                # xgb() runs the master with sort = FALSE. Match the master
+                                # so every grouped result comes out in the same domain order
+                                # whatever the number of workers.
+                                collapse::set_collapse(sort = FALSE)
+
 
                                 #displayevery = max(round(B/10,0),1)
 
@@ -896,8 +903,9 @@ xgb <- function(fixed,
                                     # Benchmark the PER-CELL-order replicate point (hat_pc) so each
                                     # benchmarked replicate matches sim_truth's order; Var_bench then
                                     # differences like-order quantities. sim_truth (per-cell) is unchanged.
-                                    B_domains$sim_bench <- add_benchmark(predictions$hat_pc,benchmark_level=benchmark_level,benchmark=bm_vec,fwk=fwk,
-                                                                         fixed=fixed,benchmark_type=benchmark_type)
+                                    sim_bench <- add_benchmark(predictions$hat_pc,benchmark_level=benchmark_level,benchmark=bm_vec,fwk=fwk,
+                                                               fixed=fixed,benchmark_type=benchmark_type,domains=predictions$domains)
+                                    B_domains$sim_bench <- sim_bench[match(B_domains$domains, predictions$domains)]
                                   } # close additional benchmarking bootstrap code
                                 } # close residual bootstrap code to produce B_domains_sim
 
@@ -1472,9 +1480,13 @@ point_estim_xgb <- function(params, smp_X, smp_Y, smp_weight, pop_X, sub_domains
 
 
 
-add_benchmark <- function(x, benchmark_level,fwk,fixed,benchmark,benchmark_type) {
+# `domains` labels x. benchmark_xgb_level() matches estimates to domains by these
+# labels; without them it assumes x is in unique(pop_data[[domains]]) order, which
+# does not hold on a bootstrap worker whose collapse `sort` option differs.
+add_benchmark <- function(x, benchmark_level,fwk,fixed,benchmark,benchmark_type,domains=NULL) {
   point_estim <- NULL
-  point_estim$ind <- data.frame(Mean = x)
+  point_estim$ind <- if (is.null(domains)) data.frame(Mean = x) else
+                       data.frame(Domain = as.character(domains), Mean = x)
 
   if (is.null(benchmark_level)) {
     point_estim$ind <- benchmark_ebp_national(
