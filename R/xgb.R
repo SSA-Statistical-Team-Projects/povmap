@@ -1,4 +1,6 @@
-.check_benchmark_se <- function(se, what, allow_zero) {
+.check_benchmark_se <- function(se, what, allow_zero, tol = 0) {
+  # `tol` is 0 for a supplied SE (a caller's exact zero) and tiny for the internal estimate, which is computed from
+  # deviations around a weighted mean and so is about 1e-15, not exactly 0, when every unit has the same outcome.
   # A zero, negative or non-finite standard error makes the benchmark-target perturbation meaningless (rnorm()
   # with sd = 0 adds nothing; a negative or non-finite sd gives NaN). The package does not substitute a value:
   # the right one depends on what the caller knows (e.g. the effective sample size behind an Agresti-Coull SE).
@@ -8,7 +10,7 @@
   if (length(bad)) stop(sprintf(
     "perturb_benchmark: %s must be finite and non-negative; invalid for %d benchmark group(s): %s. Supply a valid standard error for them.",
     what, length(bad), show(bad)), call. = FALSE)
-  zero <- g[se == 0]
+  zero <- g[se <= tol]
   if (length(zero)) {
     if (!isTRUE(allow_zero)) stop(sprintf(
       paste0("perturb_benchmark: %s is zero for %d benchmark group(s): %s. ",
@@ -689,7 +691,7 @@ xgb <- function(fixed,
       }
       # The internal estimate is zero too when every sampled unit of a group has the same outcome (a direct
       # estimate on the boundary of its range) or the group has fewer than 2 units: same guard as for a supplied SE.
-      .check_benchmark_se(bm_ht_se, "the internal Horvitz-Thompson standard error of the benchmark target", allow_zero_benchmark_se)
+      .check_benchmark_se(bm_ht_se, "the internal Horvitz-Thompson standard error of the benchmark target", allow_zero_benchmark_se, tol = 1e-10)
       if (verbose) message(sprintf(
         "perturb_benchmark: internal HT SE at benchmark level - median %.4f, range [%.4f, %.4f]",
         median(bm_ht_se), min(bm_ht_se), max(bm_ht_se)
