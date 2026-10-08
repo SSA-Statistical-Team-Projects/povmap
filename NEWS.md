@@ -1,5 +1,19 @@
 # povmap 1.0.1
 
+* **`xgb()` stops on a zero, negative or non-finite `benchmark_target_se` when
+  `perturb_benchmark = TRUE`.** A direct estimate on the boundary of its range (a proportion of
+  exactly 0 or 1, a sample whose clusters all agree) has a design-based standard error of exactly
+  zero. The perturbation of the benchmark target then added nothing for that group, and the
+  intervals of its domains collapsed towards the target, silently. The error asks for a
+  boundary-corrected standard error (for a proportion at 0 or 1, Agresti-Coull, which needs the
+  effective sample size that only the caller has); the package does not substitute one. A zero
+  can be accepted deliberately with the new `allow_zero_benchmark_se = TRUE` (a warning names the
+  groups); negative and non-finite values always stop. The internal Horvitz-Thompson standard
+  error used when no `benchmark_target_se` is supplied is checked the same way (it is zero when
+  every sampled unit of a benchmark group has the same outcome, or the group has fewer than two
+  units). With `perturb_benchmark = FALSE` no standard error is used and nothing is checked.
+  - Test: `tests/testthat/test_xgb_benchmark_se_guard.R`.
+
 * **megb's bootstrap is centred on the cross-fitted fit.** With
   `predict_sampled = "crossfit"`, each sampled domain is predicted by the fold model
   that held it out, and so is the bootstrap truth. The bootstrap outcome, however, was

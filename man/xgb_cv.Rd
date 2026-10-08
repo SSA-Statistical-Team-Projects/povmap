@@ -122,9 +122,18 @@ result then also contains \code{configs}.}
 \item{...}{additional parameters passed to \code{xgb}.}
 }
 \value{
-A list containing:
+A list containing (all fit statistics are scored against the direct
+  estimate, a noisy target, not against a known truth):
 \describe{
-  \item{r2_cv}{Out-of-sample R-squared on the back-transformed scale}
+  \item{r2_cv}{Out-of-sample R-squared, the proportion of variance explained,
+    exactly 1 - SSE/SST with matched (sum) denominators. Penalizes bias and
+    scale compression and can be negative. Denominator is the variation of the
+    noisy direct estimate.}
+  \item{cor_cv}{Out-of-sample Pearson correlation between the held-out
+    prediction and the direct estimate. Invariant to a linear rescaling of the
+    prediction, so it is not driven down by compression toward the mean.}
+  \item{cor2_cv}{Square of \code{cor_cv}, the squared Pearson correlation.
+    Distinct from \code{r2_cv}; the two coincide only for in-sample OLS fits.}
   \item{mse_cv}{Out-of-sample MSE on the back-transformed scale}
   \item{mae_cv}{Out-of-sample MAE on the back-transformed scale}
   \item{rank_cor_cv}{Out-of-sample Spearman rank correlation}

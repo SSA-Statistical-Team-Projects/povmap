@@ -68,10 +68,97 @@ fitting. One of \code{"no"} (default), \code{"log"}, \code{"log.shift"},
 \code{"arcsin"}, \code{"logistic"}, or \code{"poisson"}. Unit-level
 population predictions are back-transformed before domain aggregation.}
 
-\item{mse}{logical. If \code{TRUE} (default), estimates MSE via the MEGB
-parametric bootstrap. The interval is the basic bootstrap interval from the
-bootstrap prediction-error quantiles (point estimate minus the upper and
-lower quantiles).}
+\item{mse}{logical. If \code{TRUE} (default), runs the parametric bootstrap
+to quantify uncertainty. The form of the resulting summary is controlled
+by \code{mse_type}.
+The EM loop runs to convergence (relative log-likelihood change <
+1e-04) or for at most 25 iterations, whichever comes first. If
+\eqn{\sigma_u} collapses toward zero, that typically reflects
+identifiability between area-level covariates (which are constant
+within an area, and so collinear with the area indicator) and the
+area random effect, rather than a failure of EM. Diagnose by
+comparing specifications with and without the area-level covariates
+and by leave-areas-out cross-validation, rather than by truncating
+the EM loop.}
+
+\item{mse_type}{one of \code{"var"} (default) or \code{"mse"}. \code{"var"}
+reports the variance of the bootstrap prediction errors (each replicate's
+domain mean minus its bootstrap truth, centred per domain) and forms the CI
+as the basic bootstrap interval: the point estimate minus the errors' upper
+and lower quantiles (the quantiles were added before 5 Oct 2026). Benchmarked CIs use the centred residual
+between benchmarked-bootstrap and bootstrap-truth, again as in \code{xgb}.
+\code{"mse"} reports the prediction MSE \eqn{E[(\hat\theta-\theta)^2]} —
+computed in transformed space and back-mapped via the delta method for the
+unbenchmarked estimator, and directly in original space for the
+benchmarked estimator — and uses a normal-approximation CI. \code{"mse"}
+is generally wider than \code{"var"} because it includes the irreducible
+variability of the random effect.}
+
+\item{bootstrap_refit}{one of \code{"leaves_only"} (default),
+\code{"full"}, or \code{"lmm_only"}.
+\code{"leaves_only"} (xgboost only) freezes the tree structure of the
+original GB across all bootstrap iterations and only refreshes leaf-node
+values via xgboost's \code{refresh} updater. This captures within-model
+leaf-prediction sampling uncertainty plus the LMM random-effect
+uncertainty, without exposing the SE to GB tree-selection variance —
+which empirically overstates uncertainty for sparse or boundary-near
+indicators (e.g. ownership rates, livestock counts, access indicators
+with many near-zero territories) where bootstrap-perturbed residuals
+drive fresh GB fits to substantially different trees. For dense
+indicators (continuous welfare, well-spread proportions) \code{"leaves_only"}
+gives results within ~20\% of \code{"full"}; for sparse indicators the
+two can differ by an order of magnitude. Recommended default and aligned
+with how most SAE methods report SEs (conditional on chosen model
+structure). Each replicate refreshes the leaves once on the replicate
+outcome and fits the random effect once, an approximation to the point
+fit's EM; \code{options(povmap.leaves_only.em = TRUE)} runs that EM with
+the trees fixed (about three times the cost; see NEWS).
+\code{"full"}: refit both the gradient booster and the linear mixed model
+in every bootstrap iteration. This additionally captures GB
+tree-selection variance and is appropriate when that is the inferential
+target (e.g. inference about a model \emph{class} rather than a fitted
+model). For sparse indicators this can substantially overstate true
+predictive uncertainty because the residual bootstrap drives fresh GBs
+into pathological refits.
+\code{"lmm_only"}: refit only the linear mixed model on bootstrap residuals
+each iteration, treating the gradient-booster fit as fixed. This is the
+classical EBLUP parametric bootstrap (Prasad–Rao / Hall–Maiti) and yields
+the textbook leading-order MSE \eqn{g_1 = \gamma_d \sigma_e^2 / n_d}.
+It runs faster than the other modes but assumes the FE estimator is
+parametric and contributes negligible variance — an assumption that
+holds for low-dimensional linear FE models but \emph{not} for boosted
+trees, where it typically understates SE by an order of magnitude. Use
+only if you explicitly want the classical-EBLUP variance decomposition.}
+
+\item{bench_target}{one of \code{"fixed"} (default) or \code{"random"}.
+Controls how the benchmark target is treated *inside the bootstrap*. "fixed"
+rakes every replicate to the observed (province/level) target, so the
+benchmarked MSE/CI is the spread of the estimate around the realised truth at
+the observed target — the correct choice for benchmarking to an observed survey
+target. "random" recomputes the target from each replicate's own resampled
+survey, which makes the benchmarked estimate track its own bootstrap mean and
+collapses the level variance, giving too-narrow intervals (census-validated:
+well-sampled-area coverage 0.74 under "random" vs 0.96 under "fixed"). Only
+matters when \code{benchmark} is character (internal, survey-derived
+benchmarking); for numeric or data.frame benchmarks the target is a
+constant by construction.
+\code{"random"} (default): recompute the target on every bootstrap
+iteration from the bootstrap-simulated survey data. Both the target and
+the model estimate vary together, preserving the joint sampling
+correlation between them — which is the right thing for re-sampling-based
+inference about the unconditional variance of the benchmarked estimator.
+In practice this is also typically *narrower* than \code{"fixed"} for
+internal benchmarks: when survey resamples shift the target up they also
+shift the model estimate up, so the benchmark-adjustment shift \eqn{c}
+has less work to do, and \eqn{var(c) \propto var(T - WM)} stays small.
+\code{"fixed"}: hold the target at the value computed from the *observed*
+survey and reuse it on every iteration. The resulting variance is
+conditional on the target — \eqn{Var(\hat\theta_{bench} \mid target)}.
+Use this when the benchmark target really is a known constraint that you
+don't want to bootstrap over. For survey-derived (internal) benchmarks
+the target *is* itself a sample statistic, so this conditioning is a
+somewhat artificial inferential target — \code{"random"} is usually
+preferable.}
 
 \item{B}{number of parametric bootstrap iterations for MSE estimation.
 Defaults to \code{100}.}
@@ -129,64 +216,64 @@ both \code{smp_data} and \code{pop_data} before fitting. Defaults to
   \code{getOption("megb.cv_folds", "domain")}.}
 
 \item{early_stopping}{logical. If \code{TRUE} (default), the internal
-  cross-validation stops when the held-out error has not improved for 10
-  rounds, and the full-data booster is trained to that round. If
-  \code{FALSE}, the fold models and the booster train to the full
-  \code{nrounds} in \code{gradient_params}, as \code{\link{xgb}} does.
-  When not supplied, the default is taken from
-  \code{getOption("megb.early_stopping", TRUE)}.}
+cross-validation stops when the held-out error has not improved for 10
+rounds, and the full-data booster is trained to that round. If
+\code{FALSE}, the fold models and the booster train to the full
+\code{nrounds} in \code{gradient_params}, as \code{\link{xgb}} does.
+When not supplied, the default is taken from
+\code{getOption("megb.early_stopping", TRUE)}.}
 
 \item{predict_sampled}{how the booster part of a sampled domain's prediction
-  is formed. \code{"crossfit"} uses the fold model of the final EM iteration
-  that held the domain out; \code{"full"} uses the booster trained on the
-  whole sample. The random effects are estimated from the fold models'
-  out-of-fold residuals, so under \code{"crossfit"} the booster part and the
-  random effect are measured against the same baseline. Under \code{"full"}
-  the booster has seen the domain's own rows, which, with covariates constant
-  within domains (area-level covariates), can count part of the domain's
-  deviation twice. The default, \code{NULL}, is \code{"crossfit"} wherever it
-  applies (xgboost, \code{cv_folds = "domain"}, and with \code{mse = TRUE} a
-  \code{"leaves_only"} or \code{"full"} bootstrap) and \code{"full"}, with a
-  message, otherwise; asking for \code{"crossfit"} where it does not apply is
-  an error. Until povmap 1.0.1 the default was \code{"full"}. In a Colombian
-  evaluation with 19 and 24 municipal covariates, cross-fitting with ten folds
-  and \code{predict_unsampled = "foldmean"} lowered RMSE by 4.3 and 3.5
-  percent against \code{"full"} with five folds (8.4 and 6.4 percent in
-  sample); with sub-area covariates it was neutral. The fit itself, including
-  the random effects and variance components, does not depend on this
-  argument. The result's \code{$crossfit$ind} gives the estimates of the same
-  fit under the other settings: \code{Mean_full} (full booster everywhere),
-  \code{Mean_crossfit} (cross-fitted sampled, full unsampled) and
-  \code{Mean_foldmean} (cross-fitted sampled, fold-model average unsampled).
-  With \code{mse = TRUE} the bootstrap predicts its replicates the same way:
-  the \code{"leaves_only"} bootstrap from each refreshed fold model, the
-  \code{"full"} bootstrap from each replicate fit's own fold models.}
+is formed. \code{"crossfit"} uses the fold model of the final EM iteration
+that held the domain out; \code{"full"} uses the booster trained on the
+whole sample. The random effects are estimated from the fold models'
+out-of-fold residuals, so under \code{"crossfit"} the booster part and the
+random effect are measured against the same baseline. Under \code{"full"}
+the booster has seen the domain's own rows, which, with covariates constant
+within domains (area-level covariates), can count part of the domain's
+deviation twice. The default, \code{NULL}, is \code{"crossfit"} wherever it
+applies (xgboost, \code{cv_folds = "domain"}, and with \code{mse = TRUE} a
+\code{"leaves_only"} or \code{"full"} bootstrap) and \code{"full"}, with a
+message, otherwise; asking for \code{"crossfit"} where it does not apply is
+an error. Until povmap 1.0.1 the default was \code{"full"}. In a Colombian
+evaluation with 19 and 24 municipal covariates, cross-fitting with ten folds
+and \code{predict_unsampled = "foldmean"} lowered RMSE by 4.3 and 3.5
+percent against \code{"full"} with five folds (8.4 and 6.4 percent in
+sample); with sub-area covariates it was neutral. The fit itself, including
+the random effects and variance components, does not depend on this
+argument. The result's \code{$crossfit$ind} gives the estimates of the same
+fit under the other settings: \code{Mean_full} (full booster everywhere),
+\code{Mean_crossfit} (cross-fitted sampled, full unsampled) and
+\code{Mean_foldmean} (cross-fitted sampled, fold-model average unsampled).
+With \code{mse = TRUE} the bootstrap predicts its replicates the same way:
+the \code{"leaves_only"} bootstrap from each refreshed fold model, the
+\code{"full"} bootstrap from each replicate fit's own fold models.}
 
 \item{predict_unsampled}{how the booster part of an unsampled domain's
-  prediction is formed. \code{"foldmean"} averages the predictions of the fold
-  models of the final EM iteration; \code{"full"} uses the booster trained on
-  the whole sample. Unsampled domains have no random effect either way. The
-  default, \code{NULL}, is \code{"foldmean"} wherever fold-model prediction
-  applies (as for \code{predict_sampled}) and \code{"full"}, with a message,
-  otherwise. Until povmap 1.0.1 unsampled domains always used the full
-  booster. In the Colombian evaluation the fold-model average lowered
-  out-of-sample RMSE by 0.3 to 0.8 percent. With \code{mse = TRUE} the
-  \code{"leaves_only"} bootstrap averages the refreshed fold models, and the
-  \code{"full"} bootstrap each replicate fit's fold models.}
+prediction is formed. \code{"foldmean"} averages the predictions of the fold
+models of the final EM iteration; \code{"full"} uses the booster trained on
+the whole sample. Unsampled domains have no random effect either way. The
+default, \code{NULL}, is \code{"foldmean"} wherever fold-model prediction
+applies (as for \code{predict_sampled}) and \code{"full"}, with a message,
+otherwise. Until povmap 1.0.1 unsampled domains always used the full
+booster. In the Colombian evaluation the fold-model average lowered
+out-of-sample RMSE by 0.3 to 0.8 percent. With \code{mse = TRUE} the
+\code{"leaves_only"} bootstrap averages the refreshed fold models, and the
+\code{"full"} bootstrap each replicate fit's fold models.}
 
 \item{cv_nfold}{the number of folds of the internal cross-validation
-  (xgboost only), of whole domains or of rows according to \code{cv_folds}.
-  Default 10 (5 until povmap 1.0.1). More folds train each fold model on a
-  larger share of the sample: with fold-model prediction, ten folds beat five
-  by 0.3 to 0.5 percent in sample in the Colombian evaluation. Each EM
-  iteration costs proportionally more: a point fit took 1.6 to 1.9 times as
-  long with ten folds as with five, and a fit with the default bootstrap
-  (B = 100) about 2.1 times as long as the five-fold, full-prediction
-  configuration. Under fold-model prediction there is one fold model per fold.
-  When not supplied, the default is taken from
-  \code{getOption("megb.cv_nfold", 10L)}. For the settings before povmap
-  1.0.1 use \code{cv_nfold = 5, predict_sampled = "full",
-  predict_unsampled = "full"}.}
+(xgboost only), of whole domains or of rows according to \code{cv_folds}.
+Default 10 (5 until povmap 1.0.1). More folds train each fold model on a
+larger share of the sample: with fold-model prediction, ten folds beat five
+by 0.3 to 0.5 percent in sample in the Colombian evaluation. Each EM
+iteration costs proportionally more: a point fit took 1.6 to 1.9 times as
+long with ten folds as with five, and a fit with the default bootstrap
+(B = 100) about 2.1 times as long as the five-fold, full-prediction
+configuration. Under fold-model prediction there is one fold model per fold.
+When not supplied, the default is taken from
+\code{getOption("megb.cv_nfold", 10L)}. For the settings before povmap
+1.0.1 use \code{cv_nfold = 5, predict_sampled = "full",
+predict_unsampled = "full"}.}
 
 \item{...}{additional arguments forwarded to \code{MEGB::megb}.}
 }
@@ -196,13 +283,13 @@ An object of class \code{c("megb", "xgb", "povmap")} with elements:
     \item{\code{ind}}{data frame of domain-level point estimates
       (\code{Domain}, \code{Mean}).}
     \item{\code{var}}{data frame of uncertainty estimates (\code{Domain},
-      \code{Mean}): the variance of the centred bootstrap prediction errors
-      (\code{mse_type = "var"}), or the delta-method-corrected MSE (\code{"mse"});
-      \code{NULL} if \code{mse = FALSE}.}
+      \code{Mean}): with \code{mse_type = "var"} the variance of the centred
+      bootstrap prediction errors, with \code{"mse"} the delta-method-corrected
+      MSE; \code{NULL} if \code{mse = FALSE}.}
     \item{\code{CI}}{data frame of confidence intervals (\code{Domain},
-      \code{Lower}, \code{Upper}): the basic bootstrap interval from the
-      prediction-error quantiles (\code{"var"}), or a normal approximation
-      (\code{"mse"}); \code{NULL} if \code{mse = FALSE}.}
+      \code{Lower}, \code{Upper}): with \code{mse_type = "var"} the basic
+      bootstrap interval from the prediction-error quantiles, with \code{"mse"}
+      a normal approximation; \code{NULL} if \code{mse = FALSE}.}
     \item{\code{yhat}}{data frame of back-transformed sample-unit predictions
       (\code{obs_id}, \code{hat}).}
     \item{\code{model}}{the fitted GB model object (xgboost booster when

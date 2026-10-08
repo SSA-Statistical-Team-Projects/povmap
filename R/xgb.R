@@ -1,3 +1,120 @@
+.check_benchmark_se <- function(se, what, allow_zero, tol = 0) {
+  # `tol` is 0 for a supplied SE (a caller's exact zero) and tiny for the internal estimate, which is computed from
+  # deviations around a weighted mean and so is about 1e-15, not exactly 0, when every unit has the same outcome.
+  # A zero, negative or non-finite standard error makes the benchmark-target perturbation meaningless (rnorm()
+  # with sd = 0 adds nothing; a negative or non-finite sd gives NaN). The package does not substitute a value:
+  # the right one depends on what the caller knows (e.g. the effective sample size behind an Agresti-Coull SE).
+  show <- function(g) paste0(paste(utils::head(g, 10), collapse = ", "), if (length(g) > 10) sprintf(" (and %d more)", length(g) - 10) else "")
+  g <- names(se)
+  bad <- g[!is.finite(se) | se < 0]
+  if (length(bad)) stop(sprintf(
+    "perturb_benchmark: %s must be finite and non-negative; invalid for %d benchmark group(s): %s. Supply a valid standard error for them.",
+    what, length(bad), show(bad)), call. = FALSE)
+  zero <- g[se <= tol]
+  if (length(zero)) {
+    if (!isTRUE(allow_zero)) stop(sprintf(
+      paste0("perturb_benchmark: %s is zero for %d benchmark group(s): %s. ",
+             "With a zero standard error the perturbation adds no uncertainty there, and the intervals of those ",
+             "domains collapse towards the benchmark target. This happens when the direct estimate sits on the ",
+             "boundary of its range, e.g. a proportion of exactly 0 or 1. Supply a boundary-corrected standard ",
+             "error, such as an Agresti-Coull standard error for a proportion at 0 or 1 (it needs the effective ",
+             "sample size, which only you have). To proceed deliberately with a zero, set allow_zero_benchmark_se = TRUE."),
+      what, length(zero), show(zero)), call. = FALSE)
+    warning(sprintf("perturb_benchmark: allow_zero_benchmark_se = TRUE; %s is zero for %d group(s) (%s), so the perturbation adds no uncertainty there.",
+                    what, length(zero), show(zero)), call. = FALSE)
+  }
+  invisible(se)
+}
+
+# Horvitz-Thompson variance of a weighted mean for each group.
+# Returns a named numeric vector of variances (one entry per group).
+# Formula: V_HT(ȳ_g) = n_g / ((n_g-1) * (Σw)²) * Σ w²(y - ȳ)²
+# Equivalent to the with-replacement linearisation used by survey::svymean.
+ht_var_weighted_mean <- function(y, w, g) {
+  # Horvitz-Thompson / Hajek variance of a weighted MEAN (ratio estimator
+  # yhat = sum(w y) / sum(w)) under Poisson sampling:
+  #   sigma_hat^2 = (1 / (sum w)^2) * sum_i w_i (w_i - 1) (y_i - yhat)^2
+  # The residual (y_i - yhat) is REQUIRED: sum w(w-1) y_i^2 is the variance of
+  # the TOTAL (sum w y); for the ratio mean the deviations from the estimated
+  # mean must be used, otherwise the variance scales with E[y^2] rather than the
+  # dispersion of y and is grossly inflated for outcomes whose mean is far from
+  # zero (e.g. a proportion near 0.6: ~7x too large in variance, ~3x in SE).
+  # Census-validated: the centered form reproduces the design-based province
+  # cluster-robust (Taylor) SE used elsewhere in the project (0.043 vs 0.044 for
+  # DRC poverty); the uncentered form gave 0.144.
+  g <- as.character(g)
+  groups <- unique(g)
+  result <- setNames(numeric(length(groups)), groups)
+  for (grp in groups) {
+    idx  <- g == grp
+    y_g  <- y[idx];  w_g <- w[idx];  n_g <- sum(idx)
+    if (n_g < 2L) { result[grp] <- NA_real_; next }
+    ybar_g <- sum(w_g * y_g) / sum(w_g)
+    result[grp] <- sum(w_g * (w_g - 1) * (y_g - ybar_g)^2) / sum(w_g)^2
+  }
+  result
+}
+
+# Population-weighted mean of a per-cell bootstrap quantity within each domain.
+# collapse::fmean() reads g = NULL as "no grouping" and w = NULL as "no
+# weights", so a grouping or weight looked up with $ by a column name the data
+# frame does not have (df$name is NULL, not an error) returns ONE unweighted
+# mean of every cell, which then recycles across all domains. That is how the
+# benchmarked bootstrap truth was computed from 7f9deb0 until this fix:
+# B_sub$domains and B_sub$wts do not exist, because sub_predictions names its
+# columns after fwk$domains and fwk$pop_weights. Refuse NULL or mis-sized
+# arguments so the failure is loud.
+.boot_domain_wmean <- function(x, g, w, what) {
+  n <- length(x)
+  if (n == 0L)
+    stop(sprintf("bootstrap aggregation of %s: the values are NULL or empty.", what), call. = FALSE)
+  if (is.null(g))
+    stop(sprintf("bootstrap aggregation of %s: the domain grouping is NULL. Was it looked up by a column name the data does not contain?", what), call. = FALSE)
+  if (is.null(w))
+    stop(sprintf("bootstrap aggregation of %s: the population weight is NULL. Was it looked up by a column name the data does not contain?", what), call. = FALSE)
+  if (length(g) != n)
+    stop(sprintf("bootstrap aggregation of %s: the domain grouping has length %d, the values %d.", what, length(g), n), call. = FALSE)
+  if (length(w) != n)
+    stop(sprintf("bootstrap aggregation of %s: the population weight has length %d, the values %d.", what, length(w), n), call. = FALSE)
+  collapse:::fmean(x = x, g = g, w = w)
+}
+
+# Tested-version notice.
+# The xgb point estimate and bootstrap are sensitive to the xgboost version:
+# cross-version prediction drift is diffuse (~0.05 median per ward between
+# 1.7.7.1 and 3.1.2.1 on identical data) and is NOT fixable by setting
+# base_score/tree_method/max_bin explicitly. povmap's results were validated
+# against xgboost 3.1.2.1, so estimates produced on another version may differ
+# from published ones even on identical data and tuning.
+#
+# This used to stop(). It no longer does: pinning to a single version makes the
+# package unusable on every future xgboost release, which is a worse problem than
+# the drift it guards against. The finding is preserved as a one-time warning so
+# the user can judge whether cross-version comparability matters for their use.
+# Suppress with options(povmap.skip_xgb_version_check = TRUE).
+.povmap_xgb_tested <- "3.1.2.1"
+.povmap_xgb_warned <- new.env(parent = emptyenv())
+.assert_xgb_version <- function() {
+  if (isTRUE(getOption("povmap.skip_xgb_version_check", FALSE))) return(invisible(NULL))
+  found <- as.character(utils::packageVersion("xgboost"))
+  if (identical(found, .povmap_xgb_tested)) return(invisible(NULL))
+  # warn once per session: three entry points call this, and xgb_tune/xgb_cv call
+  # it inside loops, so a per-call warning would bury the message it is making.
+  if (isTRUE(.povmap_xgb_warned$done)) return(invisible(NULL))
+  .povmap_xgb_warned$done <- TRUE
+  warning(sprintf(
+    paste0("xgboost %s detected; povmap's xgb results were validated against %s.\n",
+           "  Point estimates and bootstrap intervals are version-sensitive: drift of\n",
+           "  ~0.05 median per ward was observed between 1.7.7.1 and 3.1.2.1 on identical\n",
+           "  data and tuning, and is not removable by setting base_score, tree_method or\n",
+           "  max_bin. Results remain internally consistent on any single version; only\n",
+           "  cross-version comparisons are affected.\n",
+           "  (Silence with options(povmap.skip_xgb_version_check = TRUE).)"),
+    found, .povmap_xgb_tested), call. = FALSE)
+
+  invisible(NULL)
+}
+
 #' Extreme gradient boosting for domain-level averages
 #'
 #' The function \code{xgb} employs extreme gradient boosting to estimate domain-level averages, particularly
@@ -163,8 +280,26 @@
 #'   estimate. Supply the same estimator used to build the published direct-
 #'   estimate confidence intervals (typically the cluster-robust / Taylor SE) so
 #'   the perturbation injects exactly the uncertainty the target is reported
-#'   with. An error is raised if any benchmark group is missing from the vector.
+#'   with. An error is raised if any benchmark group is missing from the vector,
+#'   or (with \code{perturb_benchmark = TRUE}) if any supplied value is zero,
+#'   negative or non-finite; see \code{allow_zero_benchmark_se}.
 #'   Defaults to \code{NULL} (use the internal Horvitz-Thompson SE).
+#' @param allow_zero_benchmark_se logical. A direct estimate at the boundary of
+#'   its range (a proportion of exactly 0 or 1, an all-identical sample) has a
+#'   design-based standard error of exactly zero. With
+#'   \code{perturb_benchmark = TRUE} such a value would make the perturbation add
+#'   no uncertainty for that group, and the intervals of its domains collapse
+#'   towards the benchmark target. \code{xgb()} therefore stops when any supplied
+#'   \code{benchmark_target_se} is zero, and likewise when the internal
+#'   Horvitz-Thompson standard error used if \code{benchmark_target_se} is
+#'   \code{NULL} is zero (every sampled unit of a benchmark group has the same
+#'   outcome, or the group has fewer than two units). The right replacement depends on what the
+#'   caller knows (for a proportion, a boundary-corrected standard error such as
+#'   Agresti-Coull, which needs the effective sample size), so the package never
+#'   substitutes one. Set \code{allow_zero_benchmark_se = TRUE} to proceed
+#'   deliberately with a zero (a warning names the groups). Negative or
+#'   non-finite values always stop. Not checked when
+#'   \code{perturb_benchmark = FALSE}. Defaults to \code{FALSE}.
 #' @param configs optional data.frame of hyperparameter configurations to
 #'   average over (configuration averaging), one per row, typically the result
 #'   of \code{\link{xgb_top_configs}}. Columns are \code{xgb()}'s hyperparameter
@@ -232,95 +367,6 @@
 #'          map_dom_id = "PB")
 #'}
 
-# Horvitz-Thompson variance of a weighted mean for each group.
-# Returns a named numeric vector of variances (one entry per group).
-# Formula: V_HT(ȳ_g) = n_g / ((n_g-1) * (Σw)²) * Σ w²(y - ȳ)²
-# Equivalent to the with-replacement linearisation used by survey::svymean.
-ht_var_weighted_mean <- function(y, w, g) {
-  # Horvitz-Thompson / Hajek variance of a weighted MEAN (ratio estimator
-  # yhat = sum(w y) / sum(w)) under Poisson sampling:
-  #   sigma_hat^2 = (1 / (sum w)^2) * sum_i w_i (w_i - 1) (y_i - yhat)^2
-  # The residual (y_i - yhat) is REQUIRED: sum w(w-1) y_i^2 is the variance of
-  # the TOTAL (sum w y); for the ratio mean the deviations from the estimated
-  # mean must be used, otherwise the variance scales with E[y^2] rather than the
-  # dispersion of y and is grossly inflated for outcomes whose mean is far from
-  # zero (e.g. a proportion near 0.6: ~7x too large in variance, ~3x in SE).
-  # Census-validated: the centered form reproduces the design-based province
-  # cluster-robust (Taylor) SE used elsewhere in the project (0.043 vs 0.044 for
-  # DRC poverty); the uncentered form gave 0.144.
-  g <- as.character(g)
-  groups <- unique(g)
-  result <- setNames(numeric(length(groups)), groups)
-  for (grp in groups) {
-    idx  <- g == grp
-    y_g  <- y[idx];  w_g <- w[idx];  n_g <- sum(idx)
-    if (n_g < 2L) { result[grp] <- NA_real_; next }
-    ybar_g <- sum(w_g * y_g) / sum(w_g)
-    result[grp] <- sum(w_g * (w_g - 1) * (y_g - ybar_g)^2) / sum(w_g)^2
-  }
-  result
-}
-
-# Population-weighted mean of a per-cell bootstrap quantity within each domain.
-# collapse::fmean() reads g = NULL as "no grouping" and w = NULL as "no
-# weights", so a grouping or weight looked up with $ by a column name the data
-# frame does not have (df$name is NULL, not an error) returns ONE unweighted
-# mean of every cell, which then recycles across all domains. That is how the
-# benchmarked bootstrap truth was computed from 7f9deb0 until this fix:
-# B_sub$domains and B_sub$wts do not exist, because sub_predictions names its
-# columns after fwk$domains and fwk$pop_weights. Refuse NULL or mis-sized
-# arguments so the failure is loud.
-.boot_domain_wmean <- function(x, g, w, what) {
-  n <- length(x)
-  if (n == 0L)
-    stop(sprintf("bootstrap aggregation of %s: the values are NULL or empty.", what), call. = FALSE)
-  if (is.null(g))
-    stop(sprintf("bootstrap aggregation of %s: the domain grouping is NULL. Was it looked up by a column name the data does not contain?", what), call. = FALSE)
-  if (is.null(w))
-    stop(sprintf("bootstrap aggregation of %s: the population weight is NULL. Was it looked up by a column name the data does not contain?", what), call. = FALSE)
-  if (length(g) != n)
-    stop(sprintf("bootstrap aggregation of %s: the domain grouping has length %d, the values %d.", what, length(g), n), call. = FALSE)
-  if (length(w) != n)
-    stop(sprintf("bootstrap aggregation of %s: the population weight has length %d, the values %d.", what, length(w), n), call. = FALSE)
-  collapse:::fmean(x = x, g = g, w = w)
-}
-
-# Tested-version notice.
-# The xgb point estimate and bootstrap are sensitive to the xgboost version:
-# cross-version prediction drift is diffuse (~0.05 median per ward between
-# 1.7.7.1 and 3.1.2.1 on identical data) and is NOT fixable by setting
-# base_score/tree_method/max_bin explicitly. povmap's results were validated
-# against xgboost 3.1.2.1, so estimates produced on another version may differ
-# from published ones even on identical data and tuning.
-#
-# This used to stop(). It no longer does: pinning to a single version makes the
-# package unusable on every future xgboost release, which is a worse problem than
-# the drift it guards against. The finding is preserved as a one-time warning so
-# the user can judge whether cross-version comparability matters for their use.
-# Suppress with options(povmap.skip_xgb_version_check = TRUE).
-.povmap_xgb_tested <- "3.1.2.1"
-.povmap_xgb_warned <- new.env(parent = emptyenv())
-.assert_xgb_version <- function() {
-  if (isTRUE(getOption("povmap.skip_xgb_version_check", FALSE))) return(invisible(NULL))
-  found <- as.character(utils::packageVersion("xgboost"))
-  if (identical(found, .povmap_xgb_tested)) return(invisible(NULL))
-  # warn once per session: three entry points call this, and xgb_tune/xgb_cv call
-  # it inside loops, so a per-call warning would bury the message it is making.
-  if (isTRUE(.povmap_xgb_warned$done)) return(invisible(NULL))
-  .povmap_xgb_warned$done <- TRUE
-  warning(sprintf(
-    paste0("xgboost %s detected; povmap's xgb results were validated against %s.\n",
-           "  Point estimates and bootstrap intervals are version-sensitive: drift of\n",
-           "  ~0.05 median per ward was observed between 1.7.7.1 and 3.1.2.1 on identical\n",
-           "  data and tuning, and is not removable by setting base_score, tree_method or\n",
-           "  max_bin. Results remain internally consistent on any single version; only\n",
-           "  cross-version comparisons are affected.\n",
-           "  (Silence with options(povmap.skip_xgb_version_check = TRUE).)"),
-    found, .povmap_xgb_tested), call. = FALSE)
-
-  invisible(NULL)
-}
-
 xgb <- function(fixed,
                 smp_data,
                 smp_weights = NULL,
@@ -363,6 +409,7 @@ xgb <- function(fixed,
                 rescale_weights = TRUE,
                 perturb_benchmark = FALSE,
                 benchmark_target_se = NULL,
+                allow_zero_benchmark_se = FALSE,
                 verbose = FALSE,
                 configs = NULL,
                 config_seed = NULL,
@@ -623,6 +670,7 @@ xgb <- function(fixed,
       bm_ht_se <- setNames(rep(NA_real_, length(groups_bm)), groups_bm)
       hit <- intersect(groups_bm, nm)
       bm_ht_se[hit] <- as.numeric(benchmark_target_se[hit])
+      .check_benchmark_se(bm_ht_se[hit], "benchmark_target_se", allow_zero_benchmark_se)
       if (any(is.na(bm_ht_se))) stop(sprintf(
         "perturb_benchmark: benchmark_target_se is missing %d of %d benchmark groups: %s",
         sum(is.na(bm_ht_se)), length(bm_ht_se),
@@ -641,6 +689,9 @@ xgb <- function(fixed,
         warning("perturb_benchmark: some benchmark groups have n < 2; HT SE set to 0 for those groups.")
         bm_ht_se[is.na(bm_ht_se)] <- 0
       }
+      # The internal estimate is zero too when every sampled unit of a group has the same outcome (a direct
+      # estimate on the boundary of its range) or the group has fewer than 2 units: same guard as for a supplied SE.
+      .check_benchmark_se(bm_ht_se, "the internal Horvitz-Thompson standard error of the benchmark target", allow_zero_benchmark_se, tol = 1e-10)
       if (verbose) message(sprintf(
         "perturb_benchmark: internal HT SE at benchmark level - median %.4f, range [%.4f, %.4f]",
         median(bm_ht_se), min(bm_ht_se), max(bm_ht_se)

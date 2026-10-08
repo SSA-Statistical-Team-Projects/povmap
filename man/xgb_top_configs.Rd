@@ -38,14 +38,14 @@ next best by score, and cut to the \code{cap} best by score. Defaults 3 and 8.}
 }
 \value{
 a data.frame with one row per selected configuration, best first:
-the twelve hyperparameters under the names \code{\link{xgb}} uses
-(\code{nrounds}, \code{max_depth}, \code{colsample_bytree},
-\code{colsample_bylevel}, \code{colsample_bynode}, \code{subsample},
-\code{min_child_weight}, \code{eta}, \code{gamma}, \code{max_delta_step},
-\code{lambda}, \code{alpha}), \code{weight} (equal weights summing to 1),
-\code{cv_score} (mean cross-validation error) and \code{rank} (rank of the
-score among all candidates). It can be passed to \code{xgb(configs = )}
-as it is.
+  the twelve hyperparameters under the names \code{\link{xgb}} uses
+  (\code{nrounds}, \code{max_depth}, \code{colsample_bytree},
+  \code{colsample_bylevel}, \code{colsample_bynode}, \code{subsample},
+  \code{min_child_weight}, \code{eta}, \code{gamma}, \code{max_delta_step},
+  \code{lambda}, \code{alpha}), \code{weight} (equal weights summing to 1),
+  \code{cv_score} (mean cross-validation error) and \code{rank} (rank of the
+  score among all candidates). It can be passed to \code{xgb(configs = )}
+  as it is.
 }
 \description{
 Configuration averaging fits several near-equivalent tuned configurations
