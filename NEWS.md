@@ -8,8 +8,10 @@
   boundary-corrected standard error (for a proportion at 0 or 1, Agresti-Coull, which needs the
   effective sample size that only the caller has); the package does not substitute one. A zero
   can be accepted deliberately with the new `allow_zero_benchmark_se = TRUE` (a warning names the
-  groups); negative and non-finite values always stop. With `perturb_benchmark = FALSE` the
-  supplied standard errors are not used and nothing is checked.
+  groups); negative and non-finite values always stop. The internal Horvitz-Thompson standard
+  error used when no `benchmark_target_se` is supplied is checked the same way (it is zero when
+  every sampled unit of a benchmark group has the same outcome, or the group has fewer than two
+  units). With `perturb_benchmark = FALSE` no standard error is used and nothing is checked.
   - Test: `tests/testthat/test_xgb_benchmark_se_guard.R`.
 
 * **megb's bootstrap is centred on the cross-fitted fit.** With

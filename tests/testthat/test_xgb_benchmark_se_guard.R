@@ -14,7 +14,9 @@
 #   3. perturb_benchmark = FALSE does not look at the SEs, so a zero target SE is fine;
 #   4. allow_zero_benchmark_se = TRUE proceeds with a warning, and a zero-SE group's replicates are unperturbed
 #      (benchmarked variance equals the unperturbed variance) while the other groups' are not;
-#   5. valid SEs pass silently, and the guard does not apply to the internal Horvitz-Thompson fallback.
+#   5. the internal Horvitz-Thompson fallback (no benchmark_target_se) is guarded the same way: a group whose
+#      sampled units all share one outcome has an internal SE of exactly 0;
+#   6. valid SEs pass silently.
 
 make_guard_data <- function(seed = 11) {
   set.seed(seed)
@@ -84,11 +86,28 @@ test_that("allow_zero_benchmark_se = TRUE proceeds deliberately, with a warning,
                   fit$Var_bench_unperturbed$Var_bench_unperturbed[match(doms_r1, fit$Var_bench_unperturbed$Domain)]))
 })
 
-test_that("valid standard errors pass silently, and the internal fallback is not affected", {
+test_that("the internal Horvitz-Thompson fallback is guarded the same way", {
+  d <- make_guard_data()
+  fit <- quiet(fit_guard(d, NULL))                                                         # ordinary data: SE > 0, passes
+  expect_s3_class(fit, "xgb")
+  ## every sampled unit of R2 has the same outcome: the internal HT SE of R2 is exactly 0
+  d2 <- d; d2$smp$y[d2$smp$reg == "R2"] <- 0.4
+  expect_error(quiet(fit_guard(d2, NULL)), "internal Horvitz-Thompson standard error")
+  expect_error(quiet(fit_guard(d2, NULL)), "zero for 1 benchmark group")
+  expect_error(quiet(fit_guard(d2, NULL)), "R2")
+  expect_error(quiet(fit_guard(d2, NULL)), "Agresti-Coull")
+  ## deliberate override: proceeds with a warning
+  expect_warning(f2 <- suppressMessages(fit_guard(d2, NULL, allow_zero_benchmark_se = TRUE)), "internal Horvitz-Thompson")
+  expect_s3_class(f2, "xgb")
+  ## no perturbation, no check
+  expect_s3_class(quiet(fit_guard(d2, NULL, perturb = FALSE)), "xgb")
+  ## supplying positive SEs for every group avoids the internal estimate altogether
+  expect_s3_class(quiet(fit_guard(d2, c(R1 = 0.02, R2 = 0.02, R3 = 0.02))), "xgb")
+})
+
+test_that("valid standard errors pass silently", {
   d <- make_guard_data()
   expect_no_warning(suppressMessages(fit_guard(d, c(R1 = 0.02, R2 = 0.01, R3 = 0.03))))
-  fit <- quiet(fit_guard(d, NULL))                                                         # internal Horvitz-Thompson SE
-  expect_s3_class(fit, "xgb")
   ## a very small but positive SE is valid
   expect_s3_class(quiet(fit_guard(d, c(R1 = 1e-8, R2 = 0.01, R3 = 0.03))), "xgb")
 })

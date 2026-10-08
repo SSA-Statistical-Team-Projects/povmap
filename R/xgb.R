@@ -173,7 +173,10 @@
 #'   \code{perturb_benchmark = TRUE} such a value would make the perturbation add
 #'   no uncertainty for that group, and the intervals of its domains collapse
 #'   towards the benchmark target. \code{xgb()} therefore stops when any supplied
-#'   \code{benchmark_target_se} is zero. The right replacement depends on what the
+#'   \code{benchmark_target_se} is zero, and likewise when the internal
+#'   Horvitz-Thompson standard error used if \code{benchmark_target_se} is
+#'   \code{NULL} is zero (every sampled unit of a benchmark group has the same
+#'   outcome, or the group has fewer than two units). The right replacement depends on what the
 #'   caller knows (for a proportion, a boundary-corrected standard error such as
 #'   Agresti-Coull, which needs the effective sample size), so the package never
 #'   substitutes one. Set \code{allow_zero_benchmark_se = TRUE} to proceed
@@ -246,6 +249,32 @@
 #'          map_obj = shape_austria_dis, indicator = c("Mean"),
 #'          map_dom_id = "PB")
 #'}
+
+.check_benchmark_se <- function(se, what, allow_zero) {
+  # A zero, negative or non-finite standard error makes the benchmark-target perturbation meaningless (rnorm()
+  # with sd = 0 adds nothing; a negative or non-finite sd gives NaN). The package does not substitute a value:
+  # the right one depends on what the caller knows (e.g. the effective sample size behind an Agresti-Coull SE).
+  show <- function(g) paste0(paste(utils::head(g, 10), collapse = ", "), if (length(g) > 10) sprintf(" (and %d more)", length(g) - 10) else "")
+  g <- names(se)
+  bad <- g[!is.finite(se) | se < 0]
+  if (length(bad)) stop(sprintf(
+    "perturb_benchmark: %s must be finite and non-negative; invalid for %d benchmark group(s): %s. Supply a valid standard error for them.",
+    what, length(bad), show(bad)), call. = FALSE)
+  zero <- g[se == 0]
+  if (length(zero)) {
+    if (!isTRUE(allow_zero)) stop(sprintf(
+      paste0("perturb_benchmark: %s is zero for %d benchmark group(s): %s. ",
+             "With a zero standard error the perturbation adds no uncertainty there, and the intervals of those ",
+             "domains collapse towards the benchmark target. This happens when the direct estimate sits on the ",
+             "boundary of its range, e.g. a proportion of exactly 0 or 1. Supply a boundary-corrected standard ",
+             "error, such as an Agresti-Coull standard error for a proportion at 0 or 1 (it needs the effective ",
+             "sample size, which only you have). To proceed deliberately with a zero, set allow_zero_benchmark_se = TRUE."),
+      what, length(zero), show(zero)), call. = FALSE)
+    warning(sprintf("perturb_benchmark: allow_zero_benchmark_se = TRUE; %s is zero for %d group(s) (%s), so the perturbation adds no uncertainty there.",
+                    what, length(zero), show(zero)), call. = FALSE)
+  }
+  invisible(se)
+}
 
 # Horvitz-Thompson variance of a weighted mean for each group.
 # Returns a named numeric vector of variances (one entry per group).
@@ -639,28 +668,7 @@ xgb <- function(fixed,
       bm_ht_se <- setNames(rep(NA_real_, length(groups_bm)), groups_bm)
       hit <- intersect(groups_bm, nm)
       bm_ht_se[hit] <- as.numeric(benchmark_target_se[hit])
-      # A zero, negative or non-finite supplied SE makes the perturbation meaningless (rnorm() with sd = 0 adds
-      # nothing; a negative or non-finite sd gives NaN). The package does not substitute a value: the right one
-      # depends on what the caller knows (e.g. the effective sample size behind an Agresti-Coull SE).
-      .show_groups <- function(g) paste0(paste(utils::head(g, 10), collapse = ", "), if (length(g) > 10) sprintf(" (and %d more)", length(g) - 10) else "")
-      bad_se <- hit[!is.finite(bm_ht_se[hit]) | bm_ht_se[hit] < 0]
-      if (length(bad_se)) stop(sprintf(
-        paste0("perturb_benchmark: benchmark_target_se must be finite and non-negative; invalid for %d benchmark group(s): %s. ",
-               "Supply a valid standard error for them."),
-        length(bad_se), .show_groups(bad_se)), call. = FALSE)
-      zero_se <- hit[bm_ht_se[hit] == 0]
-      if (length(zero_se)) {
-        if (!isTRUE(allow_zero_benchmark_se)) stop(sprintf(
-          paste0("perturb_benchmark: benchmark_target_se is zero for %d benchmark group(s): %s. ",
-                 "With a zero standard error the perturbation adds no uncertainty there, and the intervals of those ",
-                 "domains collapse towards the benchmark target. This happens when the direct estimate sits on the ",
-                 "boundary of its range, e.g. a proportion of exactly 0 or 1. Supply a boundary-corrected standard ",
-                 "error, such as an Agresti-Coull standard error for a proportion at 0 or 1 (it needs the effective ",
-                 "sample size, which only you have). To proceed deliberately with a zero, set allow_zero_benchmark_se = TRUE."),
-          length(zero_se), .show_groups(zero_se)), call. = FALSE)
-        warning(sprintf("perturb_benchmark: allow_zero_benchmark_se = TRUE; benchmark_target_se is zero for %d group(s) (%s), so the perturbation adds no uncertainty there.",
-                        length(zero_se), .show_groups(zero_se)), call. = FALSE)
-      }
+      .check_benchmark_se(bm_ht_se[hit], "benchmark_target_se", allow_zero_benchmark_se)
       if (any(is.na(bm_ht_se))) stop(sprintf(
         "perturb_benchmark: benchmark_target_se is missing %d of %d benchmark groups: %s",
         sum(is.na(bm_ht_se)), length(bm_ht_se),
@@ -679,6 +687,9 @@ xgb <- function(fixed,
         warning("perturb_benchmark: some benchmark groups have n < 2; HT SE set to 0 for those groups.")
         bm_ht_se[is.na(bm_ht_se)] <- 0
       }
+      # The internal estimate is zero too when every sampled unit of a group has the same outcome (a direct
+      # estimate on the boundary of its range) or the group has fewer than 2 units: same guard as for a supplied SE.
+      .check_benchmark_se(bm_ht_se, "the internal Horvitz-Thompson standard error of the benchmark target", allow_zero_benchmark_se)
       if (verbose) message(sprintf(
         "perturb_benchmark: internal HT SE at benchmark level - median %.4f, range [%.4f, %.4f]",
         median(bm_ht_se), min(bm_ht_se), max(bm_ht_se)
