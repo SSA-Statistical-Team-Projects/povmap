@@ -1,5 +1,28 @@
 # povmap 1.0.1
 
+* **`xgb()` no longer lets the benchmark-target perturbation blow up for a group pinned at the boundary (arcsine).**
+  With `perturb_benchmark = TRUE` the rate-scale standard error of a benchmark target is turned
+  into an increment on the transformed scale by the delta-method slope dz/dp, evaluated at the
+  group's mean benchmarked rate. For the arcsine, dz/dp = 1 / (2 sqrt(p (1 - p))) is unbounded
+  at 0 and 1, and the rate was floored at 1e-9, giving a slope of about 100 (a finite
+  difference over 1e-4) for a group benchmarked to a target of exactly 0. With a zero standard
+  error that was harmless; with the positive, boundary-corrected one the guard now asks for
+  (Agresti-Coull), the perturbation became a fraction of a radian to a radian: about half of
+  the replicates ended at 0, the rest spread over (0, 1), and the upper bounds of the group's
+  domains reached 0.1 to 0.6 (found in the DRC audit, ROUND3 section 4). The slope is now
+  evaluated at no less than the target standard error from either bound: the rate is clamped
+  into [se, 1 - se] (arcsine only; at se of 0.5 or more the slope is taken at 0.5). **Results
+  change only for a group whose mean benchmarked rate lies within one standard error of 0 or 1
+  and whose standard error is positive**; for every other group, and when the standard error is
+  0 or missing, the slope, and so the intervals, are identical to before. The log and square-root
+  transformations are unchanged: their slopes (1/p, 1/(2 sqrt(p))) are unbounded at 0 too, but
+  only a log-scale outcome with a mean near 0 and a positive standard error would be affected,
+  and none of the indicators estimated so far is.
+  - Test: `tests/testthat/test_xgb_perturb_slope.R` (the helper is unchanged away from the
+    boundary; through `xgb()` the realised slope equals the old one for groups away from the
+    boundary and the clamped one, about 7 rather than about 100, for a group pinned at zero,
+    whose upper bounds stay of the order of the standard error).
+
 * **`xgb()` has an opt-in basic-bootstrap sign for the benchmarked interval (`interval_method = "basic"`).**
   A replicate's error is its benchmarked estimate minus its simulated truth, centred. The
   interval was built as the estimate *plus* the quantiles of that error, i.e. [estimate + q(a/2),

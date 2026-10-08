@@ -85,6 +85,26 @@ ht_var_weighted_mean <- function(y, w, g) {
   else c(lower = fns$from(fns$to(est) + q[1]), upper = fns$from(fns$to(est) + q[2]))
 }
 
+# Delta-method slope dz/dp of the transformation at a benchmark group's mean benchmarked rate. xgb() uses it to turn the
+# rate-scale benchmark-target SE into an increment on the transformed scale (benchmark-target perturbation).
+# For arcsin the slope, 1 / (2 sqrt(p (1 - p))), is unbounded at 0 and 1. A group benchmarked to a target on the boundary has
+# its mean benchmarked rate there; the slope was then taken at about 1e-9, i.e. about 100 (a finite difference over 1e-4), so a positive target SE (e.g. an
+# Agresti-Coull SE of 0.5 percentage points) became a perturbation of order a radian: half the replicates ended at 0 and the
+# rest spread over (0, 1), and the upper bounds of the group's domains reached 0.1 to 0.6. (With an SE of exactly 0 the product
+# was 0 and hid this.) The slope is now taken at no less than the target SE from either bound: the rate is clamped into
+# [se, 1 - se]. A group whose mean rate lies at least one SE from the boundary is unchanged (the clamp does not bind), as are
+# the other transformations. Found by the DRC audit (ROUND3_RESULTS_20261008.md, section 4).
+.perturb_slope <- function(pbar, se, transformation, transform_outcome) {
+  lo <- 1e-9
+  hi <- if (transformation == "arcsin") 1 - 1e-9 else Inf
+  pbar <- min(max(pbar, lo), hi)
+  if (transformation == "arcsin" && is.finite(se) && se > 0)
+    pbar <- if (se >= 0.5) 0.5 else min(max(pbar, se), 1 - se)
+  eps <- 1e-4
+  p_hi <- min(pbar + eps, hi); p_lo <- max(pbar - eps, lo)
+  as.numeric((transform_outcome(p_hi)$y - transform_outcome(p_lo)$y) / (p_hi - p_lo))
+}
+
 # Population-weighted mean of a per-cell bootstrap quantity within each domain.
 # collapse::fmean() reads g = NULL as "no grouping" and w = NULL as "no
 # weights", so a grouping or weight looked up with $ by a column name the data
@@ -1167,10 +1187,8 @@ xgb <- function(fixed,
         } else {
           lo   <- 1e-9
           hi   <- if (transformation == "arcsin") 1 - 1e-9 else Inf
-          pbar <- min(max(mean(B_results_bench[, cols], na.rm = TRUE), lo), hi)
-          eps  <- 1e-4
-          p_hi <- min(pbar + eps, hi); p_lo <- max(pbar - eps, lo)
-          dzdp <- (transform_outcome(p_hi)$y - transform_outcome(p_lo)$y) / (p_hi - p_lo)
+          # slope at the group's mean benchmarked rate, kept at least one target SE away from 0 and 1 (arcsin)
+          dzdp <- .perturb_slope(mean(B_results_bench[, cols], na.rm = TRUE), as.numeric(bm_ht_se[grp]), transformation, transform_outcome)
           tb   <- transform_outcome(pmin(pmax(B_results_bench[, cols], lo), hi))$y
           tb   <- tb + bm_perturbations[, grp] * as.numeric(dzdp)
           B_results_bench[, cols] <- back_transform_outcome(tb)
