@@ -55,6 +55,34 @@ ht_var_weighted_mean <- function(y, w, g) {
   result
 }
 
+# Forward and inverse maps for interval_scale = "transformed". They are self-contained and defined for the
+# whole real line on the way back, so that every back-transformed bound is valid: arcsin returns to [0, 1]
+# (as arcsin_transform_back does), log to the positive half line, sqrt to the non-negative one. They do not
+# use the data-dependent shift of log_transform(): a log outcome must be positive, and the forward map floors
+# its argument at a tiny positive number so that a replicate that is exactly 0 does not give -Inf.
+.interval_scale_fns <- function(transformation) {
+  switch(transformation,
+    "no"     = list(to = function(y) y, from = function(t) t),
+    "arcsin" = list(to = function(y) asin(sqrt(pmin(pmax(y, 0), 1))),
+                    from = function(t) sin(pmax(0, pmin(t, pi / 2)))^2),
+    "log"    = list(to = function(y) log(pmax(y, 1e-12)), from = function(t) exp(t)),
+    "sqrt"   = list(to = function(y) sqrt(pmax(y, 0)), from = function(t) pmax(t, 0)^2),
+    stop("interval_scale = \"transformed\" is implemented for transformation \"no\", \"arcsin\", \"log\" and \"sqrt\", not \"",
+         transformation, "\".", call. = FALSE))
+}
+
+# Interval for one domain on the transformed scale. `est` is the point estimate, `rep_est` its replicates
+# and `rep_truth` the simulated truths (NULL for the unbenchmarked interval, which uses the spread of the
+# replicates around their own mean). The errors are centred on the transformed scale, their quantiles are
+# added to the transformed estimate (the convention of the natural-scale interval) and the bounds are
+# back-transformed.
+.interval_transformed <- function(est, rep_est, rep_truth = NULL, fns, conf_level) {
+  d <- if (is.null(rep_truth)) fns$to(rep_est) else fns$to(rep_est) - fns$to(rep_truth)
+  d <- d - mean(d)
+  q <- stats::quantile(d, probs = c((1 - conf_level) / 2, 1 - (1 - conf_level) / 2), names = FALSE)
+  c(lower = fns$from(fns$to(est) + q[1]), upper = fns$from(fns$to(est) + q[2]))
+}
+
 # Population-weighted mean of a per-cell bootstrap quantity within each domain.
 # collapse::fmean() reads g = NULL as "no grouping" and w = NULL as "no
 # weights", so a grouping or weight looked up with $ by a column name the data
@@ -326,6 +354,32 @@ ht_var_weighted_mean <- function(y, w, g) {
 #' @param config_seed integer seed for the bootstrap's configuration draws.
 #'   Defaults to \code{seed}. The draws are made with the global random-number
 #'   state saved and restored, so nothing else changes.
+#' @param interval_scale scale on which the bootstrap intervals are built, for
+#'   the residual and case bootstraps. \code{"natural"} (the default) takes
+#'   quantiles of the replicates on the scale of the estimates, as before; the
+#'   interval can then leave the range of the outcome (a proportion above 1, a
+#'   negative inequality index) and is truncated afterwards (see below).
+#'   \code{"transformed"} builds it on the model's transformation scale: for the
+#'   benchmarked interval the benchmarked replicates and the simulated truths are
+#'   transformed, the quantiles of their (centred) differences are added to the
+#'   transformed benchmarked estimate, and the result is back-transformed; the
+#'   unbenchmarked interval is the same construction on the replicates of the
+#'   point estimate. Bounds then stay valid by construction (\eqn{[0, 1]} for
+#'   \code{"arcsin"}, positive for \code{"log"}, non-negative for \code{"sqrt"}),
+#'   with no clipping, and a ward whose interval would sit on a bound gets a
+#'   proper interval instead. Available for \code{transformation} in
+#'   \code{"no"}, \code{"arcsin"}, \code{"log"} and \code{"sqrt"}, and not with
+#'   \code{boot_estimates = TRUE}. The point estimates and the variances are
+#'   unaffected.
+#' @param keep_replicates logical. If \code{TRUE}, the result contains
+#'   \code{replicates}: for the residual bootstrap the per-replicate (rows) and
+#'   per-domain (columns) point estimates (\code{estimate}), benchmarked estimates
+#'   after the benchmark-target perturbation (\code{benchmarked}) and before it
+#'   (\code{benchmarked_unperturbed}), simulated truths (\code{truth}), the
+#'   perturbations (\code{benchmark_perturbation}) and the domain labels, so that
+#'   intervals can be rebuilt on any scale without re-running the bootstrap.
+#'   Defaults to \code{FALSE}, as the matrices have \code{B} x (number of
+#'   domains) entries each.
 #' @importFrom purrr as_vector
 #' @importFrom collapse fmean
 #' @importFrom foreach foreach %dopar% %do%
@@ -413,11 +467,18 @@ xgb <- function(fixed,
                 verbose = FALSE,
                 configs = NULL,
                 config_seed = NULL,
+                interval_scale = c("natural", "transformed"),
+                keep_replicates = FALSE,
                 ...){
 
   #1. Initialize
   .assert_xgb_version()
   smearing <- match.arg(smearing)
+  interval_scale <- match.arg(interval_scale)
+  if (interval_scale == "transformed") {
+    if (isTRUE(boot_estimates)) stop("interval_scale = \"transformed\" is not available with boot_estimates = TRUE.")
+    interval_fns <- .interval_scale_fns(transformation)   # stops for transformations without a bounded, invertible form
+  }
   out_call <- match.call()
   # default to using sample weights for benchmarking if internal benchmarking
   if (is.null(benchmark_weights) & !is.null(smp_weights)) {
@@ -1049,6 +1110,8 @@ xgb <- function(fixed,
     # This propagates survey-sampling uncertainty of the state direct estimate into
     # the benchmarked CIs. Equivalent to within-loop perturbation of B_sample_bm
     # under the linear approximation that the benchmark adjusts wards additively.
+    B_results_bench_unperturbed <- NULL
+    if (keep_replicates && !is.null(benchmark) && !is.null(B_results_bench)) B_results_bench_unperturbed <- B_results_bench
     if (!is.null(bm_perturbations) && !is.null(benchmark)) {
       # Save unperturbed per-ward Var_bench BEFORE adding noise / clipping, so it
       # is not censored by the [0,1] clip applied to perturbed replicates below.
@@ -1125,6 +1188,8 @@ xgb <- function(fixed,
     results$Mean_boot_bench <- NA
     results$Lower_bench <- NA
     results$Upper_bench <- NA
+    results$Lower_tr <- NA   # interval_scale = "transformed": unbenchmarked bounds
+    results$Upper_tr <- NA
 
     if (!is.null(benchmark)) {
       results <- left_join (results, domains_pred[, c("hat","hat_pc","hat_bench","domains")],by="domains")
@@ -1156,6 +1221,11 @@ xgb <- function(fixed,
       results$Lower_boot[l] <- quantile(temp, probs = (1-conf_level)/2)
       results$Upper_boot[l] <- quantile(temp, probs = 1-(1-conf_level)/2)
       results$Var_boot[l] <- var(temp)
+      if (interval_scale == "transformed") {
+        ci_tr <- .interval_transformed(est = results$hat_pc[l], rep_est = temp, fns = interval_fns, conf_level = conf_level)
+        results$Lower_tr[l] <- ci_tr[["lower"]]
+        results$Upper_tr[l] <- ci_tr[["upper"]]
+      }
       if (!is.null(benchmark)) {
         resid <- B_results_bench[,l]-B_results_truth[,l]
         resid <- resid - mean(resid)
@@ -1169,6 +1239,13 @@ xgb <- function(fixed,
         results$Mean_boot_bench[l] <- mean(temp_bench)
         results$Lower_bench[l] <- results$hat_bench[l] + quantile(resid, probs = (1-conf_level)/2)
         results$Upper_bench[l] <- results$hat_bench[l] + quantile(resid, probs = 1-(1-conf_level)/2)
+        if (interval_scale == "transformed") {
+          # same convention (estimate + quantiles of the centred error), but on the transformation scale
+          ci_tr <- .interval_transformed(est = results$hat_bench[l], rep_est = temp_bench, rep_truth = B_results_truth[,l],
+                                         fns = interval_fns, conf_level = conf_level)
+          results$Lower_bench[l] <- ci_tr[["lower"]]
+          results$Upper_bench[l] <- ci_tr[["upper"]]
+        }
       } # Close benchmark
     } # close loop over areas
 
@@ -1220,6 +1297,22 @@ xgb <- function(fixed,
     } # close use boot estimates
     colnames(result$var)[2]="Mean"
     colnames(result$ind)[2]="Mean"
+    if (interval_scale == "transformed") {
+      # unbenchmarked bounds built on the transformation scale (Lower_bench / Upper_bench were set in the loop)
+      result$CI$Lower <- results$Lower_tr
+      result$CI$Upper <- results$Upper_tr
+    }
+    if (keep_replicates) {
+      with_domains <- function(m) { if (!is.null(m)) colnames(m) <- as.character(B_results_domains); m }
+      has_bench <- !is.null(benchmark) && bootstrap_type == "residual"
+      result$replicates <- list(
+        domains = as.character(B_results_domains), B = B, transformation = transformation,
+        estimate = with_domains(B_results_pc),
+        benchmarked = if (has_bench) with_domains(B_results_bench) else NULL,
+        benchmarked_unperturbed = if (has_bench) with_domains(B_results_bench_unperturbed) else NULL,
+        truth = if (has_bench) with_domains(B_results_truth) else NULL,
+        benchmark_perturbation = bm_perturbations)
+    }
   } # close bootstrap==T
   else {
     # Bootstrap not selected

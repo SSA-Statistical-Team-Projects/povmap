@@ -50,6 +50,8 @@ xgb(
   verbose = FALSE,
   configs = NULL,
   config_seed = NULL,
+  interval_scale = c("natural", "transformed"),
+  keep_replicates = FALSE,
   ...
 )
 }
@@ -263,6 +265,34 @@ fitted booster; \code{model} is the first one's).}
 \item{config_seed}{integer seed for the bootstrap's configuration draws.
 Defaults to \code{seed}. The draws are made with the global random-number
 state saved and restored, so nothing else changes.}
+
+\item{interval_scale}{scale on which the bootstrap intervals are built, for
+  the residual and case bootstraps. \code{"natural"} (the default) takes
+  quantiles of the replicates on the scale of the estimates, as before; the
+  interval can then leave the range of the outcome (a proportion above 1, a
+  negative inequality index) and is truncated afterwards (see below).
+  \code{"transformed"} builds it on the model's transformation scale: for the
+  benchmarked interval the benchmarked replicates and the simulated truths are
+  transformed, the quantiles of their (centred) differences are added to the
+  transformed benchmarked estimate, and the result is back-transformed; the
+  unbenchmarked interval is the same construction on the replicates of the
+  point estimate. Bounds then stay valid by construction (\eqn{[0, 1]} for
+  \code{"arcsin"}, positive for \code{"log"}, non-negative for \code{"sqrt"}),
+  with no clipping, and a ward whose interval would sit on a bound gets a
+  proper interval instead. Available for \code{transformation} in
+  \code{"no"}, \code{"arcsin"}, \code{"log"} and \code{"sqrt"}, and not with
+  \code{boot_estimates = TRUE}. The point estimates and the variances are
+  unaffected.}
+
+\item{keep_replicates}{logical. If \code{TRUE}, the result contains
+  \code{replicates}: for the residual bootstrap the per-replicate (rows) and
+  per-domain (columns) point estimates (\code{estimate}), benchmarked estimates
+  after the benchmark-target perturbation (\code{benchmarked}) and before it
+  (\code{benchmarked_unperturbed}), simulated truths (\code{truth}), the
+  perturbations (\code{benchmark_perturbation}) and the domain labels, so that
+  intervals can be rebuilt on any scale without re-running the bootstrap.
+  Defaults to \code{FALSE}, as the matrices have \code{B} x (number of
+  domains) entries each.}
 
 \item{...}{additional parameters to be passed to \code{xgboost}.}
 

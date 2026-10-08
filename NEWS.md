@@ -14,6 +14,23 @@
   units). With `perturb_benchmark = FALSE` no standard error is used and nothing is checked.
   - Test: `tests/testthat/test_xgb_benchmark_se_guard.R`.
 
+* **`xgb()` can build its intervals on the transformation scale (`interval_scale = "transformed"`).**
+  The default (`"natural"`) is unchanged: quantiles of the bootstrap error on the scale of the
+  estimates, added to the estimate, then truncated to [0, 1] for `arcsin` (and at 0 for `poisson`).
+  Near a bound that piles intervals onto 0 or 1 (with the benchmark-target perturbation, half the
+  wards of a poverty map had an upper bound of exactly 1), and for `log` outcomes such as an
+  inequality index it gives negative lower bounds. With `"transformed"` the benchmarked replicates
+  and the simulated truths are transformed, the quantiles of their centred differences are added to
+  the transformed benchmarked estimate and the result is back-transformed; the unbenchmarked
+  interval is the same construction on the point-estimate replicates. Bounds are valid by
+  construction and nothing is clipped. Point estimates and variances do not change. Available for
+  `transformation` `"no"`, `"arcsin"`, `"log"` and `"sqrt"`.
+  - New opt-in `keep_replicates = TRUE` stores the per-replicate domain estimates (point,
+    benchmarked before and after the benchmark-target perturbation), the simulated truths and the
+    perturbations in `$replicates`, so intervals can be rebuilt on any scale without re-running the
+    bootstrap. Off by default (B x domains entries per matrix).
+  - Test: `tests/testthat/test_xgb_interval_scale.R`.
+
 * **megb's bootstrap is centred on the cross-fitted fit.** With
   `predict_sampled = "crossfit"`, each sampled domain is predicted by the fold model
   that held it out, and so is the bootstrap truth. The bootstrap outcome, however, was
