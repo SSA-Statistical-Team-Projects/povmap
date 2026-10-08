@@ -14,6 +14,16 @@
   units). With `perturb_benchmark = FALSE` no standard error is used and nothing is checked.
   - Test: `tests/testthat/test_xgb_benchmark_se_guard.R`.
 
+* **The zero-SE guard uses a scale-free tolerance, and does not run without a bootstrap.** A
+  benchmark-target standard error now counts as zero when it is at most `1e-8` times the larger of
+  the group's weighted mean outcome and the largest supplied standard error. The previous absolute
+  `1e-10` for the internal Horvitz-Thompson estimate missed a floating-point near-zero for large
+  outcomes (5e-10 for an outcome of 1e7, 5e-8 for 1e9), and the check of a supplied standard error
+  accepted `1e-17`. Standard errors are matched to the benchmark groups by name, as before, and a
+  test now locks this in (a reordered vector gives the same fit, and the guard names the right
+  group). With `bootstrap = FALSE` no perturbation is made, so the standard errors are not checked.
+  - Test: `tests/testthat/test_xgb_benchmark_se_guard_tolerance.R`.
+
 * **megb's bootstrap is centred on the cross-fitted fit.** With
   `predict_sampled = "crossfit"`, each sampled domain is predicted by the fold model
   that held it out, and so is the bootstrap truth. The bootstrap outcome, however, was

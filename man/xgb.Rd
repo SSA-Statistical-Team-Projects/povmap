@@ -228,13 +228,17 @@ towards the benchmark target. \code{xgb()} therefore stops when any supplied
 \code{benchmark_target_se} is zero, and likewise when the internal
 Horvitz-Thompson standard error used if \code{benchmark_target_se} is
 \code{NULL} is zero (every sampled unit of a benchmark group has the same
-outcome, or the group has fewer than two units). The right replacement depends on what the
+outcome, or the group has fewer than two units). A standard error counts as
+zero when it is at most \code{1e-8} times the larger of the group's weighted
+mean outcome and the largest supplied standard error, which also catches the
+floating-point near-zeros of the internal estimate. The right replacement depends on what the
 caller knows (for a proportion, a boundary-corrected standard error such as
 Agresti-Coull, which needs the effective sample size), so the package never
 substitutes one. Set \code{allow_zero_benchmark_se = TRUE} to proceed
 deliberately with a zero (a warning names the groups). Negative or
 non-finite values always stop. Not checked when
-\code{perturb_benchmark = FALSE}. Defaults to \code{FALSE}.}
+\code{perturb_benchmark = FALSE} or \code{bootstrap = FALSE}, since the
+standard errors are then not used. Defaults to \code{FALSE}.}
 
 \item{configs}{optional data.frame of hyperparameter configurations to
 average over (configuration averaging), one per row, typically the result
