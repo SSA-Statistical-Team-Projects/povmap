@@ -261,6 +261,30 @@ ht_var_weighted_mean <- function(y, w, g) {
   result
 }
 
+# Population-weighted mean of a per-cell bootstrap quantity within each domain.
+# collapse::fmean() reads g = NULL as "no grouping" and w = NULL as "no
+# weights", so a grouping or weight looked up with $ by a column name the data
+# frame does not have (df$name is NULL, not an error) returns ONE unweighted
+# mean of every cell, which then recycles across all domains. That is how the
+# benchmarked bootstrap truth was computed from 7f9deb0 until this fix:
+# B_sub$domains and B_sub$wts do not exist, because sub_predictions names its
+# columns after fwk$domains and fwk$pop_weights. Refuse NULL or mis-sized
+# arguments so the failure is loud.
+.boot_domain_wmean <- function(x, g, w, what) {
+  n <- length(x)
+  if (n == 0L)
+    stop(sprintf("bootstrap aggregation of %s: the values are NULL or empty.", what), call. = FALSE)
+  if (is.null(g))
+    stop(sprintf("bootstrap aggregation of %s: the domain grouping is NULL. Was it looked up by a column name the data does not contain?", what), call. = FALSE)
+  if (is.null(w))
+    stop(sprintf("bootstrap aggregation of %s: the population weight is NULL. Was it looked up by a column name the data does not contain?", what), call. = FALSE)
+  if (length(g) != n)
+    stop(sprintf("bootstrap aggregation of %s: the domain grouping has length %d, the values %d.", what, length(g), n), call. = FALSE)
+  if (length(w) != n)
+    stop(sprintf("bootstrap aggregation of %s: the population weight has length %d, the values %d.", what, length(w), n), call. = FALSE)
+  collapse:::fmean(x = x, g = g, w = w)
+}
+
 # Tested-version notice.
 # The xgb point estimate and bootstrap are sensitive to the xgboost version:
 # cross-version prediction drift is diffuse (~0.05 median per ward between
@@ -738,13 +762,13 @@ xgb <- function(fixed,
 
                                   B_sub$sim_t <- as.numeric(B_sub$hat_t) + sub_domains_draw
                                   # aggregate to area
-                                  B_domains <- collapse:::fmean(x=B_sub$sim_t,g=B_sub[,fwk$domains],w=B_sub[,fwk$pop_weights])
+                                  B_domains <- .boot_domain_wmean(x=B_sub$sim_t,g=B_sub[,fwk$domains],w=B_sub[,fwk$pop_weights],what="sim_t")
 
                                   B_domains <- data.frame("domains" = names(B_domains),"sim_t" = B_domains)
                                   if (!is.null(benchmark_level)) {
                                     B_domains[,benchmark_level]<-collapse:::ffirst(x=B_sub[,benchmark_level],g=B_sub[,fwk$domains])
                                   }
-                                  B_domains$hat_t <- collapse:::fmean(x=B_sub$hat_t,g=B_sub$domains,w=B_sub$wts)
+                                  B_domains$hat_t <- .boot_domain_wmean(x=B_sub$hat_t,g=B_sub[,fwk$domains],w=B_sub[,fwk$pop_weights],what="hat_t")
 
                                   #B_domains <- data.frame("domains" = unique(B_sub$domains),"sim" = B_domains)
                                   area_draw <- data.frame(domains=B_domains$domains,area_draw=resid_domains[sample(1:length(resid_domains),
@@ -765,9 +789,10 @@ xgb <- function(fixed,
                                   # the identity and sim_plus_area_pc == sim_plus_area exactly.
                                   sub_area_draw_pc <- area_draw$area_draw[match(B_sub[,fwk$domains],
                                                                                 area_draw$domains)]
-                                  B_domains$sim_plus_area_pc <- collapse:::fmean(
+                                  B_domains$sim_plus_area_pc <- .boot_domain_wmean(
                                     x = back_transform_outcome(B_sub$sim_t + sub_area_draw_pc),
-                                    g = B_sub[,fwk$domains], w = B_sub[,fwk$pop_weights])
+                                    g = B_sub[,fwk$domains], w = B_sub[,fwk$pop_weights],
+                                    what = "sim_plus_area_pc")
 
 
 
@@ -790,7 +815,9 @@ xgb <- function(fixed,
                                     B_sub$sim_plus_area <- back_transform_outcome(B_sub$sim_t_plus_area)
                                     B_sub$area_draw <- NULL
 
-                                    B_domains$sim_truth <- collapse:::fmean(B_sub$sim_plus_area,g=B_sub$domains,w=B_sub$wts)
+                                    # Truth for each domain: the population-weighted mean of its simulated
+                                    # cells, each of which carries its own domain's area draw.
+                                    B_domains$sim_truth <- .boot_domain_wmean(x=B_sub$sim_plus_area,g=B_sub[,fwk$domains],w=B_sub[,fwk$pop_weights],what="sim_truth")
 
                                     # 2. Extract sample observations from new population
                                     covariates_no_popwt <- setdiff(fwk$covariates, fwk$pop_weights)
@@ -906,7 +933,7 @@ xgb <- function(fixed,
                                   B_sub$sim <-
                                     back_transform_outcome(predict(xgb_fit, as.matrix(X_pop_xgb))
                                     )
-                                  B_domains <- collapse:::fmean(x=B_sub$sim,g=B_sub$domains,w=B_sub$wts)
+                                  B_domains <- .boot_domain_wmean(x=B_sub$sim,g=B_sub[,fwk$domains],w=B_sub[,fwk$pop_weights],what="sim (case bootstrap)")
                                   B_domains <- data.frame("domains" = names(B_domains),"sim" = B_domains)
                                   B_domains$sim_plus_area <- B_domains$sim
                                   # [ORDER] this branch already back-transforms per cell before
