@@ -1,13 +1,13 @@
 # Tests for xgb(interval_method = "basic").
 #
 # The benchmarked interval is built from the centred bootstrap error e = (benchmarked replicate) - (simulated truth).
-# The default ("plus") is estimate + q(alpha/2) .. estimate + q(1 - alpha/2). With e defined as estimate minus truth the
+# "plus" (the default before this change) is estimate + q(alpha/2) .. estimate + q(1 - alpha/2). With e defined as estimate minus truth the
 # basic bootstrap interval for the truth is estimate - q(1 - alpha/2) .. estimate - q(alpha/2): the reflected one. The two
 # agree when e is symmetric about 0; with skewed errors (near a bound) "plus" puts the long tail on the wrong side.
-# interval_method = "basic" is opt-in; the default is unchanged.
+# "basic" is the default; interval_method = "plus" reproduces the earlier results.
 #
 # Tested here:
-#   1. the default is "plus" and naming it changes nothing; "basic" changes only the benchmarked interval (point
+#   1. the default is "basic" and naming it changes nothing; "plus" changes only the benchmarked interval (point
 #      estimates, variances and the unbenchmarked interval are identical);
 #   2. basic is the reflection of plus around the estimate for the quantiles used: lower + upper of "basic" and "plus" are
 #      related as hand-computed from the stored replicates, on the natural and the transformed scale;
@@ -30,23 +30,25 @@ make_method_data <- function(seed = 41) {
   smp$wt <- exp(rnorm(nrow(smp), 0, 0.5)) * 100
   list(pop = pop[, c("sub", "dom", "reg", "x1", "x2", "npop")], smp = smp[, c("sub", "dom", "reg", "x1", "x2", "y", "wt")])
 }
-fit_method <- function(d, interval_method = "plus", interval_scale = "natural", B = 60, ...) {
-  suppressWarnings(suppressMessages(povmap::xgb(
+fit_method <- function(d, interval_method = NULL, interval_scale = "natural", B = 60, ...) {   # NULL: the package default
+  extra <- if (is.null(interval_method)) list() else list(interval_method = interval_method)
+  suppressWarnings(suppressMessages(do.call(povmap::xgb, c(list(
     fixed = y ~ x1 + x2, smp_data = d$smp, smp_weights = "wt", pop_data = d$pop, pop_weights = "npop", domains = "dom", sub_domains = "sub",
     transformation = "arcsin", bootstrap = TRUE, B = B, L = 5, cpus = 1, seed = 3, nrounds = 20, eta = 0.3, max_depth = 2,
     colsample_bylevel = 1, colsample_bynode = 1, subsample = 1, benchmark = "Mean", benchmark_level = "reg", benchmark_type = "logit_raking",
     perturb_benchmark = TRUE, benchmark_target_se = c(R1 = 0.01, R2 = 0.01, R3 = 0.01), keep_replicates = TRUE,
-    interval_method = interval_method, interval_scale = interval_scale, ...)))
+    interval_scale = interval_scale), extra, list(...)))))
 }
 
-test_that("naming the default changes nothing, and basic changes only the benchmarked interval", {
+test_that("the default is basic, and plus (the earlier default) changes only the benchmarked interval", {
   d <- make_method_data()
-  a <- fit_method(d); a2 <- fit_method(d, "plus"); b <- fit_method(d, "basic")
-  expect_identical(a$CI, a2$CI); expect_identical(a$ind, a2$ind)
-  expect_identical(b$ind, a$ind); expect_identical(b$var, a$var)
-  expect_identical(b$CI$Lower, a$CI$Lower); expect_identical(b$CI$Upper, a$CI$Upper)      # unbenchmarked interval
-  expect_false(isTRUE(all.equal(b$CI$Lower_bench, a$CI$Lower_bench)))
-  expect_true(all(b$CI$Lower_bench >= 0 & b$CI$Upper_bench <= 1))
+  a <- fit_method(d); a2 <- fit_method(d, "basic"); p <- fit_method(d, "plus")
+  expect_identical(a$CI, a2$CI); expect_identical(a$ind, a2$ind)                           # naming the default changes nothing
+  expect_identical(p$ind, a$ind); expect_identical(p$var, a$var)
+  expect_identical(p$CI$Lower, a$CI$Lower); expect_identical(p$CI$Upper, a$CI$Upper)      # unbenchmarked interval
+  expect_false(isTRUE(all.equal(p$CI$Lower_bench, a$CI$Lower_bench)))
+  expect_true(all(a$CI$Lower_bench >= 0 & a$CI$Upper_bench <= 1))
+  expect_true(all(p$CI$Lower_bench >= 0 & p$CI$Upper_bench <= 1))
 })
 
 test_that("basic is the reflected interval, rebuilt by hand from the stored replicates", {
