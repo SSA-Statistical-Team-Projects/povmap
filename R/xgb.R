@@ -1,6 +1,20 @@
+# Scale-free tolerance below which a benchmark-target standard error counts as zero: 1e-8 times the larger of the
+# group's weighted mean outcome and the largest finite SE in the vector. A floating-point near-zero is about 1e-16
+# times the scale of the outcome (an internal Horvitz-Thompson SE of identical units was seen at 5e-10 for an outcome
+# of 1e7 and 5e-8 for 1e9, above an absolute 1e-10), and a legitimate SE is never 8 orders of magnitude below the
+# outcome it describes. `ybar` is named by benchmark group.
+.benchmark_se_tol <- function(se, ybar) {
+  top <- suppressWarnings(max(se[is.finite(se)], 0))
+  yb <- abs(as.numeric(ybar[names(se)])); yb[!is.finite(yb)] <- 0
+  setNames(1e-8 * pmax(yb, top), names(se))
+}
+
 .check_benchmark_se <- function(se, what, allow_zero, tol = 0) {
-  # `tol` is 0 for a supplied SE (a caller's exact zero) and tiny for the internal estimate, which is computed from
-  # deviations around a weighted mean and so is about 1e-15, not exactly 0, when every unit has the same outcome.
+  # `tol` is a threshold at or below which an SE counts as zero: 0 (exact zeros only), a scalar, or a vector named by
+  # benchmark group (see .benchmark_se_tol), which is matched to `se` by name. The internal Horvitz-Thompson estimate
+  # is computed from deviations around a weighted mean and so is about 1e-16 times the outcome, not exactly 0, when
+  # every unit has the same outcome.
+  if (length(tol) > 1L && !is.null(names(tol)) && !is.null(names(se))) tol <- tol[names(se)]
   # A zero, negative or non-finite standard error makes the benchmark-target perturbation meaningless (rnorm()
   # with sd = 0 adds nothing; a negative or non-finite sd gives NaN). The package does not substitute a value:
   # the right one depends on what the caller knows (e.g. the effective sample size behind an Agresti-Coull SE).
@@ -293,13 +307,17 @@ ht_var_weighted_mean <- function(y, w, g) {
 #'   \code{benchmark_target_se} is zero, and likewise when the internal
 #'   Horvitz-Thompson standard error used if \code{benchmark_target_se} is
 #'   \code{NULL} is zero (every sampled unit of a benchmark group has the same
-#'   outcome, or the group has fewer than two units). The right replacement depends on what the
+#'   outcome, or the group has fewer than two units). A standard error counts as
+#'   zero when it is at most \code{1e-8} times the larger of the group's weighted
+#'   mean outcome and the largest supplied standard error, which also catches the
+#'   floating-point near-zeros of the internal estimate. The right replacement depends on what the
 #'   caller knows (for a proportion, a boundary-corrected standard error such as
 #'   Agresti-Coull, which needs the effective sample size), so the package never
 #'   substitutes one. Set \code{allow_zero_benchmark_se = TRUE} to proceed
 #'   deliberately with a zero (a warning names the groups). Negative or
 #'   non-finite values always stop. Not checked when
-#'   \code{perturb_benchmark = FALSE}. Defaults to \code{FALSE}.
+#'   \code{perturb_benchmark = FALSE} or \code{bootstrap = FALSE}, since the
+#'   standard errors are then not used. Defaults to \code{FALSE}.
 #' @param configs optional data.frame of hyperparameter configurations to
 #'   average over (configuration averaging), one per row, typically the result
 #'   of \code{\link{xgb_top_configs}}. Columns are \code{xgb()}'s hyperparameter
@@ -664,13 +682,20 @@ xgb <- function(fixed,
   # the matching direct SEs are available.
   if (perturb_benchmark && !is.null(benchmark_level)) {
     groups_bm <- unique(as.character(fwk$smp_data[[benchmark_level]]))
+    # Weighted mean outcome of each benchmark group: the scale for the guard's tolerance.
+    gy_bm <- as.character(fwk$smp_data[[benchmark_level]])
+    wy_bm <- as.numeric(fwk$smp_data[[benchmark_weights]]); yy_bm <- as.numeric(fwk$smp_data[[fwk$outcome]])
+    ybar_bm <- tapply(wy_bm * yy_bm, gy_bm, sum, na.rm = TRUE) / tapply(wy_bm, gy_bm, sum, na.rm = TRUE)
+    # Without a bootstrap there is no perturbation and the SEs are not used, so they are not validated.
+    guard_se <- isTRUE(bootstrap)
     if (!is.null(benchmark_target_se)) {
       nm <- names(benchmark_target_se)
       if (is.null(nm)) stop("perturb_benchmark: benchmark_target_se must be a named vector keyed by benchmark_level group.")
       bm_ht_se <- setNames(rep(NA_real_, length(groups_bm)), groups_bm)
       hit <- intersect(groups_bm, nm)
       bm_ht_se[hit] <- as.numeric(benchmark_target_se[hit])
-      .check_benchmark_se(bm_ht_se[hit], "benchmark_target_se", allow_zero_benchmark_se)
+      if (guard_se) .check_benchmark_se(bm_ht_se[hit], "benchmark_target_se", allow_zero_benchmark_se,
+                                        tol = .benchmark_se_tol(bm_ht_se[hit], ybar_bm))
       if (any(is.na(bm_ht_se))) stop(sprintf(
         "perturb_benchmark: benchmark_target_se is missing %d of %d benchmark groups: %s",
         sum(is.na(bm_ht_se)), length(bm_ht_se),
@@ -691,7 +716,8 @@ xgb <- function(fixed,
       }
       # The internal estimate is zero too when every sampled unit of a group has the same outcome (a direct
       # estimate on the boundary of its range) or the group has fewer than 2 units: same guard as for a supplied SE.
-      .check_benchmark_se(bm_ht_se, "the internal Horvitz-Thompson standard error of the benchmark target", allow_zero_benchmark_se, tol = 1e-10)
+      if (guard_se) .check_benchmark_se(bm_ht_se, "the internal Horvitz-Thompson standard error of the benchmark target", allow_zero_benchmark_se,
+                                        tol = .benchmark_se_tol(bm_ht_se, ybar_bm))
       if (verbose) message(sprintf(
         "perturb_benchmark: internal HT SE at benchmark level - median %.4f, range [%.4f, %.4f]",
         median(bm_ht_se), min(bm_ht_se), max(bm_ht_se)
