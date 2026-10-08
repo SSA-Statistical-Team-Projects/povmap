@@ -42,7 +42,12 @@ xgb(
   boot_estimates = F,
   center_residuals = F,
   variance_y = NULL,
+  smearing = c("naive", "corrected"),
   rescale_weights = TRUE,
+  perturb_benchmark = FALSE,
+  benchmark_target_se = NULL,
+  allow_zero_benchmark_se = FALSE,
+  verbose = FALSE,
   configs = NULL,
   config_seed = NULL,
   ...
@@ -191,33 +196,73 @@ they sum to the domain sample size. This prevents populous domains from dominati
 the loss function, analogous to the treatment of weights in mixed models.
 Defaults to TRUE.}
 
+\item{perturb_benchmark}{logical. If \code{TRUE} and \code{benchmark_level}
+is specified, the bootstrap benchmark target at each benchmark-level group
+(e.g. state) is perturbed in every bootstrap iteration by adding
+independent Gaussian noise whose standard deviation equals the
+Horvitz-Thompson estimate of the direct-estimate standard error at that
+group. This propagates the survey-sampling uncertainty of the benchmark
+target into the benchmarked confidence intervals, correcting potential
+undercoverage that arises when the bootstrap state mean is far more
+stable than the real direct estimate. Defaults to \code{FALSE}.}
+
+\item{benchmark_target_se}{optional named numeric vector giving the standard
+error of each benchmark-level direct estimate, keyed by the
+\code{benchmark_level} group value. When supplied (and
+\code{perturb_benchmark = TRUE}), it is used as the SD of the
+benchmark-target perturbation instead of the internal Horvitz-Thompson
+estimate. Supply the same estimator used to build the published direct-
+estimate confidence intervals (typically the cluster-robust / Taylor SE) so
+the perturbation injects exactly the uncertainty the target is reported
+with. An error is raised if any benchmark group is missing from the vector,
+or (with \code{perturb_benchmark = TRUE}) if any supplied value is zero,
+negative or non-finite; see \code{allow_zero_benchmark_se}.
+Defaults to \code{NULL} (use the internal Horvitz-Thompson SE).}
+
+\item{allow_zero_benchmark_se}{logical. A direct estimate at the boundary of
+its range (a proportion of exactly 0 or 1, an all-identical sample) has a
+design-based standard error of exactly zero. With
+\code{perturb_benchmark = TRUE} such a value would make the perturbation add
+no uncertainty for that group, and the intervals of its domains collapse
+towards the benchmark target. \code{xgb()} therefore stops when any supplied
+\code{benchmark_target_se} is zero, and likewise when the internal
+Horvitz-Thompson standard error used if \code{benchmark_target_se} is
+\code{NULL} is zero (every sampled unit of a benchmark group has the same
+outcome, or the group has fewer than two units). The right replacement depends on what the
+caller knows (for a proportion, a boundary-corrected standard error such as
+Agresti-Coull, which needs the effective sample size), so the package never
+substitutes one. Set \code{allow_zero_benchmark_se = TRUE} to proceed
+deliberately with a zero (a warning names the groups). Negative or
+non-finite values always stop. Not checked when
+\code{perturb_benchmark = FALSE}. Defaults to \code{FALSE}.}
+
 \item{configs}{optional data.frame of hyperparameter configurations to
-  average over (configuration averaging), one per row, typically the result
-  of \code{\link{xgb_top_configs}}. Columns are \code{xgb()}'s hyperparameter
-  names (\code{nrounds} or \code{nround}, \code{max_depth}, ...; one missing
-  from it takes \code{xgb()}'s default) and an optional \code{weight} (equal
-  weights if absent). The point estimate is the weighted average of the
-  configurations' domain estimates (\code{Mean} and \code{Mean_agg}), each
-  formed by the usual point path from the same \code{seed}, and benchmarking
-  is applied once to that average. In the bootstrap each replicate uses one
-  configuration, drawn with probability equal to its weight from a stream
-  seeded by \code{config_seed}; the replicate's simulated population comes
-  from that configuration's fit and its refit uses that configuration's
-  hyperparameters, so the intervals include the uncertainty in the choice of
-  configuration. The replicate random-number streams are the same as without
-  \code{configs}. When \code{configs} is used, the scalar hyperparameter
-  arguments must be left at their defaults. \code{NULL} (default) fits the
-  single configuration given by the hyperparameter arguments, as before; a
-  one-row \code{configs} gives exactly the same result as passing those
-  values as arguments. The result then also contains \code{configs} (with
-  normalised weights), \code{config_draws} (the configuration used by each
-  bootstrap replicate), \code{ind_by_config} (each configuration's
-  unbenchmarked domain estimate) and \code{models} (each configuration's
-  fitted booster; \code{model} is the first one's).}
+average over (configuration averaging), one per row, typically the result
+of \code{\link{xgb_top_configs}}. Columns are \code{xgb()}'s hyperparameter
+names (\code{nrounds} or \code{nround}, \code{max_depth}, ...; one missing
+from it takes \code{xgb()}'s default) and an optional \code{weight} (equal
+weights if absent). The point estimate is the weighted average of the
+configurations' domain estimates (\code{Mean} and \code{Mean_agg}), each
+formed by the usual point path from the same \code{seed}, and benchmarking
+is applied once to that average. In the bootstrap each replicate uses one
+configuration, drawn with probability equal to its weight from a stream
+seeded by \code{config_seed}; the replicate's simulated population comes
+from that configuration's fit and its refit uses that configuration's
+hyperparameters, so the intervals include the uncertainty in the choice of
+configuration. The replicate random-number streams are the same as without
+\code{configs}. When \code{configs} is used, the scalar hyperparameter
+arguments must be left at their defaults. \code{NULL} (default) fits the
+single configuration given by the hyperparameter arguments, as before; a
+one-row \code{configs} gives exactly the same result as passing those
+values as arguments. The result then also contains \code{configs} (with
+normalised weights), \code{config_draws} (the configuration used by each
+bootstrap replicate), \code{ind_by_config} (each configuration's
+unbenchmarked domain estimate) and \code{models} (each configuration's
+fitted booster; \code{model} is the first one's).}
 
 \item{config_seed}{integer seed for the bootstrap's configuration draws.
-  Defaults to \code{seed}. The draws are made with the global random-number
-  state saved and restored, so nothing else changes.}
+Defaults to \code{seed}. The draws are made with the global random-number
+state saved and restored, so nothing else changes.}
 
 \item{...}{additional parameters to be passed to \code{xgboost}.}
 
@@ -229,7 +274,9 @@ equal weight. Defaults to TRUE.}
 are set equal to the XGboost prediction. Defaults to FALSE.}
 
 \item{center_residuals.}{If TRUE, the mean of the residuals during the bootstrap are subtracted from the residuals prior to the bootstrapping procedure.
-Defaults to FALSE.}
+Defaults to FALSE. This switch governs the bootstrap only. The point estimate
+always draws from centred pools, and with \code{transformation = "no"} it draws
+nothing and returns the deterministic aggregate of the fitted predictions.}
 
 \item{cpus.}{Number of cores to parallelize across. Defaults to 1 (no parallelization)}
 

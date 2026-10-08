@@ -101,14 +101,113 @@ leaf. If the value is set to 0, it indicates that there is no constraint Default
 \item{lambda}{L2 regularization term on weights. Increasing this value will result in a more conservative model.
 Defaults to 1.}
 
-\item{alpha}{L1 regularization term on weights. Increasing this value will result in a more conservative model.
-Defaults to 0.}
+\item{alpha}{L1 regularization term on weights. Increasing this value will result in a more conservative model.}
 
 \item{search}{search strategy. \code{"grid"} (the default) evaluates the
-  full Cartesian product of the parameter vectors above and reproduces the
-  behaviour of earlier versions exactly. \code{"random"} instead draws
-  \code{n_iter} configurations from continuous ranges given in \code{bounds}.
-@section Choosing a search strategy:
+full Cartesian product of the parameter vectors above and reproduces the
+behaviour of earlier versions exactly. \code{"random"} instead draws
+\code{n_iter} configurations from continuous ranges given in \code{bounds}.}
+
+\item{n_iter}{number of configurations drawn when \code{search = "random"}.
+Defaults to 32. Note that 32 random draws is NOT equivalent in coverage to a
+32 point grid: the grid tests two values of five parameters and so
+establishes direction rather than locating an optimum, whereas the random
+draws explore the interior of the ranges but cover any single axis more
+thinly. Raising \code{n_iter} trades compute for resolution directly.}
+
+\item{bounds}{named list giving the search range per parameter, used only when
+\code{search = "random"}. Each element is either a bare \code{c(lo, hi)},
+which inherits that parameter's default sampling scale, or
+\code{list(range = c(lo, hi), scale = "log")} to override it. Only
+parameters named here are varied; every other parameter is held at the first
+value of its own argument, so exploring depth does not silently move
+\code{gamma} and \code{alpha} as well. Defaults to \code{eta},
+\code{max_depth}, \code{min_child_weight}, \code{subsample},
+\code{colsample_bytree} and \code{lambda}. \code{eta},
+\code{min_child_weight} and \code{lambda} are drawn log-uniformly because
+they span orders of magnitude and a uniform draw would spend most of its
+budget at the insensitive end; \code{alpha} is drawn with a point mass at
+zero, since a log scale is impossible at zero.}
+
+\item{early_stopping_rounds}{if supplied, each configuration is fitted with
+\code{nrounds_max} rounds and stopped early on an inner validation group
+held out of the training folds and grouped by \code{cluster}. This takes
+\code{nround} out of the search entirely, freeing a dimension so a fixed
+budget goes further. The inner group is separate from the outer fold, which
+remains purely for scoring. Defaults to \code{NULL}, i.e. fixed
+\code{nround} as before.}
+
+\item{nrounds_max}{ceiling on boosting rounds when early stopping is in use.
+Defaults to 2000. If any fold stops at this ceiling a warning is raised,
+since the budget rather than the data then chose the stopping point.}
+
+\item{seed}{integer seed making the whole routine reproducible: the assignment
+  of clusters to folds, the random draw of configurations, and the underlying
+  \code{xgboost} fits, which are otherwise stochastic whenever
+  \code{subsample} or the \code{colsample_*} parameters are below 1. The fit
+  seed is passed straight to xgboost, so configurations share common random
+  numbers. The fold assignment and the xgboost fits were both previously
+  unseeded, so results varied run to run even under grid search;
+  \code{seed = NULL} preserves that behaviour exactly.
+Defaults to 0.}
+
+\item{keep_candidates}{logical. If \code{TRUE} (default), the result also
+carries every candidate configuration's cross-validation score, not only
+the winner's: \code{candidates}, a data frame with one row per
+configuration (its parameters, \code{mse} = mean over folds, \code{rank},
+1 = selected); \code{cv_by_fold}, the configurations x folds matrix of
+per-fold scores; and \code{fold_assignment}, the fold of each cluster. With
+the same \code{seed}, two searches on different covariate sets share draws
+and folds, so their candidates can be compared one for one. These are
+appended after the 14 original elements and use no random numbers, so the
+search and its result are unchanged. \code{FALSE} omits them.}
+
+\item{rescale_weights}{logical. The candidate models are weighted exactly as
+\code{\link{xgb}} weights its fit with the same argument: if \code{TRUE}
+(default), the survey weights are rescaled within each domain to sum to the
+domain's sample size, and in either case they are then divided by their
+mean. Each fold model's weights are computed from its own training rows, as
+\code{xgb()} would compute them if fitted on those rows. The held-out domain
+means that score the candidates keep the survey weights. Until 2026-10 the
+candidate models were fitted on the raw survey weights, so
+\code{min_child_weight} and \code{lambda} were tuned on a scale far larger
+than the one \code{xgb()} fits on (see NEWS). Pass the value you will give
+\code{xgb()}, and likewise \code{variance_y}.}
+
+\item{variance_y}{character or NULL. The name of the variable in
+\code{smp_data} holding the variance of the outcome, as in \code{\link{xgb}}.
+If given, each fold model's weights are multiplied by
+\code{variance_y^-0.5} and divided by their mean once more, exactly as
+\code{xgb()} applies its heteroscedasticity correction to the fit's
+weights. \code{NULL} (default) leaves the weights as described under
+\code{rescale_weights}. Pass the value you will give \code{xgb()}.}
+
+\item{grid}{optional data.frame of configurations to score, one per row, for
+grids that are not a full cross of the hyperparameter vectors (for example
+more rounds only at the smaller \code{eta}). Columns are hyperparameter
+names (\code{nround}, \code{max_depth}, ...); a hyperparameter missing from
+it takes the first value of its argument. Only with \code{search = "grid"}.
+\code{NULL} (default) scores the full cross of the vectors as before.}
+
+\item{verbose}{display progress. Defaults to FALSE.}
+
+\item{...}{additional parameters to be passed to \code{xgb.train}.}
+
+\item{cpus.}{Number of cores to parallelize across. Defaults to 1 (no parallelization)}
+}
+\value{
+An object of class \code{xgb}, \code{emdi}, containing the optimal
+hyperparameters for an extreme gradient boosting model and the out-of-sample
+R-squared at the domain level (\code{r2_oos}).
+}
+\description{
+The funtion \code{xgb_tune} fine-tunes the hyperparameters for extreme gradient boosting models, following \cite{Merfeld and Newhouse (2023)}.
+It offers the flexibility to allocate \code{domains} to folds and utilizes estimated
+means at the domain-level for cross-validation. Users can specify the number of
+folds, including an option for leave-one-out cross-validation.
+}
+\section{Choosing a search strategy}{
+
 Random search was measured against the grid and against Bayesian
 optimisation on a sub-area estimation problem with 10,979 sub-areas, 636
 municipalities and 23 covariates, scoring domain-level weighted MSE under
@@ -131,106 +230,9 @@ affords roughly six times as many evaluations. The surrogate also failed an
 informativeness check, twenty guided iterations improving on ten random
 initial points by 0.3 percent and by nothing on a second seed. The
 conclusion is specific to cheap evaluations and would likely invert if a
-single evaluation took minutes.}
-
-\item{n_iter}{number of configurations drawn when \code{search = "random"}.
-  Defaults to 32. Note that 32 random draws is NOT equivalent in coverage to a
-  32 point grid: the grid tests two values of five parameters and so
-  establishes direction rather than locating an optimum, whereas the random
-  draws explore the interior of the ranges but cover any single axis more
-  thinly. Raising \code{n_iter} trades compute for resolution directly.}
-
-\item{bounds}{named list giving the search range per parameter, used only when
-  \code{search = "random"}. Each element is either a bare \code{c(lo, hi)},
-  which inherits that parameter's default sampling scale, or
-  \code{list(range = c(lo, hi), scale = "log")} to override it. Only
-  parameters named here are varied; every other parameter is held at the first
-  value of its own argument, so exploring depth does not silently move
-  \code{gamma} and \code{alpha} as well. Defaults to \code{eta},
-  \code{max_depth}, \code{min_child_weight}, \code{subsample},
-  \code{colsample_bytree} and \code{lambda}. \code{eta},
-  \code{min_child_weight} and \code{lambda} are drawn log-uniformly because
-  they span orders of magnitude and a uniform draw would spend most of its
-  budget at the insensitive end; \code{alpha} is drawn with a point mass at
-  zero, since a log scale is impossible at zero.}
-
-\item{early_stopping_rounds}{if supplied, each configuration is fitted with
-  \code{nrounds_max} rounds and stopped early on an inner validation group
-  held out of the training folds and grouped by \code{cluster}. This takes
-  \code{nround} out of the search entirely, freeing a dimension so a fixed
-  budget goes further. The inner group is separate from the outer fold, which
-  remains purely for scoring. Defaults to \code{NULL}, i.e. fixed
-  \code{nround} as before.}
-
-\item{nrounds_max}{ceiling on boosting rounds when early stopping is in use.
-  Defaults to 2000. If any fold stops at this ceiling a warning is raised,
-  since the budget rather than the data then chose the stopping point.}
-
-\item{seed}{integer seed making the whole routine reproducible: the assignment
-  of clusters to folds, the random draw of configurations, and the underlying
-  \code{xgboost} fits, which are otherwise stochastic whenever
-  \code{subsample} or the \code{colsample_*} parameters are below 1. The fit
-  seed is passed straight to xgboost, so configurations share common random
-  numbers. The fold assignment and the xgboost fits were both previously
-  unseeded, so results varied run to run even under grid search;
-  \code{seed = NULL} preserves that behaviour exactly.
-Defaults to 0.}
-
-\item{keep_candidates}{logical. If \code{TRUE} (default), the result also
-  carries every candidate configuration's cross-validation score, not only
-  the winner's: \code{candidates}, a data frame with one row per
-  configuration (its parameters, \code{mse} = mean over folds, \code{rank},
-  1 = selected); \code{cv_by_fold}, the configurations x folds matrix of
-  per-fold scores; and \code{fold_assignment}, the fold of each cluster. With
-  the same \code{seed}, two searches on different covariate sets share draws
-  and folds, so their candidates can be compared one for one. These are
-  appended after the 14 original elements and use no random numbers, so the
-  search and its result are unchanged. \code{FALSE} omits them.}
-
-\item{rescale_weights}{logical. The candidate models are weighted exactly as
-  \code{\link{xgb}} weights its fit with the same argument: if \code{TRUE}
-  (default), the survey weights are rescaled within each domain to sum to the
-  domain's sample size, and in either case they are then divided by their
-  mean. Each fold model's weights are computed from its own training rows, as
-  \code{xgb()} would compute them if fitted on those rows. The held-out domain
-  means that score the candidates keep the survey weights. Until 2026-10 the
-  candidate models were fitted on the raw survey weights, so
-  \code{min_child_weight} and \code{lambda} were tuned on a scale far larger
-  than the one \code{xgb()} fits on (see NEWS). Pass the value you will give
-  \code{xgb()}, and likewise \code{variance_y}.}
-
-\item{variance_y}{character or NULL. The name of the variable in
-  \code{smp_data} holding the variance of the outcome, as in \code{\link{xgb}}.
-  If given, each fold model's weights are multiplied by
-  \code{variance_y^-0.5} and divided by their mean once more, exactly as
-  \code{xgb()} applies its heteroscedasticity correction to the fit's
-  weights. \code{NULL} (default) leaves the weights as described under
-  \code{rescale_weights}. Pass the value you will give \code{xgb()}.}
-
-\item{grid}{optional data.frame of configurations to score, one per row, for
-  grids that are not a full cross of the hyperparameter vectors (for example
-  more rounds only at the smaller \code{eta}). Columns are hyperparameter
-  names (\code{nround}, \code{max_depth}, ...); a hyperparameter missing from
-  it takes the first value of its argument. Only with \code{search = "grid"}.
-  \code{NULL} (default) scores the full cross of the vectors as before.}
-
-\item{verbose}{display progress. Defaults to FALSE.}
-
-\item{...}{additional parameters to be passed to \code{xgb.train}.}
-
-\item{cpus.}{Number of cores to parallelize across. Defaults to 1 (no parallelization)}
+single evaluation took minutes.
 }
-\value{
-An object of class \code{xgb}, \code{emdi}, containing the optimal
-hyperparameters for an extreme gradient boosting model and the out-of-sample
-R-squared at the domain level (\code{r2_oos}).
-}
-\description{
-The funtion \code{xgb_tune} fine-tunes the hyperparameters for extreme gradient boosting models, following \cite{Merfeld and Newhouse (2023)}.
-It offers the flexibility to allocate \code{domains} to folds and utilizes estimated
-means at the domain-level for cross-validation. Users can specify the number of
-folds, including an option for leave-one-out cross-validation.
-}
+
 \examples{
 \donttest{
 # Loading data - population and sample data
