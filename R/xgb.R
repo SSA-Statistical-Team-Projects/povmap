@@ -163,8 +163,23 @@
 #'   estimate. Supply the same estimator used to build the published direct-
 #'   estimate confidence intervals (typically the cluster-robust / Taylor SE) so
 #'   the perturbation injects exactly the uncertainty the target is reported
-#'   with. An error is raised if any benchmark group is missing from the vector.
+#'   with. An error is raised if any benchmark group is missing from the vector,
+#'   or (with \code{perturb_benchmark = TRUE}) if any supplied value is zero,
+#'   negative or non-finite; see \code{allow_zero_benchmark_se}.
 #'   Defaults to \code{NULL} (use the internal Horvitz-Thompson SE).
+#' @param allow_zero_benchmark_se logical. A direct estimate at the boundary of
+#'   its range (a proportion of exactly 0 or 1, an all-identical sample) has a
+#'   design-based standard error of exactly zero. With
+#'   \code{perturb_benchmark = TRUE} such a value would make the perturbation add
+#'   no uncertainty for that group, and the intervals of its domains collapse
+#'   towards the benchmark target. \code{xgb()} therefore stops when any supplied
+#'   \code{benchmark_target_se} is zero. The right replacement depends on what the
+#'   caller knows (for a proportion, a boundary-corrected standard error such as
+#'   Agresti-Coull, which needs the effective sample size), so the package never
+#'   substitutes one. Set \code{allow_zero_benchmark_se = TRUE} to proceed
+#'   deliberately with a zero (a warning names the groups). Negative or
+#'   non-finite values always stop. Not checked when
+#'   \code{perturb_benchmark = FALSE}. Defaults to \code{FALSE}.
 #' @param configs optional data.frame of hyperparameter configurations to
 #'   average over (configuration averaging), one per row, typically the result
 #'   of \code{\link{xgb_top_configs}}. Columns are \code{xgb()}'s hyperparameter
@@ -363,6 +378,7 @@ xgb <- function(fixed,
                 rescale_weights = TRUE,
                 perturb_benchmark = FALSE,
                 benchmark_target_se = NULL,
+                allow_zero_benchmark_se = FALSE,
                 verbose = FALSE,
                 configs = NULL,
                 config_seed = NULL,
@@ -623,6 +639,28 @@ xgb <- function(fixed,
       bm_ht_se <- setNames(rep(NA_real_, length(groups_bm)), groups_bm)
       hit <- intersect(groups_bm, nm)
       bm_ht_se[hit] <- as.numeric(benchmark_target_se[hit])
+      # A zero, negative or non-finite supplied SE makes the perturbation meaningless (rnorm() with sd = 0 adds
+      # nothing; a negative or non-finite sd gives NaN). The package does not substitute a value: the right one
+      # depends on what the caller knows (e.g. the effective sample size behind an Agresti-Coull SE).
+      .show_groups <- function(g) paste0(paste(utils::head(g, 10), collapse = ", "), if (length(g) > 10) sprintf(" (and %d more)", length(g) - 10) else "")
+      bad_se <- hit[!is.finite(bm_ht_se[hit]) | bm_ht_se[hit] < 0]
+      if (length(bad_se)) stop(sprintf(
+        paste0("perturb_benchmark: benchmark_target_se must be finite and non-negative; invalid for %d benchmark group(s): %s. ",
+               "Supply a valid standard error for them."),
+        length(bad_se), .show_groups(bad_se)), call. = FALSE)
+      zero_se <- hit[bm_ht_se[hit] == 0]
+      if (length(zero_se)) {
+        if (!isTRUE(allow_zero_benchmark_se)) stop(sprintf(
+          paste0("perturb_benchmark: benchmark_target_se is zero for %d benchmark group(s): %s. ",
+                 "With a zero standard error the perturbation adds no uncertainty there, and the intervals of those ",
+                 "domains collapse towards the benchmark target. This happens when the direct estimate sits on the ",
+                 "boundary of its range, e.g. a proportion of exactly 0 or 1. Supply a boundary-corrected standard ",
+                 "error, such as an Agresti-Coull standard error for a proportion at 0 or 1 (it needs the effective ",
+                 "sample size, which only you have). To proceed deliberately with a zero, set allow_zero_benchmark_se = TRUE."),
+          length(zero_se), .show_groups(zero_se)), call. = FALSE)
+        warning(sprintf("perturb_benchmark: allow_zero_benchmark_se = TRUE; benchmark_target_se is zero for %d group(s) (%s), so the perturbation adds no uncertainty there.",
+                        length(zero_se), .show_groups(zero_se)), call. = FALSE)
+      }
       if (any(is.na(bm_ht_se))) stop(sprintf(
         "perturb_benchmark: benchmark_target_se is missing %d of %d benchmark groups: %s",
         sum(is.na(bm_ht_se)), length(bm_ht_se),
