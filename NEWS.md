@@ -1,5 +1,19 @@
 # povmap 1.0.1
 
+* **`xgb()` has an opt-in basic-bootstrap sign for the benchmarked interval (`interval_method = "basic"`).**
+  A replicate's error is its benchmarked estimate minus its simulated truth, centred. The
+  interval was built as the estimate *plus* the quantiles of that error, i.e. [estimate + q(a/2),
+  estimate + q(1 - a/2)]. For an error defined as estimate minus truth the basic bootstrap
+  interval for the truth *subtracts* the reversed quantiles, [estimate - q(1 - a/2), estimate -
+  q(a/2)], the correction megb received earlier in this release. The two agree when the errors are
+  symmetric about zero and differ when they are skewed, typically near a bound. `"plus"` stays the
+  default, so nothing changes unless `"basic"` is asked for; it applies on either `interval_scale`.
+  The unbenchmarked interval is the spread of the simulated truth around the estimate, not an
+  error interval, and is not affected. Simulation (100 datasets at moderate rates, 60 at low
+  rates): benchmarked coverage 0.707 -> 0.709 (moderate), 0.778 -> 0.790 on the natural scale and
+  0.804 -> 0.812 on the transformed scale (low rates).
+  - Test: `tests/testthat/test_xgb_interval_method.R`.
+
 * **`xgb()` stops on a zero, negative or non-finite `benchmark_target_se` when
   `perturb_benchmark = TRUE`.** A direct estimate on the boundary of its range (a proportion of
   exactly 0 or 1, a sample whose clusters all agree) has a design-based standard error of exactly

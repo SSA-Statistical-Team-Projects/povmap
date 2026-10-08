@@ -75,12 +75,14 @@ ht_var_weighted_mean <- function(y, w, g) {
 # and `rep_truth` the simulated truths (NULL for the unbenchmarked interval, which uses the spread of the
 # replicates around their own mean). The errors are centred on the transformed scale, their quantiles are
 # added to the transformed estimate (the convention of the natural-scale interval) and the bounds are
-# back-transformed.
-.interval_transformed <- function(est, rep_est, rep_truth = NULL, fns, conf_level) {
+# back-transformed. method = "basic" subtracts the reversed quantiles instead (the basic bootstrap interval for an
+# error defined as estimate minus truth): [est - q(1 - a/2), est - q(a/2)].
+.interval_transformed <- function(est, rep_est, rep_truth = NULL, fns, conf_level, method = "plus") {
   d <- if (is.null(rep_truth)) fns$to(rep_est) else fns$to(rep_est) - fns$to(rep_truth)
   d <- d - mean(d)
   q <- stats::quantile(d, probs = c((1 - conf_level) / 2, 1 - (1 - conf_level) / 2), names = FALSE)
-  c(lower = fns$from(fns$to(est) + q[1]), upper = fns$from(fns$to(est) + q[2]))
+  if (identical(method, "basic")) c(lower = fns$from(fns$to(est) - q[2]), upper = fns$from(fns$to(est) - q[1]))
+  else c(lower = fns$from(fns$to(est) + q[1]), upper = fns$from(fns$to(est) + q[2]))
 }
 
 # Population-weighted mean of a per-cell bootstrap quantity within each domain.
@@ -380,6 +382,19 @@ ht_var_weighted_mean <- function(y, w, g) {
 #'   intervals can be rebuilt on any scale without re-running the bootstrap.
 #'   Defaults to \code{FALSE}, as the matrices have \code{B} x (number of
 #'   domains) entries each.
+#' @param interval_method how the benchmarked interval uses the quantiles of the
+#'   bootstrap error. A replicate's error is its benchmarked estimate minus its
+#'   simulated truth, centred. \code{"plus"} (the default, as before) adds the
+#'   quantiles to the estimate: [estimate + q(alpha/2), estimate + q(1 - alpha/2)].
+#'   \code{"basic"} is the basic bootstrap interval, which subtracts the reversed
+#'   quantiles: [estimate - q(1 - alpha/2), estimate - q(alpha/2)]. That is the
+#'   interval for the truth when the error is estimate minus truth, so a long
+#'   tail of errors on one side puts the interval's long tail on the other, as it
+#'   should. The two agree when the error distribution is symmetric about zero and
+#'   differ where it is skewed, typically near a bound. It applies on either
+#'   \code{interval_scale} (on the transformation scale for \code{"transformed"}).
+#'   The unbenchmarked interval is the spread of the simulated truth around the
+#'   estimate, not an error interval, and is not affected.
 #' @importFrom purrr as_vector
 #' @importFrom collapse fmean
 #' @importFrom foreach foreach %dopar% %do%
@@ -469,12 +484,14 @@ xgb <- function(fixed,
                 config_seed = NULL,
                 interval_scale = c("natural", "transformed"),
                 keep_replicates = FALSE,
+                interval_method = c("plus", "basic"),
                 ...){
 
   #1. Initialize
   .assert_xgb_version()
   smearing <- match.arg(smearing)
   interval_scale <- match.arg(interval_scale)
+  interval_method <- match.arg(interval_method)
   if (interval_scale == "transformed") {
     if (isTRUE(boot_estimates)) stop("interval_scale = \"transformed\" is not available with boot_estimates = TRUE.")
     interval_fns <- .interval_scale_fns(transformation)   # stops for transformations without a bounded, invertible form
@@ -1239,10 +1256,15 @@ xgb <- function(fixed,
         results$Mean_boot_bench[l] <- mean(temp_bench)
         results$Lower_bench[l] <- results$hat_bench[l] + quantile(resid, probs = (1-conf_level)/2)
         results$Upper_bench[l] <- results$hat_bench[l] + quantile(resid, probs = 1-(1-conf_level)/2)
+        if (interval_method == "basic" && interval_scale == "natural") {
+          # basic bootstrap: the error is estimate - truth, so the truth lies in [estimate - q(1 - a/2), estimate - q(a/2)]
+          results$Lower_bench[l] <- results$hat_bench[l] - quantile(resid, probs = 1-(1-conf_level)/2)
+          results$Upper_bench[l] <- results$hat_bench[l] - quantile(resid, probs = (1-conf_level)/2)
+        }
         if (interval_scale == "transformed") {
-          # same convention (estimate + quantiles of the centred error), but on the transformation scale
+          # same construction (estimate +/- quantiles of the centred error), but on the transformation scale
           ci_tr <- .interval_transformed(est = results$hat_bench[l], rep_est = temp_bench, rep_truth = B_results_truth[,l],
-                                         fns = interval_fns, conf_level = conf_level)
+                                         fns = interval_fns, conf_level = conf_level, method = interval_method)
           results$Lower_bench[l] <- ci_tr[["lower"]]
           results$Upper_bench[l] <- ci_tr[["upper"]]
         }
