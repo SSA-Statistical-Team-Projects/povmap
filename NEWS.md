@@ -1,5 +1,42 @@
 # povmap 1.0.1
 
+* **`xgb()` no longer lets the benchmark-target perturbation blow up for a group pinned at the boundary (arcsine).**
+  With `perturb_benchmark = TRUE` the rate-scale standard error of a benchmark target is turned
+  into an increment on the transformed scale by the delta-method slope dz/dp, evaluated at the
+  group's mean benchmarked rate. For the arcsine, dz/dp = 1 / (2 sqrt(p (1 - p))) is unbounded
+  at 0 and 1, and the rate was floored at 1e-9, giving a slope of about 100 (a finite
+  difference over 1e-4) for a group benchmarked to a target of exactly 0. With a zero standard
+  error that was harmless; with the positive, boundary-corrected one the guard now asks for
+  (Agresti-Coull), the perturbation became a fraction of a radian to a radian: about half of
+  the replicates ended at 0, the rest spread over (0, 1), and the upper bounds of the group's
+  domains reached 0.1 to 0.6 (found in the DRC audit, ROUND3 section 4). The slope is now
+  evaluated at no less than the target standard error from either bound: the rate is clamped
+  into [se, 1 - se] (arcsine only; at se of 0.5 or more the slope is taken at 0.5). **Results
+  change only for a group whose mean benchmarked rate lies within one standard error of 0 or 1
+  and whose standard error is positive**; for every other group, and when the standard error is
+  0 or missing, the slope, and so the intervals, are identical to before. The log and square-root
+  transformations are unchanged: their slopes (1/p, 1/(2 sqrt(p))) are unbounded at 0 too, but
+  only a log-scale outcome with a mean near 0 and a positive standard error would be affected,
+  and none of the indicators estimated so far is.
+  - Test: `tests/testthat/test_xgb_perturb_slope.R` (the helper is unchanged away from the
+    boundary; through `xgb()` the realised slope equals the old one for groups away from the
+    boundary and the clamped one, about 7 rather than about 100, for a group pinned at zero,
+    whose upper bounds stay of the order of the standard error).
+
+* **`xgb()` builds the benchmarked interval with the basic-bootstrap sign by default (`interval_method = "basic"`).**
+  A replicate's error is its benchmarked estimate minus its simulated truth, centred. The
+  interval was built as the estimate *plus* the quantiles of that error, i.e. [estimate + q(a/2),
+  estimate + q(1 - a/2)]. For an error defined as estimate minus truth the basic bootstrap
+  interval for the truth *subtracts* the reversed quantiles, [estimate - q(1 - a/2), estimate -
+  q(a/2)], the correction megb received earlier in this release. The two agree when the errors are
+  symmetric about zero and differ when they are skewed, typically near a bound. `"basic"` is now the
+  default; `interval_method = "plus"` reproduces the results of earlier versions exactly. It applies on either `interval_scale`.
+  The unbenchmarked interval is the spread of the simulated truth around the estimate, not an
+  error interval, and is not affected. Simulation (100 datasets at moderate rates, 60 at low
+  rates): benchmarked coverage 0.707 -> 0.709 (moderate), 0.778 -> 0.790 on the natural scale and
+  0.804 -> 0.812 on the transformed scale (low rates).
+  - Test: `tests/testthat/test_xgb_interval_method.R`.
+
 * **`xgb()` stops on a zero, negative or non-finite `benchmark_target_se` when
   `perturb_benchmark = TRUE`.** A direct estimate on the boundary of its range (a proportion of
   exactly 0 or 1, a sample whose clusters all agree) has a design-based standard error of exactly
@@ -13,6 +50,23 @@
   every sampled unit of a benchmark group has the same outcome, or the group has fewer than two
   units). With `perturb_benchmark = FALSE` no standard error is used and nothing is checked.
   - Test: `tests/testthat/test_xgb_benchmark_se_guard.R`.
+
+* **`xgb()` can build its intervals on the transformation scale (`interval_scale = "transformed"`).**
+  The default (`"natural"`) is unchanged: quantiles of the bootstrap error on the scale of the
+  estimates, added to the estimate, then truncated to [0, 1] for `arcsin` (and at 0 for `poisson`).
+  Near a bound that piles intervals onto 0 or 1 (with the benchmark-target perturbation, half the
+  wards of a poverty map had an upper bound of exactly 1), and for `log` outcomes such as an
+  inequality index it gives negative lower bounds. With `"transformed"` the benchmarked replicates
+  and the simulated truths are transformed, the quantiles of their centred differences are added to
+  the transformed benchmarked estimate and the result is back-transformed; the unbenchmarked
+  interval is the same construction on the point-estimate replicates. Bounds are valid by
+  construction and nothing is clipped. Point estimates and variances do not change. Available for
+  `transformation` `"no"`, `"arcsin"`, `"log"` and `"sqrt"`.
+  - New opt-in `keep_replicates = TRUE` stores the per-replicate domain estimates (point,
+    benchmarked before and after the benchmark-target perturbation), the simulated truths and the
+    perturbations in `$replicates`, so intervals can be rebuilt on any scale without re-running the
+    bootstrap. Off by default (B x domains entries per matrix).
+  - Test: `tests/testthat/test_xgb_interval_scale.R`.
 
 * **megb's bootstrap is centred on the cross-fitted fit.** With
   `predict_sampled = "crossfit"`, each sampled domain is predicted by the fold model

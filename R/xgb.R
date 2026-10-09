@@ -55,6 +55,56 @@ ht_var_weighted_mean <- function(y, w, g) {
   result
 }
 
+# Forward and inverse maps for interval_scale = "transformed". They are self-contained and defined for the
+# whole real line on the way back, so that every back-transformed bound is valid: arcsin returns to [0, 1]
+# (as arcsin_transform_back does), log to the positive half line, sqrt to the non-negative one. They do not
+# use the data-dependent shift of log_transform(): a log outcome must be positive, and the forward map floors
+# its argument at a tiny positive number so that a replicate that is exactly 0 does not give -Inf.
+.interval_scale_fns <- function(transformation) {
+  switch(transformation,
+    "no"     = list(to = function(y) y, from = function(t) t),
+    "arcsin" = list(to = function(y) asin(sqrt(pmin(pmax(y, 0), 1))),
+                    from = function(t) sin(pmax(0, pmin(t, pi / 2)))^2),
+    "log"    = list(to = function(y) log(pmax(y, 1e-12)), from = function(t) exp(t)),
+    "sqrt"   = list(to = function(y) sqrt(pmax(y, 0)), from = function(t) pmax(t, 0)^2),
+    stop("interval_scale = \"transformed\" is implemented for transformation \"no\", \"arcsin\", \"log\" and \"sqrt\", not \"",
+         transformation, "\".", call. = FALSE))
+}
+
+# Interval for one domain on the transformed scale. `est` is the point estimate, `rep_est` its replicates
+# and `rep_truth` the simulated truths (NULL for the unbenchmarked interval, which uses the spread of the
+# replicates around their own mean). The errors are centred on the transformed scale, their quantiles are
+# added to the transformed estimate (the convention of the natural-scale interval) and the bounds are
+# back-transformed. method = "basic" subtracts the reversed quantiles instead (the basic bootstrap interval for an
+# error defined as estimate minus truth): [est - q(1 - a/2), est - q(a/2)].
+.interval_transformed <- function(est, rep_est, rep_truth = NULL, fns, conf_level, method = "plus") {
+  d <- if (is.null(rep_truth)) fns$to(rep_est) else fns$to(rep_est) - fns$to(rep_truth)
+  d <- d - mean(d)
+  q <- stats::quantile(d, probs = c((1 - conf_level) / 2, 1 - (1 - conf_level) / 2), names = FALSE)
+  if (identical(method, "basic")) c(lower = fns$from(fns$to(est) - q[2]), upper = fns$from(fns$to(est) - q[1]))
+  else c(lower = fns$from(fns$to(est) + q[1]), upper = fns$from(fns$to(est) + q[2]))
+}
+
+# Delta-method slope dz/dp of the transformation at a benchmark group's mean benchmarked rate. xgb() uses it to turn the
+# rate-scale benchmark-target SE into an increment on the transformed scale (benchmark-target perturbation).
+# For arcsin the slope, 1 / (2 sqrt(p (1 - p))), is unbounded at 0 and 1. A group benchmarked to a target on the boundary has
+# its mean benchmarked rate there; the slope was then taken at about 1e-9, i.e. about 100 (a finite difference over 1e-4), so a positive target SE (e.g. an
+# Agresti-Coull SE of 0.5 percentage points) became a perturbation of order a radian: half the replicates ended at 0 and the
+# rest spread over (0, 1), and the upper bounds of the group's domains reached 0.1 to 0.6. (With an SE of exactly 0 the product
+# was 0 and hid this.) The slope is now taken at no less than the target SE from either bound: the rate is clamped into
+# [se, 1 - se]. A group whose mean rate lies at least one SE from the boundary is unchanged (the clamp does not bind), as are
+# the other transformations. Found by the DRC audit (ROUND3_RESULTS_20261008.md, section 4).
+.perturb_slope <- function(pbar, se, transformation, transform_outcome) {
+  lo <- 1e-9
+  hi <- if (transformation == "arcsin") 1 - 1e-9 else Inf
+  pbar <- min(max(pbar, lo), hi)
+  if (transformation == "arcsin" && is.finite(se) && se > 0)
+    pbar <- if (se >= 0.5) 0.5 else min(max(pbar, se), 1 - se)
+  eps <- 1e-4
+  p_hi <- min(pbar + eps, hi); p_lo <- max(pbar - eps, lo)
+  as.numeric((transform_outcome(p_hi)$y - transform_outcome(p_lo)$y) / (p_hi - p_lo))
+}
+
 # Population-weighted mean of a per-cell bootstrap quantity within each domain.
 # collapse::fmean() reads g = NULL as "no grouping" and w = NULL as "no
 # weights", so a grouping or weight looked up with $ by a column name the data
@@ -326,6 +376,45 @@ ht_var_weighted_mean <- function(y, w, g) {
 #' @param config_seed integer seed for the bootstrap's configuration draws.
 #'   Defaults to \code{seed}. The draws are made with the global random-number
 #'   state saved and restored, so nothing else changes.
+#' @param interval_scale scale on which the bootstrap intervals are built, for
+#'   the residual and case bootstraps. \code{"natural"} (the default) takes
+#'   quantiles of the replicates on the scale of the estimates, as before; the
+#'   interval can then leave the range of the outcome (a proportion above 1, a
+#'   negative inequality index) and is truncated afterwards (see below).
+#'   \code{"transformed"} builds it on the model's transformation scale: for the
+#'   benchmarked interval the benchmarked replicates and the simulated truths are
+#'   transformed, the quantiles of their (centred) differences are added to the
+#'   transformed benchmarked estimate, and the result is back-transformed; the
+#'   unbenchmarked interval is the same construction on the replicates of the
+#'   point estimate. Bounds then stay valid by construction (\eqn{[0, 1]} for
+#'   \code{"arcsin"}, positive for \code{"log"}, non-negative for \code{"sqrt"}),
+#'   with no clipping, and a ward whose interval would sit on a bound gets a
+#'   proper interval instead. Available for \code{transformation} in
+#'   \code{"no"}, \code{"arcsin"}, \code{"log"} and \code{"sqrt"}, and not with
+#'   \code{boot_estimates = TRUE}. The point estimates and the variances are
+#'   unaffected.
+#' @param keep_replicates logical. If \code{TRUE}, the result contains
+#'   \code{replicates}: for the residual bootstrap the per-replicate (rows) and
+#'   per-domain (columns) point estimates (\code{estimate}), benchmarked estimates
+#'   after the benchmark-target perturbation (\code{benchmarked}) and before it
+#'   (\code{benchmarked_unperturbed}), simulated truths (\code{truth}), the
+#'   perturbations (\code{benchmark_perturbation}) and the domain labels, so that
+#'   intervals can be rebuilt on any scale without re-running the bootstrap.
+#'   Defaults to \code{FALSE}, as the matrices have \code{B} x (number of
+#'   domains) entries each.
+#' @param interval_method how the benchmarked interval uses the quantiles of the
+#'   bootstrap error. A replicate's error is its benchmarked estimate minus its
+#'   simulated truth, centred. \code{"plus"} (the default in earlier versions) adds the
+#'   quantiles to the estimate: [estimate + q(alpha/2), estimate + q(1 - alpha/2)].
+#'   \code{"basic"} (the default) is the basic bootstrap interval, which subtracts the reversed
+#'   quantiles: [estimate - q(1 - alpha/2), estimate - q(alpha/2)]. That is the
+#'   interval for the truth when the error is estimate minus truth, so a long
+#'   tail of errors on one side puts the interval's long tail on the other, as it
+#'   should. The two agree when the error distribution is symmetric about zero and
+#'   differ where it is skewed, typically near a bound. It applies on either
+#'   \code{interval_scale} (on the transformation scale for \code{"transformed"}).
+#'   The unbenchmarked interval is the spread of the simulated truth around the
+#'   estimate, not an error interval, and is not affected.
 #' @importFrom purrr as_vector
 #' @importFrom collapse fmean
 #' @importFrom foreach foreach %dopar% %do%
@@ -413,11 +502,20 @@ xgb <- function(fixed,
                 verbose = FALSE,
                 configs = NULL,
                 config_seed = NULL,
+                interval_scale = c("natural", "transformed"),
+                keep_replicates = FALSE,
+                interval_method = c("basic", "plus"),
                 ...){
 
   #1. Initialize
   .assert_xgb_version()
   smearing <- match.arg(smearing)
+  interval_scale <- match.arg(interval_scale)
+  interval_method <- match.arg(interval_method)
+  if (interval_scale == "transformed") {
+    if (isTRUE(boot_estimates)) stop("interval_scale = \"transformed\" is not available with boot_estimates = TRUE.")
+    interval_fns <- .interval_scale_fns(transformation)   # stops for transformations without a bounded, invertible form
+  }
   out_call <- match.call()
   # default to using sample weights for benchmarking if internal benchmarking
   if (is.null(benchmark_weights) & !is.null(smp_weights)) {
@@ -1049,6 +1147,8 @@ xgb <- function(fixed,
     # This propagates survey-sampling uncertainty of the state direct estimate into
     # the benchmarked CIs. Equivalent to within-loop perturbation of B_sample_bm
     # under the linear approximation that the benchmark adjusts wards additively.
+    B_results_bench_unperturbed <- NULL
+    if (keep_replicates && !is.null(benchmark) && !is.null(B_results_bench)) B_results_bench_unperturbed <- B_results_bench
     if (!is.null(bm_perturbations) && !is.null(benchmark)) {
       # Save unperturbed per-ward Var_bench BEFORE adding noise / clipping, so it
       # is not censored by the [0,1] clip applied to perturbed replicates below.
@@ -1087,10 +1187,8 @@ xgb <- function(fixed,
         } else {
           lo   <- 1e-9
           hi   <- if (transformation == "arcsin") 1 - 1e-9 else Inf
-          pbar <- min(max(mean(B_results_bench[, cols], na.rm = TRUE), lo), hi)
-          eps  <- 1e-4
-          p_hi <- min(pbar + eps, hi); p_lo <- max(pbar - eps, lo)
-          dzdp <- (transform_outcome(p_hi)$y - transform_outcome(p_lo)$y) / (p_hi - p_lo)
+          # slope at the group's mean benchmarked rate, kept at least one target SE away from 0 and 1 (arcsin)
+          dzdp <- .perturb_slope(mean(B_results_bench[, cols], na.rm = TRUE), as.numeric(bm_ht_se[grp]), transformation, transform_outcome)
           tb   <- transform_outcome(pmin(pmax(B_results_bench[, cols], lo), hi))$y
           tb   <- tb + bm_perturbations[, grp] * as.numeric(dzdp)
           B_results_bench[, cols] <- back_transform_outcome(tb)
@@ -1125,6 +1223,8 @@ xgb <- function(fixed,
     results$Mean_boot_bench <- NA
     results$Lower_bench <- NA
     results$Upper_bench <- NA
+    results$Lower_tr <- NA   # interval_scale = "transformed": unbenchmarked bounds
+    results$Upper_tr <- NA
 
     if (!is.null(benchmark)) {
       results <- left_join (results, domains_pred[, c("hat","hat_pc","hat_bench","domains")],by="domains")
@@ -1156,6 +1256,11 @@ xgb <- function(fixed,
       results$Lower_boot[l] <- quantile(temp, probs = (1-conf_level)/2)
       results$Upper_boot[l] <- quantile(temp, probs = 1-(1-conf_level)/2)
       results$Var_boot[l] <- var(temp)
+      if (interval_scale == "transformed") {
+        ci_tr <- .interval_transformed(est = results$hat_pc[l], rep_est = temp, fns = interval_fns, conf_level = conf_level)
+        results$Lower_tr[l] <- ci_tr[["lower"]]
+        results$Upper_tr[l] <- ci_tr[["upper"]]
+      }
       if (!is.null(benchmark)) {
         resid <- B_results_bench[,l]-B_results_truth[,l]
         resid <- resid - mean(resid)
@@ -1169,6 +1274,18 @@ xgb <- function(fixed,
         results$Mean_boot_bench[l] <- mean(temp_bench)
         results$Lower_bench[l] <- results$hat_bench[l] + quantile(resid, probs = (1-conf_level)/2)
         results$Upper_bench[l] <- results$hat_bench[l] + quantile(resid, probs = 1-(1-conf_level)/2)
+        if (interval_method == "basic" && interval_scale == "natural") {
+          # basic bootstrap: the error is estimate - truth, so the truth lies in [estimate - q(1 - a/2), estimate - q(a/2)]
+          results$Lower_bench[l] <- results$hat_bench[l] - quantile(resid, probs = 1-(1-conf_level)/2)
+          results$Upper_bench[l] <- results$hat_bench[l] - quantile(resid, probs = (1-conf_level)/2)
+        }
+        if (interval_scale == "transformed") {
+          # same construction (estimate +/- quantiles of the centred error), but on the transformation scale
+          ci_tr <- .interval_transformed(est = results$hat_bench[l], rep_est = temp_bench, rep_truth = B_results_truth[,l],
+                                         fns = interval_fns, conf_level = conf_level, method = interval_method)
+          results$Lower_bench[l] <- ci_tr[["lower"]]
+          results$Upper_bench[l] <- ci_tr[["upper"]]
+        }
       } # Close benchmark
     } # close loop over areas
 
@@ -1220,6 +1337,22 @@ xgb <- function(fixed,
     } # close use boot estimates
     colnames(result$var)[2]="Mean"
     colnames(result$ind)[2]="Mean"
+    if (interval_scale == "transformed") {
+      # unbenchmarked bounds built on the transformation scale (Lower_bench / Upper_bench were set in the loop)
+      result$CI$Lower <- results$Lower_tr
+      result$CI$Upper <- results$Upper_tr
+    }
+    if (keep_replicates) {
+      with_domains <- function(m) { if (!is.null(m)) colnames(m) <- as.character(B_results_domains); m }
+      has_bench <- !is.null(benchmark) && bootstrap_type == "residual"
+      result$replicates <- list(
+        domains = as.character(B_results_domains), B = B, transformation = transformation,
+        estimate = with_domains(B_results_pc),
+        benchmarked = if (has_bench) with_domains(B_results_bench) else NULL,
+        benchmarked_unperturbed = if (has_bench) with_domains(B_results_bench_unperturbed) else NULL,
+        truth = if (has_bench) with_domains(B_results_truth) else NULL,
+        benchmark_perturbation = bm_perturbations)
+    }
   } # close bootstrap==T
   else {
     # Bootstrap not selected
