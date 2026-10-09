@@ -43,3 +43,11 @@ test_that("log: the transformed interval scale is unchanged (positive by constru
   f <- fit_log(d, interval_scale = "transformed")
   expect_true(all(f$CI$Lower > 0) && all(f$CI$Lower_bench > 0))
 })
+
+test_that("log: xgb() stops on an outcome that is not strictly positive, so truncating at 0 is always valid", {
+  d <- make_log_data()
+  for (v in c(0, -0.3)) {
+    d2 <- d; d2$smp$y[1] <- v
+    expect_error(fit_log(d2), "strictly greater than 0")
+  }
+})

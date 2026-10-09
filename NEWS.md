@@ -5,7 +5,9 @@
   `transformation = "log"`, so on the natural interval scale `Lower` and `Lower_bench` of a
   positive outcome such as the Theil index could be negative. They are now `pmax(., 0)`, as for
   `poisson`. Only bounds that were negative change (to 0); everything else, including
-  `interval_scale = "transformed"` (positive by construction), is identical. `sqrt` is not
+  `interval_scale = "transformed"` (positive by construction), is identical. `xgb()` already stops on a
+  non-positive outcome for `"log"` (`xgb_check1()`), so a log outcome is always positive and the truncation
+  is always valid; `"log.shift"` is untouched. `sqrt` is not
   clipped (an open question, not changed here).
   - Test: `tests/testthat/test_xgb_log_truncation.R`.
 
