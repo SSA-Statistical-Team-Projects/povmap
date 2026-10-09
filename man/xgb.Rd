@@ -52,7 +52,7 @@ xgb(
   config_seed = NULL,
   interval_scale = c("natural", "transformed"),
   keep_replicates = FALSE,
-  interval_method = c("basic", "plus"),
+  interval_method = c("plus", "basic"),
   ...
 )
 }
@@ -297,9 +297,9 @@ state saved and restored, so nothing else changes.}
 
 \item{interval_method}{how the benchmarked interval uses the quantiles of the
   bootstrap error. A replicate's error is its benchmarked estimate minus its
-  simulated truth, centred. \code{"plus"} (the default in earlier versions) adds the
+  simulated truth, centred. \code{"plus"} (the default, as before) adds the
   quantiles to the estimate: [estimate + q(alpha/2), estimate + q(1 - alpha/2)].
-  \code{"basic"} (the default) is the basic bootstrap interval, which subtracts the reversed
+  \code{"basic"} is the basic bootstrap interval, which subtracts the reversed
   quantiles: [estimate - q(1 - alpha/2), estimate - q(alpha/2)]. That is the
   interval for the truth when the error is estimate minus truth, so a long
   tail of errors on one side puts the interval's long tail on the other, as it

@@ -23,14 +23,14 @@
     boundary and the clamped one, about 7 rather than about 100, for a group pinned at zero,
     whose upper bounds stay of the order of the standard error).
 
-* **`xgb()` builds the benchmarked interval with the basic-bootstrap sign by default (`interval_method = "basic"`).**
+* **`xgb()` has an opt-in basic-bootstrap sign for the benchmarked interval (`interval_method = "basic"`).**
   A replicate's error is its benchmarked estimate minus its simulated truth, centred. The
   interval was built as the estimate *plus* the quantiles of that error, i.e. [estimate + q(a/2),
   estimate + q(1 - a/2)]. For an error defined as estimate minus truth the basic bootstrap
   interval for the truth *subtracts* the reversed quantiles, [estimate - q(1 - a/2), estimate -
   q(a/2)], the correction megb received earlier in this release. The two agree when the errors are
-  symmetric about zero and differ when they are skewed, typically near a bound. `"basic"` is now the
-  default; `interval_method = "plus"` reproduces the results of earlier versions exactly. It applies on either `interval_scale`.
+  symmetric about zero and differ when they are skewed, typically near a bound. `"plus"` stays the
+  default, so nothing changes unless `"basic"` is asked for; it applies on either `interval_scale`.
   The unbenchmarked interval is the spread of the simulated truth around the estimate, not an
   error interval, and is not affected. Simulation (100 datasets at moderate rates, 60 at low
   rates): benchmarked coverage 0.707 -> 0.709 (moderate), 0.778 -> 0.790 on the natural scale and

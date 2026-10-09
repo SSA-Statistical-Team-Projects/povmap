@@ -40,8 +40,7 @@ fit_scale <- function(d, transformation = "arcsin", interval_scale = "natural", 
                pop_data = d$pop, pop_weights = "npop", domains = "dom", sub_domains = "sub",
                transformation = transformation, bootstrap = TRUE, B = B, L = 5, cpus = 1, seed = 3,
                nrounds = 20, eta = 0.3, max_depth = 2, colsample_bylevel = 1, colsample_bynode = 1, subsample = 1,
-               interval_scale = interval_scale, keep_replicates = keep_replicates,
-               interval_method = "plus")      # these tests are about the scale; the default method is tested in test_xgb_interval_method.R
+               interval_scale = interval_scale, keep_replicates = keep_replicates)
   if (!is.null(benchmark)) {
     args <- c(args, list(benchmark = benchmark, benchmark_level = "reg",
                          benchmark_type = if (transformation == "log") "ratio" else "logit_raking"))
