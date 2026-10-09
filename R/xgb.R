@@ -1416,7 +1416,7 @@ xgb <- function(fixed,
         result$CI$Upper_bench <- pmin(result$CI$Upper_bench, 1)
       }
     }
-    else if (transformation=="poisson" || (!is.null(list(...)$objective) && list(...)$objective=="reg:gamma" && bootstrap_type=="residual")) {
+    else if (transformation=="poisson" || transformation=="log" || (!is.null(list(...)$objective) && list(...)$objective=="reg:gamma" && bootstrap_type=="residual")) {
       result$CI$Lower <- pmax(result$CI$Lower, 0)
       if (!is.null(benchmark)) {
         result$CI$Lower_bench <- pmax(result$CI$Lower_bench, 0)
