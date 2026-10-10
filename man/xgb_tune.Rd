@@ -34,6 +34,7 @@ xgb_tune(
   rescale_weights = TRUE,
   variance_y = NULL,
   grid = NULL,
+  overfit_ratio = FALSE,
   cpus = 1,
   verbose = TRUE,
   ...
@@ -188,6 +189,16 @@ more rounds only at the smaller \code{eta}). Columns are hyperparameter
 names (\code{nround}, \code{max_depth}, ...); a hyperparameter missing from
 it takes the first value of its argument. Only with \code{search = "grid"}.
 \code{NULL} (default) scores the full cross of the vectors as before.}
+
+\item{overfit_ratio}{logical. If \code{TRUE} (and \code{keep_candidates} is
+\code{TRUE}), every candidate is also refitted on the whole sample and the
+ratio of its out-of-fold to its in-sample residual spread is computed on the
+search's own fold assignment, see \code{\link{xgb_overfit_ratio}}. The
+result gains an element \code{overfit} (a data.frame with one row per
+candidate), which \code{\link{xgb_top_configs}(rule = "least_overfit")}
+reads. This costs one more full fit and \code{folds} fold fits per
+candidate, uses no random numbers and changes nothing else in the result.
+Default \code{FALSE}.}
 
 \item{verbose}{display progress. Defaults to FALSE.}
 

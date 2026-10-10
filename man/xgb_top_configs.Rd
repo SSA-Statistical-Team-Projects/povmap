@@ -6,10 +6,13 @@
 \usage{
 xgb_top_configs(
   tune,
-  rule = c("one_se_paired", "one_se", "k_best"),
+  rule = c("one_se_paired", "one_se", "k_best", "least_overfit", "one_se_ratio"),
   k = 5,
   floor = 3,
-  cap = 8
+  cap = 8,
+  ratio = NULL,
+  max_ratio = 2,
+  ratio_cap = 40
 )
 }
 \arguments{
@@ -29,12 +32,41 @@ splits and its standard error is the typical single-split one (it is not
 divided further by the number of splits, because the splits reuse the same
 sample). \code{"one_se"}: every configuration whose score is at most the
 best score plus the best configuration's own standard error.
-\code{"k_best"}: the \code{k} configurations with the lowest scores.}
+\code{"k_best"}: the \code{k} configurations with the lowest scores.
+\code{"least_overfit"}: among the configurations of the
+\code{"one_se_paired"} set (taken with \code{floor = 1} and no \code{cap},
+whatever those arguments say), the single one with the lowest
+out-of-fold to in-sample residual ratio (see \code{\link{xgb_overfit_ratio}}).
+Ties go to the better score. \code{"one_se_ratio"}: the configurations of
+that set whose ratio is at most \code{max_ratio}, averaged with equal
+weights (at most \code{cap} of them, best scores first); when fewer than two
+qualify, the single configuration with the lowest ratio, as for
+\code{"least_overfit"}. Both need the ratios, see \code{ratio}.}
 
 \item{k}{number of configurations for \code{rule = "k_best"}.}
 
 \item{floor, cap}{the set is filled up to \code{floor} configurations with the
-next best by score, and cut to the \code{cap} best by score. Defaults 3 and 8.}
+next best by score, and cut to the \code{cap} best by score. Defaults 3 and 8.
+For \code{rule = "least_overfit"} neither applies; for \code{"one_se_ratio"}
+only \code{cap} does.}
+
+\item{ratio}{the out-of-fold to in-sample residual ratio of each candidate, a
+numeric vector with one element per row of the candidates (\code{NA} for
+candidates without one, which cannot be chosen), used by the two ratio
+rules. If \code{NULL} (default) it is read from the \code{overfit$ratio_total}
+of the \code{xgb_tune} results (run with \code{overfit_ratio = TRUE}), averaged
+over those results that have it.}
+
+\item{max_ratio}{largest ratio an averaged configuration may have, for
+\code{rule = "one_se_ratio"}. Default 2, that is out-of-fold residuals up to
+twice as spread as in-sample ones. The scale of the ratio differs a lot
+between outcomes (in the DRC application the lowest ratio in the set ran from
+1.1 to 1.9), so look at the ratios before relying on the default.}
+
+\item{ratio_cap}{for the ratio rules, only the \code{ratio_cap} best-scoring
+members of the one-SE set are considered, which bounds the number of ratios
+needed. Default 40, as in the DRC selection; \code{NULL} considers the
+whole set.}
 }
 \value{
 a data.frame with one row per selected configuration, best first:
@@ -44,8 +76,8 @@ a data.frame with one row per selected configuration, best first:
   \code{min_child_weight}, \code{eta}, \code{gamma}, \code{max_delta_step},
   \code{lambda}, \code{alpha}), \code{weight} (equal weights summing to 1),
   \code{cv_score} (mean cross-validation error) and \code{rank} (rank of the
-  score among all candidates). It can be passed to \code{xgb(configs = )}
-  as it is.
+  score among all candidates). The ratio rules add \code{overfit_ratio}. It can
+  be passed to \code{xgb(configs = )} as it is.
 }
 \description{
 Configuration averaging fits several near-equivalent tuned configurations

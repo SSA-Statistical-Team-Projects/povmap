@@ -150,6 +150,15 @@
 #'   names (\code{nround}, \code{max_depth}, ...); a hyperparameter missing from
 #'   it takes the first value of its argument. Only with \code{search = "grid"}.
 #'   \code{NULL} (default) scores the full cross of the vectors as before.
+#' @param overfit_ratio logical. If \code{TRUE} (and \code{keep_candidates} is
+#'   \code{TRUE}), every candidate is also refitted on the whole sample and the
+#'   ratio of its out-of-fold to its in-sample residual spread is computed on the
+#'   search's own fold assignment, see \code{\link{xgb_overfit_ratio}}. The
+#'   result gains an element \code{overfit} (a data.frame with one row per
+#'   candidate), which \code{\link{xgb_top_configs}(rule = "least_overfit")}
+#'   reads. This costs one more full fit and \code{folds} fold fits per
+#'   candidate, uses no random numbers and changes nothing else in the result.
+#'   Default \code{FALSE}.
 #' @param verbose display progress. Defaults to FALSE.
 #' @param ... additional parameters to be passed to \code{xgb.train}.
 #'
@@ -208,6 +217,7 @@ xgb_tune <- function(fixed,
                      rescale_weights = TRUE,
                      variance_y = NULL,
                      grid = NULL,
+                     overfit_ratio = FALSE,
                      cpus = 1, 
                      verbose = TRUE,
                      ...){
@@ -418,6 +428,15 @@ xgb_tune <- function(fixed,
     final_output$candidates      <- cand
     final_output$cv_by_fold      <- OPT
     final_output$fold_assignment <- cluster_unique
+    if (isTRUE(overfit_ratio)) {
+      ## opt-in: out-of-fold / in-sample residual ratio of every candidate on the search's folds
+      g_r <- tunegrid
+      if (es_on) g_r$nround <- round(rowMeans(ITER))
+      final_output$overfit <- .xgb_overfit_core(
+        g_r, X = X_final, yt = Y_smp[, 1], w = as.numeric(smp_weights), dom = X_smp[[domains]],
+        fold = cluster_col$fold, folds = folds, rescale_weights = rescale_weights, het = het,
+        fit_seed = seed, cpus = cpus, dots = dots)
+    }
   }
   if (es_on) {
     final_output$best_iters_by_fold <- best_iters

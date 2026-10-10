@@ -1,5 +1,20 @@
 # povmap 1.0.1
 
+* **Least-overfit configuration selection (opt-in).** `xgb_top_configs()` gains `rule = "least_overfit"`:
+  among the configurations of the paired one-SE set (floor 1, no cap), the single one with the lowest
+  out-of-fold to in-sample residual ratio, ties to the better score; and `rule = "one_se_ratio"`: the
+  set members with ratio at most `max_ratio` (default 2), averaged with equal weights (at most `cap`),
+  falling back to the single lowest-ratio configuration when fewer than two qualify. New arguments
+  `ratio`, `max_ratio` and `ratio_cap` (the best 40 set members are ratioed, as in the DRC selection);
+  the ratio rules add an `overfit_ratio` column that `xgb(configs = )` and `xgb_cv(configs = )` ignore.
+  The ratio comes from the new exported `xgb_overfit_ratio()` (full fit vs territory-grouped
+  cross-validation, survey-weighted residual SD on the transformed scale, total, domain and
+  within-domain pools) or from `xgb_tune(overfit_ratio = TRUE)`, which adds an `overfit` element on the
+  search's own folds. **Nothing changes for existing callers**: `overfit_ratio` defaults to `FALSE`, the
+  default `rule` is still `"one_se_paired"`, and outputs of the existing rules are identical to before.
+  - Test: `tests/testthat/test_xgb_least_overfit.R` (synthetic sets, ties, thresholds, defaults; the
+    16 DRC indicators against the saved set B selection, using `tests/testthat/fixtures/`).
+
 * **`xgb()` truncates the lower interval bounds of a log-transformed outcome at 0.** Intervals
   were truncated to [0, 1] for `arcsin` and at 0 for `poisson` and gamma outcomes, but not for
   `transformation = "log"`, so on the natural interval scale `Lower` and `Lower_bench` of a
