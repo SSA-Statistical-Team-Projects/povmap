@@ -35,6 +35,8 @@ xgb_tune(
   variance_y = NULL,
   grid = NULL,
   overfit_ratio = FALSE,
+  score_scale = c("transformed", "response"),
+  fit_seed = NULL,
   cpus = 1,
   verbose = TRUE,
   ...
@@ -199,6 +201,21 @@ candidate), which \code{\link{xgb_top_configs}(rule = "least_overfit")}
 reads. This costs one more full fit and \code{folds} fold fits per
 candidate, uses no random numbers and changes nothing else in the result.
 Default \code{FALSE}.}
+
+\item{score_scale}{scale on which the held-out domain means are compared.
+\code{"transformed"} (default) is the scale the models are trained on, as
+always. \code{"response"} back-transforms the held-out predictions to the
+outcome's own scale (arcsin: \code{sin(clamp(h, 0, pi/2))^2}; log:
+\code{exp}; poisson: \code{pmax(0, expm1(h))}) and scores the weighted
+domain means against the weighted direct means of the raw outcome. With
+\code{"response"}, \code{transformation = "poisson"} also trains on
+\code{log1p(y)} as \code{\link{xgb}} does (without it, \code{xgb_tune}
+leaves a poisson outcome untransformed, as before). Used for the DRC
+re-scoring; the default changes nothing.}
+
+\item{fit_seed}{seed passed to xgboost for every fit. \code{NULL} (default)
+uses \code{seed}, as before. Set it to score on folds drawn from \code{seed}
+while keeping the fit seed fixed.}
 
 \item{verbose}{display progress. Defaults to FALSE.}
 

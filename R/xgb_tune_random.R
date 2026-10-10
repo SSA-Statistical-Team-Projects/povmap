@@ -162,7 +162,9 @@
                                cluster_col, cluster, domains, folds,
                                early_stopping_rounds = NULL, nrounds_max = 2000,
                                seed = NULL, dots = list(), rescale_weights = TRUE,
-                               het = NULL) {
+                               het = NULL, fit_seed = seed, y_resp = NULL, back = NULL) {
+  ## scoring labels: the transformed outcome, or the raw one when scored on the response scale
+  Y_score <- if (is.null(y_resp)) Y_smp[, 1] else y_resp
   dom_all <- X_smp[[paste0(domains)]]
   ## heteroscedasticity factor for rows `r` (variance_y^-0.5), or 1 without variance_y
   het_rows <- function(r) if (is.null(het)) 1 else het[r]
@@ -176,7 +178,7 @@
   fold_info <- vector("list", folds)
   for (fold in seq_len(folds)) {
     hold <- cluster_col$fold == fold
-    fold_df <- data.frame(labels = Y_smp[hold, ],
+    fold_df <- data.frame(labels = Y_score[hold],
                           domains = X_smp[hold, ][[paste0(domains)]],
                           wts = smp_weights[hold])
     domain_labels_list[[fold]] <- sapply(split(fold_df, fold_df$domains),
@@ -219,7 +221,7 @@
       max_delta_step    = tunegrid$max_delta_step[row],
       lambda            = tunegrid$lambda[row],
       alpha             = tunegrid$alpha[row]), dots)
-    if (!is.null(seed)) params$seed <- seed
+    if (!is.null(fit_seed)) params$seed <- fit_seed
 
     dtrain <- xgboost::xgb.DMatrix(data = data.matrix(X_final[fi$es_train, ]),
                                    label = Y_smp[fi$es_train, ],
@@ -240,9 +242,10 @@
     }
 
     hat <- predict(fit, data.matrix(X_final[fi$hold, ]))
+    if (!is.null(back)) hat <- back(hat)
     dh  <- data.frame(hat = hat,
                       domains = X_smp[fi$hold, ][[paste0(domains)]],
-                      labels = Y_smp[fi$hold, ],
+                      labels = Y_score[fi$hold],
                       wts = smp_weights[fi$hold])
     g   <- split(dh, dh$domains)
     mh  <- sapply(g, function(z) stats::weighted.mean(z$hat, w = z$wts))

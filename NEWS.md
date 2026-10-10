@@ -12,6 +12,20 @@
   within-domain pools) or from `xgb_tune(overfit_ratio = TRUE)`, which adds an `overfit` element on the
   search's own folds. **Nothing changes for existing callers**: `overfit_ratio` defaults to `FALSE`, the
   default `rule` is still `"one_se_paired"`, and outputs of the existing rules are identical to before.
+  - **Residual pools.** `xgb_overfit_ratio()` returns all three pools in one object (printed together):
+    `total` (unit-level residuals, the pool the DRC selection ranks on), `domain` (domain-mean
+    residuals) and `within_domain` (unit residual less domain mean). `xgb_top_configs(ratio_pool = )`
+    says which one is ranked and thresholded (default `"total"`); quote the pool with the number.
+  - `max_ratio = 2` is a provisional, unvalidated default. If out-of-fold residual pools are adopted the
+    threshold only needs to exclude badly overfitted configurations; observed ratios on comparable
+    pools run about 1.1 to 1.9 (DRC, total pool, lowest-ratio member of each set).
+  - `xgb_tune()` gains two opt-in arguments, both inert by default: `score_scale = "response"` scores the
+    held-out domain means on the outcome's own scale (back-transformed predictions; with it,
+    `transformation = "poisson"` trains on `log1p(y)` as `xgb()` does, whereas `xgb_tune()` otherwise
+    leaves a poisson outcome untransformed), and `fit_seed` fixes the xgboost seed separately from the
+    fold seed `seed`.
+  - `inst/scripts/least_overfit_rescore.R` re-runs the DRC selection from the saved candidate tables with
+    package code only (fresh folds 901 and 902, ratios, `rule = "least_overfit"`).
   - Test: `tests/testthat/test_xgb_least_overfit.R` (synthetic sets, ties, thresholds, defaults; the
     16 DRC indicators against the saved set B selection, using `tests/testthat/fixtures/`).
 

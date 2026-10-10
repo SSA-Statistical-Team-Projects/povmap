@@ -159,6 +159,19 @@
 #'   reads. This costs one more full fit and \code{folds} fold fits per
 #'   candidate, uses no random numbers and changes nothing else in the result.
 #'   Default \code{FALSE}.
+#' @param score_scale scale on which the held-out domain means are compared.
+#'   \code{"transformed"} (default) is the scale the models are trained on, as
+#'   always. \code{"response"} back-transforms the held-out predictions to the
+#'   outcome's own scale (arcsin: \code{sin(clamp(h, 0, pi/2))^2}; log:
+#'   \code{exp}; poisson: \code{pmax(0, expm1(h))}) and scores the weighted
+#'   domain means against the weighted direct means of the raw outcome. With
+#'   \code{"response"}, \code{transformation = "poisson"} also trains on
+#'   \code{log1p(y)} as \code{\link{xgb}} does (without it, \code{xgb_tune}
+#'   leaves a poisson outcome untransformed, as before). Used for the DRC
+#'   re-scoring; the default changes nothing.
+#' @param fit_seed seed passed to xgboost for every fit. \code{NULL} (default)
+#'   uses \code{seed}, as before. Set it to score on folds drawn from \code{seed}
+#'   while keeping the fit seed fixed.
 #' @param verbose display progress. Defaults to FALSE.
 #' @param ... additional parameters to be passed to \code{xgb.train}.
 #'
@@ -218,6 +231,8 @@ xgb_tune <- function(fixed,
                      variance_y = NULL,
                      grid = NULL,
                      overfit_ratio = FALSE,
+                     score_scale = c("transformed", "response"),
+                     fit_seed = NULL,
                      cpus = 1, 
                      verbose = TRUE,
                      ...){
@@ -264,16 +279,29 @@ xgb_tune <- function(fixed,
 
   # Transformation
   #_____________________________________________________________________________
+  Y_smp_raw <- Y_smp
   if (transformation=="arcsin"){
     Y_smp <- asin(sqrt(Y_smp))
   }
   if (transformation=="log"){
     Y_smp <- log(Y_smp)
   }
+  score_scale <- match.arg(score_scale)
+  y_resp <- NULL; back <- NULL
+  if (score_scale == "response") {
+    if (!transformation %in% c("no", "arcsin", "log", "poisson"))
+      stop("score_scale = \"response\" supports transformation no, arcsin, log and poisson.", call. = FALSE)
+    y_resp <- Y_smp_raw[, 1]
+    if (transformation == "poisson") Y_smp <- log1p(Y_smp)
+    back <- switch(transformation, no = identity,
+                   arcsin = function(h) sin(pmax(0, pmin(h, pi / 2)))^2,
+                   log = exp, poisson = function(h) pmax(0, expm1(h)))
+  }
 
   # Search mode, seed
   #_____________________________________________________________________________
   search <- match.arg(search)
+  if (is.null(fit_seed)) fit_seed <- seed
   ## Seeding covers BOTH the fold assignment below and the random draw. The fold
   ## assignment was previously unseeded, so even grid search was not reproducible
   ## run to run; seed = NULL preserves that old behaviour exactly.
@@ -373,7 +401,8 @@ xgb_tune <- function(fixed,
                      cluster = cluster, domains = domains, folds = folds,
                      early_stopping_rounds = early_stopping_rounds,
                      nrounds_max = nrounds_max, seed = seed, dots = dots,
-                     rescale_weights = rescale_weights, het = het)
+                     rescale_weights = rescale_weights, het = het,
+                     fit_seed = fit_seed, y_resp = y_resp, back = back)
 
   sc <- do.call(.xgb_score_configs, c(list(tunegrid = tunegrid), score_args))
   OPT <- sc$OPT; ITER <- sc$ITER; domain_labels_list <- sc$domain_labels
@@ -435,7 +464,7 @@ xgb_tune <- function(fixed,
       final_output$overfit <- .xgb_overfit_core(
         g_r, X = X_final, yt = Y_smp[, 1], w = as.numeric(smp_weights), dom = X_smp[[domains]],
         fold = cluster_col$fold, folds = folds, rescale_weights = rescale_weights, het = het,
-        fit_seed = seed, cpus = cpus, dots = dots)
+        fit_seed = fit_seed, cpus = cpus, dots = dots)
     }
   }
   if (es_on) {

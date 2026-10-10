@@ -15,11 +15,24 @@
 #' appearance). Every model, the full one and the fold ones, is weighted as
 #' \code{\link{xgb}} would weight a fit on its own rows (see
 #' \code{rescale_weights} and \code{variance_y} in \code{\link{xgb_tune}}).
-#' The residual spread is the survey-weighted standard deviation, in three
-#' pools: \code{total} (all observations), \code{domain} (the residuals
-#' averaged within each domain, weighted by the domain's weight total) and
-#' \code{sub} (the residuals less their domain mean, the within-domain part).
-#' The ratio of each is the out-of-fold spread divided by the in-sample one.
+#' The residual spread is the survey-weighted standard deviation (weights
+#' \code{smp_weights}, population form), and it is reported for three residual
+#' pools, all in one return object:
+#' \describe{
+#'   \item{\code{total}}{the unit-level (survey record, for example EA or
+#'     household) residuals, all of them. \strong{This is the pool the DRC
+#'     least-overfit selection ranks on} (\code{ratio_total} in its
+#'     \code{least_overfit_selection.csv}), and the default of
+#'     \code{ratio_pool} in \code{\link{xgb_top_configs}}.}
+#'   \item{\code{domain}}{the domain (for DRC, territory) pool: the residuals
+#'     averaged within each domain, weighted by the domain's weight total, one
+#'     value per domain. A domain average of in-sample residuals is close to
+#'     zero, so this ratio is the largest and noisiest.}
+#'   \item{\code{within_domain}}{the within-domain (for DRC, EA-level) pool:
+#'     each unit's residual less its domain's weighted mean residual.}
+#' }
+#' The ratio of each pool is the out-of-fold spread divided by the in-sample one.
+#' Quote the pool with the number: ratios of different pools are not comparable.
 #'
 #' This is the procedure of the DRC \dQuote{least overfit} selection. There the
 #' ratios were computed in a separate pass on a fresh fold assignment (seed 901)
@@ -49,12 +62,12 @@
 #'   leaves xgboost's own default.
 #' @param cpus number of worker processes (PSOCK), default 1.
 #' @param ... further parameters passed to \code{xgb.train}.
-#' @return a data.frame with one row per evaluated configuration:
-#'   \code{row} (its row in \code{configs}), \code{in_total}, \code{oof_total},
-#'   \code{in_domain}, \code{oof_domain}, \code{in_sub}, \code{oof_sub} (the
-#'   in-sample and out-of-fold residual standard deviations) and
-#'   \code{ratio_total}, \code{ratio_domain}, \code{ratio_sub}
-#'   (out-of-fold over in-sample).
+#' @return an object of class \code{xgb_overfit_ratio}, a data.frame with one
+#'   row per evaluated configuration: \code{row} (its row in \code{configs}),
+#'   and for each pool \code{total}, \code{domain}, \code{within_domain} (see
+#'   Details) the in-sample and out-of-fold residual standard deviations
+#'   \code{in_<pool>}, \code{oof_<pool>} and their ratio \code{ratio_<pool>}
+#'   (out-of-fold over in-sample). Printing shows the three ratios together.
 #' @seealso \code{\link{xgb_top_configs}}, \code{\link{xgb_tune}}
 #' @export
 #' @importFrom foreach foreach %dopar%
@@ -125,7 +138,7 @@ xgb_overfit_ratio <- function(fixed, smp_data, configs, smp_weights = NULL, doma
   tw <- tapply(w, dom, sum)
   tm <- tapply(res * w, dom, sum) / tw
   c(total = .xgb_wsd(res, w), domain = .xgb_wsd(as.numeric(tm), as.numeric(tw)),
-    sub = .xgb_wsd(res - dm, w))
+    within_domain = .xgb_wsd(res - dm, w))
 }
 
 ## One configuration: the full fit and the cluster-grouped fold fits
@@ -149,7 +162,8 @@ xgb_overfit_ratio <- function(fixed, smp_data, configs, smp_weights = NULL, doma
   }
   a <- .xgb_resid_pools(r_in, w, dom); b <- .xgb_resid_pools(yt - pr, w, dom)
   c(in_total = a[["total"]], oof_total = b[["total"]], in_domain = a[["domain"]],
-    oof_domain = b[["domain"]], in_sub = a[["sub"]], oof_sub = b[["sub"]])
+    oof_domain = b[["domain"]], in_within_domain = a[["within_domain"]],
+    oof_within_domain = b[["within_domain"]])
 }
 
 ## Ratios for the rows `rows` of `grid` (xgb_tune names); `fold` gives each observation's fold
@@ -167,10 +181,22 @@ xgb_overfit_ratio <- function(fixed, smp_data, configs, smp_weights = NULL, doma
   }
   res <- matrix(as.numeric(res), ncol = 7)
   d <- as.data.frame(res)
-  names(d) <- c("row", "in_total", "oof_total", "in_domain", "oof_domain", "in_sub", "oof_sub")
+  names(d) <- c("row", "in_total", "oof_total", "in_domain", "oof_domain", "in_within_domain", "oof_within_domain")
   d$row <- as.integer(d$row)
   d$ratio_total <- d$oof_total / d$in_total
   d$ratio_domain <- d$oof_domain / d$in_domain
-  d$ratio_sub <- d$oof_sub / d$in_sub
+  d$ratio_within_domain <- d$oof_within_domain / d$in_within_domain
+  class(d) <- c("xgb_overfit_ratio", "data.frame")
   d
+}
+
+#' @export
+print.xgb_overfit_ratio <- function(x, digits = 3, ...) {
+  cat("Out-of-fold / in-sample residual SD ratios, by residual pool\n",
+      "  total = unit-level residuals (the pool the DRC least-overfit rule ranks on)\n",
+      "  domain = domain-mean residuals; within_domain = unit residual less domain mean\n", sep = "")
+  print.data.frame(data.frame(row = x$row, ratio_total = x$ratio_total, ratio_domain = x$ratio_domain,
+                              ratio_within_domain = x$ratio_within_domain),
+                   digits = digits, row.names = FALSE)
+  invisible(x)
 }

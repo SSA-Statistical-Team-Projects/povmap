@@ -159,6 +159,15 @@ test_that("xgb_overfit_ratio matches a hand computation with plain xgboost", {
   expect_equal(rr$in_total[2], sdw(rin, d$wt), tolerance = 1e-10)
   expect_equal(rr$oof_total[2], sdw(yt - pr, d$wt), tolerance = 1e-10)
   expect_equal(rr$ratio_total[2], sdw(yt - pr, d$wt) / sdw(rin, d$wt), tolerance = 1e-10)
+  ## the other two pools, by hand: domain = weighted domain-mean residuals, within = residual less domain mean
+  pools <- function(res) { tw <- tapply(d$wt, d$dom, sum); tm <- tapply(res * d$wt, d$dom, sum) / tw
+    dm <- tm[as.character(d$dom)]; c(domain = sdw(as.numeric(tm), as.numeric(tw)), within = sdw(res - dm, d$wt)) }
+  expect_equal(rr$in_domain[2], pools(rin)[["domain"]], tolerance = 1e-10)
+  expect_equal(rr$oof_domain[2], pools(yt - pr)[["domain"]], tolerance = 1e-10)
+  expect_equal(rr$ratio_within_domain[2], pools(yt - pr)[["within"]] / pools(rin)[["within"]], tolerance = 1e-10)
+  expect_s3_class(rr, "xgb_overfit_ratio")
+  expect_true(all(c("ratio_total", "ratio_domain", "ratio_within_domain") %in% names(rr)))
+  expect_output(print(rr), "ratio_total.*ratio_domain.*ratio_within_domain")
   expect_true(all(rr$ratio_total > 1))                       # held-out clusters are never fitted better than the sample
   ## rows subset, and nrounds accepted for nround
   r2 <- suppressWarnings(xgb_overfit_ratio(y ~ x1 + x2, d, setNames(ratio_grid, sub("^nround$", "nrounds", names(ratio_grid))),
@@ -256,4 +265,85 @@ test_that("DRC fixture agrees with the saved DRC outputs when they are available
     expect_equal(sum(fix[[ind]]$cand$in_set), sum(m$in_set), info = ind)
     expect_equal(min(m$ratio_total[m$in_set]), sel$sel_ratio_total[sel$indicator == ind], tolerance = 1e-12, info = ind)
   }
+})
+
+## ---- residual pools --------------------------------------------------------------------------------
+
+test_that("ratio_pool chooses the pool that is ranked on, and is recorded", {
+  t5 <- synth_tune(m5, a5)
+  ov <- data.frame(row = 1:5, ratio_total = c(2.0, 1.5, 1.7, 0.5, 0.4),
+                   ratio_domain = c(3.0, 2.5, 1.2, 0.5, 0.4),
+                   ratio_within_domain = c(1.1, 1.3, 1.4, 0.5, 0.4))
+  expect_equal(xgb_top_configs(t5, rule = "least_overfit", ratio = ov)$nrounds, 102)             # default: total
+  p_dom <- xgb_top_configs(t5, rule = "least_overfit", ratio = ov, ratio_pool = "domain")
+  expect_equal(p_dom$nrounds, 103); expect_equal(p_dom$overfit_ratio, 1.2)
+  expect_identical(attr(p_dom, "ratio_pool"), "domain"); expect_equal(attr(p_dom, "rows"), 3L)
+  p_w <- xgb_top_configs(t5, rule = "least_overfit", ratio = ov, ratio_pool = "within_domain")
+  expect_equal(p_w$nrounds, 101); expect_identical(attr(p_w, "ratio_pool"), "within_domain")
+  expect_identical(attr(xgb_top_configs(t5, rule = "least_overfit", ratio = ov), "ratio_pool"), "total")
+  ## the threshold applies to the chosen pool
+  expect_equal(xgb_top_configs(t5, rule = "one_se_ratio", ratio = ov, ratio_pool = "domain", max_ratio = 2.6)$nrounds, c(102, 103))
+  ## from the tune objects
+  t5o <- synth_tune(m5, a5, list(overfit = ov))
+  expect_equal(xgb_top_configs(t5o, rule = "least_overfit", ratio_pool = "domain")$nrounds, 103)
+  expect_equal(xgb_top_configs(t5o, rule = "least_overfit", ratio_pool = "within_domain")$nrounds, 101)
+  expect_error(xgb_top_configs(t5, rule = "least_overfit", ratio = ov[, c("row", "ratio_total")], ratio_pool = "domain"), "ratio_domain")
+  expect_error(xgb_top_configs(t5, rule = "least_overfit", ratio = ov, ratio_pool = "sub"))
+  ## a candidate missing from the ratio table cannot be chosen
+  expect_equal(xgb_top_configs(t5, rule = "least_overfit", ratio = ov[2:3, ])$nrounds, 102)
+  ## existing rules carry no attributes
+  expect_null(attr(xgb_top_configs(t5), "rows")); expect_null(attr(xgb_top_configs(t5), "ratio_pool"))
+})
+
+test_that("xgb_tune: score_scale = 'response' and fit_seed", {
+  skip_if_not_installed("xgboost")
+  skip_on_cran()
+  d <- make_ratio_data()
+  g1 <- ratio_grid[2, ]
+  run <- function(...) suppressWarnings(suppressMessages(xgb_tune(
+    y ~ x1 + x2, smp_data = d, smp_weights = "wt", domains = "dom", folds = 4, grid = g1, seed = 5,
+    verbose = FALSE, ...)))
+  ## identity back-transformation: same scores on both scales
+  expect_identical(run(transformation = "no", score_scale = "response")$cv_by_fold, run(transformation = "no")$cv_by_fold)
+  ## arcsin: scores differ and equal a hand computation (fold 1)
+  ta <- run(transformation = "arcsin"); tb <- run(transformation = "arcsin", score_scale = "response")
+  expect_false(isTRUE(all.equal(ta$cv_by_fold, tb$cv_by_fold)))
+  yt <- asin(sqrt(d$y)); X <- data.matrix(d[, c("x1", "x2")])
+  set.seed(5); cu <- unique(d$dom); fold <- sample(1:4, length(cu), replace = TRUE)[match(d$dom, cu)]
+  g <- g1; p <- list(max_depth = g$max_depth, colsample_bytree = g$colsample_bytree, colsample_bylevel = 1, colsample_bynode = 1,
+                     subsample = g$subsample, min_child_weight = g$min_child_weight, eta = g$eta, gamma = 0,
+                     max_delta_step = 0, lambda = g$lambda, alpha = 0, seed = 5)
+  tr <- fold != 1; w <- d$wt[tr]; w <- w * ave(w, d$dom[tr], FUN = length) / ave(w, d$dom[tr], FUN = sum); w <- w / mean(w); w <- w / mean(w)
+  fit <- xgboost::xgb.train(xgboost::xgb.DMatrix(X[tr, ], label = yt[tr], weight = w), params = p, nrounds = g$nround, verbose = 0)
+  hat <- sin(pmax(0, pmin(predict(fit, X[!tr, ]), pi / 2)))^2
+  h <- !tr; dd <- d$dom[h]
+  ml <- tapply(seq_along(dd), dd, function(i) weighted.mean(d$y[h][i], d$wt[h][i]))
+  mh <- tapply(seq_along(dd), dd, function(i) weighted.mean(hat[i], d$wt[h][i]))
+  expect_equal(tb$cv_by_fold[1, 1], mean((ml - mh)^2), tolerance = 1e-8)
+  ## fit_seed: NULL is the seed; a different one changes the (subsampled) fits only
+  expect_identical(run(transformation = "arcsin", fit_seed = 5)$cv_by_fold, ta$cv_by_fold)
+  expect_false(identical(run(transformation = "arcsin", fit_seed = 7)$cv_by_fold, ta$cv_by_fold))
+  expect_identical(run(transformation = "arcsin", fit_seed = 7)$fold_assignment, ta$fold_assignment)
+})
+
+## ---- end-to-end DRC reproduction (inst/scripts/least_overfit_rescore.R) --------------------------------
+## The script re-runs the whole selection with package code from the saved candidate tables (hours of
+## computation); this test checks its small output file against the saved set B tunes, when present.
+test_that("end-to-end package rescoring of the DRC candidates: 13 of 16 identical, 3 differ by set definition", {
+  ## The package rule searches the paired one-SE set. The DRC script took as the set every candidate scoring no worse
+  ## than the worst member of that set (a score prefix), which is larger for access_elec (39 vs 13 candidates),
+  ## telpor (20 vs 13) and petitrum (28 vs 17), and its lowest-ratio pick (grid row 104 in each) is outside the
+  ## paired set. Scores, sets sizes and ratios agree to the last digit; only the three picks differ.
+  base <- "H:/david/SAE/DRC/data/candidate_estimates/least_overfit_20261008"
+  f <- file.path(base, "e2e_package_rescore", "least_overfit_rescore.csv")
+  skip_on_cran()
+  skip_if(!file.exists(f) || !file.exists(file.path(base, "xgb_all_tunes_least_overfit")), "end-to-end output not available")
+  r <- utils::read.csv(f); tun <- readRDS(file.path(base, "xgb_all_tunes_least_overfit"))
+  hp <- c("nround", "max_depth", "colsample_bytree", "colsample_bylevel", "colsample_bynode", "subsample",
+          "min_child_weight", "eta", "gamma", "max_delta_step", "lambda", "alpha")
+  skip_if(nrow(r) < 16, "end-to-end output incomplete")
+  differ <- c("access_elec", "telpor", "petitrum")
+  expect_identical(sort(r$indicator[!r$matches_ref]), sort(differ))
+  for (ind in setdiff(r$indicator, differ))
+    expect_equal(as.numeric(r[r$indicator == ind, hp]), as.numeric(unlist(tun[[ind]][hp])), tolerance = 1e-12, info = ind)
 })

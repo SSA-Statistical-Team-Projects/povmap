@@ -94,12 +94,12 @@ leaves xgboost's own default.}
 \item{...}{further parameters passed to \code{xgb.train}.}
 }
 \value{
-a data.frame with one row per evaluated configuration:
-  \code{row} (its row in \code{configs}), \code{in_total}, \code{oof_total},
-  \code{in_domain}, \code{oof_domain}, \code{in_sub}, \code{oof_sub} (the
-  in-sample and out-of-fold residual standard deviations) and
-  \code{ratio_total}, \code{ratio_domain}, \code{ratio_sub}
-  (out-of-fold over in-sample).
+an object of class \code{xgb_overfit_ratio}, a data.frame with one
+  row per evaluated configuration: \code{row} (its row in \code{configs}),
+  and for each pool \code{total}, \code{domain}, \code{within_domain} (see
+  Details) the in-sample and out-of-fold residual standard deviations
+  \code{in_<pool>}, \code{oof_<pool>} and their ratio \code{ratio_<pool>}
+  (out-of-fold over in-sample). Printing shows the three ratios together.
 }
 \description{
 For each candidate configuration, compares how well the fitted booster
@@ -118,11 +118,24 @@ fold of each cluster drawn exactly as \code{\link{xgb_tune}} draws it
 appearance). Every model, the full one and the fold ones, is weighted as
 \code{\link{xgb}} would weight a fit on its own rows (see
 \code{rescale_weights} and \code{variance_y} in \code{\link{xgb_tune}}).
-The residual spread is the survey-weighted standard deviation, in three
-pools: \code{total} (all observations), \code{domain} (the residuals
-averaged within each domain, weighted by the domain's weight total) and
-\code{sub} (the residuals less their domain mean, the within-domain part).
-The ratio of each is the out-of-fold spread divided by the in-sample one.
+The residual spread is the survey-weighted standard deviation (weights
+\code{smp_weights}, population form), and it is reported for three residual
+pools, all in one return object:
+\describe{
+  \item{\code{total}}{the unit-level (survey record, for example EA or
+    household) residuals, all of them. \strong{This is the pool the DRC
+    least-overfit selection ranks on} (\code{ratio_total} in its
+    \code{least_overfit_selection.csv}), and the default of
+    \code{ratio_pool} in \code{\link{xgb_top_configs}}.}
+  \item{\code{domain}}{the domain (for DRC, territory) pool: the residuals
+    averaged within each domain, weighted by the domain's weight total, one
+    value per domain. A domain average of in-sample residuals is close to
+    zero, so this ratio is the largest and noisiest.}
+  \item{\code{within_domain}}{the within-domain (for DRC, EA-level) pool:
+    each unit's residual less its domain's weighted mean residual.}
+}
+The ratio of each pool is the out-of-fold spread divided by the in-sample one.
+Quote the pool with the number: ratios of different pools are not comparable.
 
 This is the procedure of the DRC \dQuote{least overfit} selection. There the
 ratios were computed in a separate pass on a fresh fold assignment (seed 901)
