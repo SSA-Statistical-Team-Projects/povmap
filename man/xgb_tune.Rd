@@ -66,7 +66,11 @@ numeric or a factor. Defaults to \code{"domains"}.}
 
 \item{transformation}{a character string. Two different transformation
 types for the dependent variable can be chosen (i) no transformation ("no");
-(ii) log transformation ("log"); (iii) Arcsin transformation ("arcsin").
+(ii) log transformation ("log"); (iii) Arcsin transformation ("arcsin");
+(iv) \code{log1p} for count data ("poisson"), trained exactly as \code{\link{xgb}}
+trains it. Until the fix of 2026-10, \code{"poisson"} was accepted but the candidates
+were trained on the untransformed counts, a different model from the one \code{xgb}
+fits; results of poisson tuning change, those of the other transformations do not.
 Defaults to \code{"no"}.}
 
 \item{folds}{number of folds. Defaults to 10.}
@@ -207,11 +211,9 @@ Default \code{FALSE}.}
 always. \code{"response"} back-transforms the held-out predictions to the
 outcome's own scale (arcsin: \code{sin(clamp(h, 0, pi/2))^2}; log:
 \code{exp}; poisson: \code{pmax(0, expm1(h))}) and scores the weighted
-domain means against the weighted direct means of the raw outcome. With
-\code{"response"}, \code{transformation = "poisson"} also trains on
-\code{log1p(y)} as \code{\link{xgb}} does (without it, \code{xgb_tune}
-leaves a poisson outcome untransformed, as before). Used for the DRC
-re-scoring; the default changes nothing.}
+domain means against the weighted direct means of the raw outcome. The
+model is trained on the transformed outcome either way. Defaults to
+\code{"transformed"}, so existing calls are unchanged.}
 
 \item{fit_seed}{seed passed to xgboost for every fit. \code{NULL} (default)
 uses \code{seed}, as before. Set it to score on folds drawn from \code{seed}

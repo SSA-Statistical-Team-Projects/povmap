@@ -61,7 +61,12 @@ Imports:
     purrr,
     doRNG,
     collapse,
-    jsonlite
+    jsonlite,
+    doParallel,
+    doSNOW,
+    foreach,
+    recipes,
+    rlang
 Suggests:
     testthat,
     R.rsp,

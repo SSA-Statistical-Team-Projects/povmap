@@ -347,3 +347,33 @@ test_that("end-to-end package rescoring of the DRC candidates: 13 of 16 identica
   for (ind in setdiff(r$indicator, differ))
     expect_equal(as.numeric(r[r$indicator == ind, hp]), as.numeric(unlist(tun[[ind]][hp])), tolerance = 1e-12, info = ind)
 })
+
+## ---- poisson outcomes are tuned on the model xgb() fits ----------------------------------------------
+
+test_that("xgb_tune(transformation = 'poisson') trains on log1p(y), as xgb() does", {
+  skip_if_not_installed("xgboost")
+  skip_on_cran()
+  d <- make_ratio_data()
+  set.seed(9); d$cnt <- rpois(nrow(d), exp(0.3 + 0.5 * d$x1))
+  d$lcnt <- log1p(d$cnt)
+  g1 <- ratio_grid[2, ]
+  run <- function(...) suppressWarnings(suppressMessages(xgb_tune(
+    cnt ~ x1 + x2, smp_data = d, smp_weights = "wt", domains = "dom", folds = 4, grid = g1, seed = 5, verbose = FALSE, ...)))
+  tp <- run(transformation = "poisson")
+  ## the same fits and the same scores as a model for log1p(y) with no further transformation
+  tl <- suppressWarnings(suppressMessages(xgb_tune(
+    lcnt ~ x1 + x2, smp_data = d, smp_weights = "wt", domains = "dom", folds = 4, grid = g1, seed = 5, verbose = FALSE,
+    transformation = "no")))
+  expect_identical(tp$cv_by_fold, tl$cv_by_fold)
+  ## and differs from training on the raw counts
+  tn <- run(transformation = "no")
+  expect_false(isTRUE(all.equal(tp$cv_by_fold, tn$cv_by_fold)))
+  ## response-scale scoring back-transforms with expm1 (floored at 0)
+  expect_true(all(is.finite(run(transformation = "poisson", score_scale = "response")$cv_by_fold)))
+})
+
+test_that("ratio_pool accepts the area pool: 'domain' is the pool of the tuning domains", {
+  t5 <- synth_tune(m5, a5)
+  ov <- data.frame(row = 1:5, ratio_total = 5:1, ratio_domain = c(3, 2, 1, 9, 9), ratio_within_domain = 5:1)
+  expect_equal(xgb_top_configs(t5, rule = "least_overfit", ratio = ov, ratio_pool = "domain")$nrounds, 103)
+})
