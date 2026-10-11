@@ -177,7 +177,6 @@ xgb_overfit_ratio <- function(fixed, smp_data, configs, smp_weights = NULL, doma
   if (is.null(rows)) rows <- seq_len(nrow(grid))
   if (is.null(het)) het <- rep(1, length(yt))
   one <- .xgb_overfit_one
-  r <- NULL                       # the foreach variable, for R CMD check
   cl <- parallel::makeCluster(cpus)
   doParallel::registerDoParallel(cl)
   on.exit(parallel::stopCluster(cl), add = TRUE)
@@ -206,3 +205,6 @@ print.xgb_overfit_ratio <- function(x, digits = 3, ...) {
                    digits = digits, row.names = FALSE)
   invisible(x)
 }
+
+## foreach loop variable
+utils::globalVariables("r")
