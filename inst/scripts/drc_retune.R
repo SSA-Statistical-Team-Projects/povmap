@@ -26,6 +26,8 @@ cfg <- list(nivie = c("arcsin", "popwt", NA), theil = c("log", "popwt", NA), pce
             lfp = c("arcsin", "wt_15_64", "lfp_var"), school_5_11 = c("arcsin", "wt_5_11", "school_5_11_var"), school_12_17 = c("arcsin", "wt_12_17", "school_12_17_var"),
             telpor = c("arcsin", "popwt", NA), grosrum = c("poisson", "hhwt", NA), petitrum = c("poisson", "hhwt", NA), porc = c("poisson", "hhwt", NA), lapin = c("poisson", "hhwt", NA),
             volail = c("poisson", "hhwt", NA), car = c("arcsin", "popwt", NA), tv = c("arcsin", "popwt", NA))
+## TR_OVERRIDE=no re-runs the poisson indicators with the pre-fix xgb_tune behaviour (untransformed counts): the "poisson fix alone" arm
+if (nzchar(Sys.getenv("TR_OVERRIDE"))) for (i in names(cfg)) if (cfg[[i]][1] == "poisson") cfg[[i]][1] <- Sys.getenv("TR_OVERRIDE")
 if (nzchar(Sys.getenv("INDICATORS"))) cfg <- cfg[strsplit(Sys.getenv("INDICATORS"), ",")[[1]]]
 KEYS <- c("nround", "max_depth", "colsample_bytree", "colsample_bylevel", "colsample_bynode", "subsample", "min_child_weight", "eta", "gamma", "max_delta_step", "lambda", "alpha")
 ## convention search space: package default bounds (Colombia's), with lambda 0.01-1000 and min_child_weight 1-200
