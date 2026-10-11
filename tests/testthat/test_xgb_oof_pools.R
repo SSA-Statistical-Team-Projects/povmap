@@ -33,7 +33,7 @@ pool_fit <- function(d, ..., bootstrap = FALSE, B = 4, cfg = NULL, quiet = TRUE,
             domains = "dom", sub_domains = "sub", transformation = "arcsin", bootstrap = bootstrap, B = B, L = 10, seed = 11)
   a <- utils::modifyList(c(a, if (is.null(cfg)) hp else list(configs = cfg)), list(...))
   if (quiet) suppressWarnings(suppressMessages(utils::capture.output(res <- do.call(povmap::xgb, a))))
-  else suppressMessages(utils::capture.output(res <- do.call(povmap::xgb, a)))
+  else utils::capture.output(res <- do.call(povmap::xgb, a))
   res
 }
 cfg_a <- data.frame(nrounds = 15, max_depth = 2, eta = 0.3, min_child_weight = 1, lambda = 1,
@@ -193,7 +193,18 @@ test_that("deflation: factor, scale conversion, input formats, floor, missing do
   d2$smp$av[1] <- d2$smp$av[1] * 2
   expect_error(pool_fit(d2, area_pool = "out_of_fold", area_deflate = TRUE, area_sampling_var = "av"), "constant within domain")
   ## domains missing from the vector are left out of both means, with a warning
-  expect_warning(pool_fit(d, area_pool = "out_of_fold", area_deflate = TRUE, area_sampling_var = v[-(1:3)], quiet = FALSE), "no sampling variance")
+  expect_warning(pool_fit(d, area_pool = "out_of_fold", area_deflate = TRUE, area_sampling_var = v[-(1:3)], impute_single_ea = FALSE,
+                          quiet = FALSE), "no sampling variance")
+  ## by default they are imputed (pooled within-domain EA variance / the domain's EA count), and the number is returned
+  ei <- pool_fit(d, area_pool = "out_of_fold", area_deflate = TRUE, area_sampling_var = v[-(1:3)])
+  expect_equal(ei$pools$configs[[1]]$area_deflation$n_imputed, 3L)
+  S2 <- povmap:::.xgb_pooled_ea_var(d$smp$y, d$smp$wt, d$smp$dom)
+  s2 <- vapply(split(seq_len(nrow(d$smp)), d$smp$dom), function(i) { w <- d$smp$wt[i]; y <- d$smp$y[i]; yb <- sum(w * y) / sum(w)
+    length(i) / (length(i) - 1) * sum(w * (y - yb)^2) / sum(w) }, 1)
+  expect_equal(S2, sum(5 * s2) / (5 * length(s2)), tolerance = 1e-12)              # 6 rows per domain: df 5 each
+  vfull <- v; miss <- names(v)[1:3]; vfull[miss] <- S2 / 6
+  ef <- pool_fit(d, area_pool = "out_of_fold", area_deflate = TRUE, area_sampling_var = vfull, impute_single_ea = FALSE)
+  expect_equal(ei$pools$configs[[1]]$area_deflation$factor, ef$pools$configs[[1]]$area_deflation$factor, tolerance = 1e-12)
   expect_error(pool_fit(d, area_deflate = TRUE, area_sampling_var = c(1, 2)), "named")
   ## default: cluster-robust variance of the domain mean from the sample rows
   hand <- vapply(split(seq_len(nrow(d$smp)), d$smp$dom), function(i) { w <- d$smp$wt[i]; y <- d$smp$y[i]; yb <- sum(w * y) / sum(w)
@@ -201,13 +212,56 @@ test_that("deflation: factor, scale conversion, input formats, floor, missing do
   expect_equal(povmap:::.xgb_domain_mean_var(d$smp$y, d$smp$wt, d$smp$dom)[names(hand)], hand, tolerance = 1e-12)
   expect_true(is.finite(pool_fit(d, area_deflate = TRUE)$pools$configs[[1]]$area_deflation$factor))
   ## sub pool: variance_y column by default, vector of the same length otherwise
-  s1 <- pool_fit(d, sub_deflate = TRUE, variance_y = "vy")$pools$configs[[1]]$sub_deflation
+  s1 <- pool_fit(d, sub_deflate = TRUE, sub_sampling_var = "vy")$pools$configs[[1]]$sub_deflation
   s2 <- pool_fit(d, sub_deflate = TRUE, sub_sampling_var = d$smp$vy)$pools$configs[[1]]$sub_deflation
   expect_equal(s1$factor, s2$factor, tolerance = 1e-12)
-  expect_error(pool_fit(d, sub_deflate = TRUE), "variance_y")
+  ## variance_y is a heteroscedasticity weight, not a sampling variance: never used as a fallback
+  expect_error(pool_fit(d, sub_deflate = TRUE), "needs sub_sampling_var")
+  expect_error(pool_fit(d, sub_deflate = TRUE, variance_y = "vy"), "needs sub_sampling_var")
+  ## a unit without a variance is imputed with the pooled EA variance (default) or dropped with a warning
+  vv <- d$smp$vy; vv[c(2, 9)] <- NA
+  expect_equal(pool_fit(d, sub_deflate = TRUE, sub_sampling_var = vv)$pools$configs[[1]]$sub_deflation$n_imputed, 2L)
+  expect_warning(pool_fit(d, sub_deflate = TRUE, sub_sampling_var = vv, impute_single_ea = FALSE, quiet = FALSE), "no sampling variance")
   expect_error(pool_fit(d, sub_deflate = TRUE, sub_sampling_var = 1:3), "one element per row")
   ## in-sample pools can be deflated too
   expect_true(z$area_deflation$factor <= 1)
+})
+
+test_that("a single-EA domain is imputed by default and dropped (with a warning) otherwise", {
+  skip_if_not_installed("xgboost")
+  d <- make_pool_data()
+  keep <- !(d$smp$dom == d$smp$dom[1] & seq_len(nrow(d$smp)) > 1)           # the first domain keeps only its first row
+  d$smp <- d$smp[keep, ]
+  e <- pool_fit(d, area_pool = "out_of_fold", area_deflate = TRUE)
+  expect_equal(e$pools$configs[[1]]$area_deflation$n_imputed, 1L)
+  expect_warning(pool_fit(d, area_pool = "out_of_fold", area_deflate = TRUE, impute_single_ea = FALSE, quiet = FALSE), "no sampling variance")
+  expect_message(pool_fit(d, area_pool = "out_of_fold", area_deflate = TRUE, quiet = FALSE), "imputed for 1 of 24 domains")
+})
+
+test_that("deflation means use the weights the bootstrap draws the pool with (wt_domains / unit weights)", {
+  skip_if_not_installed("xgboost")
+  d <- make_pool_data()
+  d$smp$wt <- ifelse(seq_len(nrow(d$smp)) %% 4 == 0, 2000, 40)                  # strongly unequal weights
+  v <- stats::setNames(rep(3e-4, 24), sort(unique(d$smp$dom)))
+  base <- pool_fit(d, area_pool = "out_of_fold")$pools$configs[[1]]
+  est <- tapply(d$smp$y * d$smp$wt, d$smp$dom, sum) / tapply(d$smp$wt, d$smp$dom, sum)
+  vt <- vapply(names(v), function(nm) v[[nm]] * povmap:::.perturb_slope(est[[nm]], sqrt(v[[nm]]), "arcsin", povmap:::arcsin_transform)^2, 1)
+  fac <- function(w) { msr <- weighted.mean(base$resid_domains^2, w); msv <- weighted.mean(vt[base$domains], w); sqrt(max(msr - msv, 0) / msr) }
+  f_boot <- fac(base$wt_domains); f_unw <- fac(rep(1, length(base$wt_domains)))
+  expect_gt(abs(f_boot - f_unw), 1e-3)                                           # the weighting matters in this example
+  e <- pool_fit(d, area_pool = "out_of_fold", area_deflate = TRUE, area_sampling_var = v)
+  expect_equal(e$pools$configs[[1]]$area_deflation$factor, f_boot, tolerance = 1e-10)
+  ## weightedBS = FALSE: the bootstrap draws the pool with equal probabilities, and so the means are unweighted
+  e2 <- pool_fit(d, area_pool = "out_of_fold", area_deflate = TRUE, area_sampling_var = v, weightedBS = FALSE)
+  expect_equal(e2$pools$configs[[1]]$area_deflation$factor, f_unw, tolerance = 1e-10)
+  ## the sub-area pool: unit survey weights
+  sv <- rep(5e-4, nrow(d$smp))
+  bs <- pool_fit(d, sub_pool = "out_of_fold")$pools$configs[[1]]
+  vts <- povmap:::.xgb_var_to_model_scale(sv, d$smp$y, "arcsin", povmap:::arcsin_transform)
+  fs <- function(w) { msr <- weighted.mean(bs$resid_sub_domains^2, w); msv <- weighted.mean(vts, w); sqrt(max(msr - msv, 0) / msr) }
+  es <- pool_fit(d, sub_pool = "out_of_fold", sub_deflate = TRUE, sub_sampling_var = sv)
+  expect_equal(es$pools$configs[[1]]$sub_deflation$factor, fs(bs$wt_sub_domains), tolerance = 1e-10)
+  expect_gt(abs(fs(bs$wt_sub_domains) - fs(rep(1, nrow(d$smp)))), 1e-4)
 })
 
 test_that("configuration averaging: one pool per configuration, each as the scalar call with that configuration", {

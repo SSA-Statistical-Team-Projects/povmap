@@ -97,16 +97,31 @@
   out
 }
 
+## Pooled within-domain variance of the unit (EA) outcomes, per EA: the degrees-of-freedom-weighted average over the
+## domains with at least two rows of s2_d = n_d / (n_d - 1) * sum(w (y - ybar_d)^2) / sum(w), ybar_d the weighted domain mean.
+## The variance of a domain mean from n_d EAs is then taken to be this over n_d. NA if no domain has two rows.
+.xgb_pooled_ea_var <- function(y, w, g) {
+  g <- as.character(g); num <- 0; den <- 0
+  for (d in unique(g)) {
+    i <- g == d; n <- sum(i)
+    if (n < 2L) next
+    yb <- sum(w[i] * y[i]) / sum(w[i])
+    s2 <- n / (n - 1) * sum(w[i] * (y[i] - yb)^2) / sum(w[i])
+    num <- num + (n - 1) * s2; den <- den + (n - 1)
+  }
+  if (den > 0) num / den else NA_real_
+}
+
 ## Deflate pool values `r` (weights w) by sqrt(max(msr - msv, 0) / msr); msr and msv are weighted means over the
 ## entries that have a sampling variance (v_t, model scale).
-.xgb_deflate_pool <- function(r, w, v_t, what) {
+.xgb_deflate_pool <- function(r, w, v_t, what, n_imputed = 0L) {
   av <- !is.na(v_t)
   if (!any(av)) stop("pool deflation (", what, "): no entry of the pool has a sampling variance.", call. = FALSE)
   if (any(!av)) warning("pool deflation (", what, "): ", sum(!av), " of ", length(av),
                         " pool entries have no sampling variance and are left out of the two means.", call. = FALSE)
   msr <- stats::weighted.mean(r[av]^2, w[av]); msv <- stats::weighted.mean(v_t[av], w[av])
   f <- if (msr > 0) sqrt(max(msr - msv, 0) / msr) else 1
-  list(resid = r * f, factor = f, msr = msr, msv = msv, n_missing = sum(!av))
+  list(resid = r * f, factor = f, msr = msr, msv = msv, n_missing = sum(!av), n_imputed = n_imputed)
 }
 
 ## sampling variance input -> vector aligned with the given keys; `kind` "area" (by domain) or "sub" (by row)
@@ -124,10 +139,10 @@
   as.numeric(spec[match(nm, names(spec))])
 }
 .xgb_resolve_sub_var <- function(spec, fwk, ok, variance_y) {
-  if (is.null(spec)) {
-    if (is.null(variance_y)) stop("sub_deflate needs sub_sampling_var (or variance_y, whose column is then used).", call. = FALSE)
-    spec <- variance_y
-  }
+  if (is.null(spec))
+    stop("sub_deflate = TRUE needs sub_sampling_var: the sampling variance of each sub-area mean (response scale), as a numeric vector with one ",
+         "element per row of smp_data or the name of such a column. variance_y is NOT used: it is a relative weight for heteroscedasticity ",
+         "(in DRC, 1 / the number of individuals in the EA), not the sampling variance of a sub-area mean.", call. = FALSE)
   v <- if (is.character(spec) && length(spec) == 1L) {
     if (!spec %in% names(fwk$smp_data)) stop("sub_sampling_var: no column '", spec, "' in smp_data.", call. = FALSE)
     fwk$smp_data[[spec]]
@@ -168,7 +183,7 @@
 ## fits with resid_sub_domains, resid_domains, wt_sub_domains and wt_domains replaced, plus a record.
 .xgb_apply_pools <- function(fits, cfg_params, cfg_nrounds, fwk, X_smp_xgb, X_pop_xgb, transform_outcome, transformation,
                              rescale_weights, variance_y, domains, sub_domains, area_pool, sub_pool, area_deflate, sub_deflate,
-                             area_sampling_var, sub_sampling_var, pool_folds, pool_seed, pool_fit_seed, pool_tune, seed) {
+                             area_sampling_var, sub_sampling_var, pool_folds, pool_seed, pool_fit_seed, pool_tune, seed, weighted_draw = TRUE, impute_single_ea = TRUE) {
   cell <- fwk$smp_data[[sub_domains]]
   rows_pop <- match(cell, fwk$X_pop[[sub_domains]]); ok <- !is.na(rows_pop)
   if (any(vapply(fits, function(f) length(f$resid_total) != sum(ok), TRUE)))
@@ -212,24 +227,41 @@
       ps <- list(resid = p$resid_sub_domains, w = p$wt_sub_domains)
     }
     fa <- fs <- NULL
+    ## weights of the means: those the bootstrap draws from the pool with (equal when weightedBS = FALSE)
+    wa <- if (weighted_draw) pa$w else rep(1, length(pa$w))
+    ws <- if (weighted_draw) ps$w else rep(1, length(ps$w))
+    S2 <- if (impute_single_ea && (area_deflate || sub_deflate)) .xgb_pooled_ea_var(y_resp[ok], w[ok], dom_pop) else NA_real_
     if (area_deflate) {
       v <- .xgb_resolve_area_var(area_sampling_var, fwk, ok, dom_pop, pa$nm, y_resp[ok], w[ok])
+      n_imp <- 0L
+      if (impute_single_ea && is.finite(S2)) {
+        nd <- as.numeric(table(factor(dom_pop, levels = pa$nm)))
+        miss <- is.na(v); v[miss] <- S2 / nd[miss]; n_imp <- sum(miss)
+      }
       est <- as.numeric(collapse:::fmean(y_resp[ok], g = dom_pop, w = w[ok], use.g.names = TRUE)[pa$nm])
-      fa <- .xgb_deflate_pool(pa$resid, pa$w, .xgb_var_to_model_scale(v, est, transformation, transform_outcome), "area")
+      fa <- .xgb_deflate_pool(pa$resid, wa, .xgb_var_to_model_scale(v, est, transformation, transform_outcome), "area", n_imp)
       pa$resid <- fa$resid
+      if (k == 1L && n_imp > 0L)
+        message("xgb: area-pool deflation: sampling variance imputed for ", n_imp, " of ", length(pa$nm),
+                " domains (pooled within-domain EA variance / the domain's EA count).")
     }
     if (sub_deflate) {
       v <- .xgb_resolve_sub_var(sub_sampling_var, fwk, ok, variance_y)
-      fs <- .xgb_deflate_pool(ps$resid, ps$w, .xgb_var_to_model_scale(v, y_resp[ok], transformation, transform_outcome), "sub")
+      n_imp <- 0L
+      if (impute_single_ea && is.finite(S2)) { miss <- is.na(v); v[miss] <- S2; n_imp <- sum(miss) }
+      fs <- .xgb_deflate_pool(ps$resid, ws, .xgb_var_to_model_scale(v, y_resp[ok], transformation, transform_outcome), "sub", n_imp)
       ps$resid <- fs$resid
+      if (k == 1L && n_imp > 0L)
+        message("xgb: sub-area-pool deflation: sampling variance imputed for ", n_imp, " of ", length(v),
+                " units (pooled within-domain EA variance).")
     }
     f$resid_domains <- pa$resid; f$wt_domains <- pa$w; f$domains <- pa$nm
     f$resid_sub_domains <- ps$resid; f$wt_sub_domains <- ps$w
     fits[[k]] <- f
     info[[k]] <- list(resid_domains = pa$resid, wt_domains = pa$w, domains = pa$nm,
                       resid_sub_domains = ps$resid, wt_sub_domains = ps$w,
-                      area_deflation = if (is.null(fa)) NULL else fa[c("factor", "msr", "msv", "n_missing")],
-                      sub_deflation = if (is.null(fs)) NULL else fs[c("factor", "msr", "msv", "n_missing")])
+                      area_deflation = if (is.null(fa)) NULL else fa[c("factor", "msr", "msv", "n_missing", "n_imputed")],
+                      sub_deflation = if (is.null(fs)) NULL else fs[c("factor", "msr", "msv", "n_missing", "n_imputed")])
   }
   list(fits = fits,
        record = list(area_pool = area_pool, sub_pool = sub_pool, area_deflate = area_deflate, sub_deflate = sub_deflate,

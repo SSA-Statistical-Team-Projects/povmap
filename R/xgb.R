@@ -296,6 +296,10 @@ ht_var_weighted_mean <- function(y, w, g) {
 #' internal benchmarking).
 #' @param variance_y the name of the variable in the sample data that contains the variance of the outcome variable.
 #' This is used to account for heteroscedasticity when estimating the model. If NULL, no adjustment is made for heteroscedasticity.
+#' It is a relative weight: the model weights are multiplied by \code{variance_y^-0.5} and renormalised, so only its
+#' proportions matter, and it need not be a sampling variance (in the DRC application it is \code{1/n}, \code{n} the individuals
+#' in the EA's age group). It is not used as the sampling variance of a sub-area mean; for the residual-pool deflation supply
+#' \code{sub_sampling_var}.
 #' Defaults to NULL.
 #' @param rescale_weights If TRUE, rescales sample weights within each domain so that
 #' they sum to the domain sample size. This prevents populous domains from dominating
@@ -448,12 +452,14 @@ ht_var_weighted_mean <- function(y, w, g) {
 #'   (only when an option is used).
 #' @param area_deflate,sub_deflate logical, default \code{FALSE}. Remove the
 #'   sampling error from the pool: the pool's model-error variance is its mean
-#'   squared residual (weighted by the pool's draw weights, uncentred, on the
+#'   squared residual (weighted by the weights the bootstrap draws from the pool
+#'   with, \code{wt_domains} for the area pool and the unit survey weights for the
+#'   sub-area pool, equal weights when \code{weightedBS = FALSE}; uncentred, on the
 #'   transformed scale) minus the mean sampling variance (same weights), floored at
 #'   zero, and the pool's values are multiplied by
 #'   \code{sqrt(model-error variance / mean squared residual)}. Entries without a
-#'   sampling variance are left out of both means (a warning counts them). Works
-#'   with either pool source.
+#'   sampling variance are imputed (\code{impute_single_ea}) or, if that is off,
+#'   left out of both means with a warning. Works with either pool source.
 #' @param area_sampling_var,sub_sampling_var the sampling variances for the
 #'   deflation, \strong{on the response scale} (the scale of the outcome, as a
 #'   variance, that is a squared standard error). They are moved to the transformed
@@ -471,8 +477,26 @@ ht_var_weighted_mean <- function(y, w, g) {
 #'   undefined (missing) for a domain with one row; if your rows are not the
 #'   sampling clusters, supply the variances. \code{sub_sampling_var}: the variance
 #'   of each unit's outcome, a numeric vector with one element per row of
-#'   \code{smp_data} (in its order) or the name of a column of \code{smp_data};
-#'   \code{NULL} uses the column \code{variance_y}, and is an error without it.
+#'   \code{smp_data} (in its order) or the name of a column of \code{smp_data}:
+#'   the sampling variance of each sub-area MEAN (roughly the within-sub-area
+#'   variance of the outcome divided by the number of sampled units, squared standard
+#'   error), response scale. Required when \code{sub_deflate = TRUE}: with
+#'   \code{NULL} the call stops. \code{variance_y} is \emph{not} used for this:
+#'   it is a relative weight for heteroscedasticity (the model weights are
+#'   multiplied by \code{variance_y^-0.5}); in DRC it is \code{1 / n}, with \code{n} the
+#'   individuals in the EA's age group, which is not a sampling variance.
+#' @param impute_single_ea logical, default \code{TRUE}, used when a deflation is on.
+#'   Domains with no sampling variance (a single sampled EA, so no variance can be
+#'   computed, or missing from \code{area_sampling_var}) get the pooled within-domain
+#'   EA variance divided by the domain's number of sampled EAs (rows), instead of being
+#'   dropped from the two means. The pooled variance is
+#'   \eqn{\sum_d (n_d - 1) s_d^2 / \sum_d (n_d - 1)} over the domains with \eqn{n_d \ge 2}
+#'   rows, \eqn{s_d^2 = n_d/(n_d-1) \sum w_i (y_i - ar y_d)^2 / \sum w_i}
+#'   (response scale, survey-weighted, \eqn{ar y_d} the weighted domain mean). Units
+#'   with a missing \code{sub_sampling_var} get the pooled variance itself (one EA). The
+#'   numbers imputed are in \code{$pools$configs[[k]]$area_deflation$n_imputed} and
+#'   \code{sub_deflation$n_imputed} and reported in a message. \code{FALSE} drops
+#'   them with a warning.
 #' @param pool_folds number of folds (default 10) for the out-of-fold pools, or,
 #'   for the area pool, a data.frame whose first two columns are the domain label
 #'   and its fold (for example the \code{fold_assignment} of an \code{xgb_tune}
@@ -611,6 +635,7 @@ xgb <- function(fixed,
                 pool_seed = 123,
                 pool_fit_seed = NULL,
                 pool_tune = NULL,
+                impute_single_ea = TRUE,
                 ...){
 
   #1. Initialize
@@ -801,7 +826,8 @@ xgb <- function(fixed,
                            domains = domains, sub_domains = sub_domains, area_pool = area_pool, sub_pool = sub_pool,
                            area_deflate = area_deflate, sub_deflate = sub_deflate, area_sampling_var = area_sampling_var,
                            sub_sampling_var = sub_sampling_var, pool_folds = pool_folds, pool_seed = pool_seed,
-                           pool_fit_seed = pool_fit_seed, pool_tune = pool_tune, seed = seed)
+                           pool_fit_seed = pool_fit_seed, pool_tune = pool_tune, seed = seed,
+                           weighted_draw = (weightedBS == TRUE & !is.null(smp_weights)), impute_single_ea = impute_single_ea)
     if (is.null(configs)) xgb_model <- pr$fits[[1]] else { cfg_fits <- pr$fits; xgb_model <- cfg_fits[[1]] }
     pools_record <- pr$record
   }

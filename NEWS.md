@@ -8,13 +8,13 @@
   so a held-out sub-area's model was trained on its siblings). `sub_pool = "out_of_fold_domain"` takes the sub-area pool
   from the domain-grouped fits (the DRC scratch-hook construction; no extra fits). `area_deflate`/`sub_deflate`
   remove the sampling error: pool values are multiplied by `sqrt(max(msr - msv, 0) / msr)`, msr the pool's mean
-  squared residual and msv its mean sampling variance (draw weights, model scale). **Sampling variances**
+  squared residual and msv its mean sampling variance (bootstrap draw weights, model scale). **Sampling variances**
   (`area_sampling_var`, `sub_sampling_var`) are on the RESPONSE scale (squared standard errors) and are moved to the model
   scale by the delta method with the package slope `.perturb_slope`. `area_sampling_var`: a numeric vector NAMED by the
   domain labels (as in `smp_data[[domains]]`) holding the variance of each domain's direct (weighted-mean) estimate, or the name
   of a `smp_data` column constant within domain; domains of the pool without an entry are left out of both means (warning);
   `NULL` computes the cluster-robust (Taylor, with-replacement) variance of the weighted mean with the sample rows as the clusters.
-  `sub_sampling_var`: a numeric vector with one element per row of `smp_data`, or a column name; `NULL` uses `variance_y`.
+  `sub_sampling_var`: the sampling variance of each sub-area MEAN, a numeric vector with one element per row of `smp_data` or a column name, REQUIRED for `sub_deflate` (`variance_y` is a relative heteroscedasticity weight, 1/n in DRC, not a sampling variance, and is not used). Domains without a variance (one sampled EA, or absent from the vector) are imputed by default (`impute_single_ea = TRUE`): the pooled within-domain EA variance / the domain's EA count; the number imputed is returned and reported; `FALSE` drops them with a warning. The deflation means use the weights the bootstrap draws the pool with.
   With `configs`, each configuration has its own pools and a replicate uses those of the configuration it draws. The pools are
   built after the point estimate and with the random-number state saved and restored, so **point estimates do not depend
   on the pool and an existing call is unchanged** (checked: `identical()` on the whole estimates object, pre-change build
