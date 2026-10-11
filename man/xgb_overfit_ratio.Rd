@@ -135,6 +135,11 @@ pools, all in one return object:
     each unit's residual less its domain's weighted mean residual.}
 }
 The ratio of each pool is the out-of-fold spread divided by the in-sample one.
+The \code{domain} pool is the \emph{area} pool of the shared convention (territory
+in DRC) and is the pool \code{\link{xgb}(area_pool = "out_of_fold")} draws the
+bootstrap area residuals from; \code{within_domain} corresponds to the sub-area
+pool. The ratios here use the tuning folds (domain-grouped); they are a diagnostic
+of overfitting, while the pools in \code{xgb()} are the residuals themselves.
 Quote the pool with the number: ratios of different pools are not comparable.
 
 This is the procedure of the DRC \dQuote{least overfit} selection. There the

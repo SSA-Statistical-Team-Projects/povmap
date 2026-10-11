@@ -27,12 +27,13 @@ make_pool_data <- function(seed = 7) {
   list(pop = pop[, c("sub", "dom", "reg", "x1", "x2", "npop")],
        smp = smp[, c("sub", "dom", "reg", "x1", "x2", "y", "wt", "vy")])
 }
-pool_fit <- function(d, ..., bootstrap = FALSE, B = 4, cfg = NULL, hp = list(nrounds = 15, max_depth = 2, eta = 0.3, min_child_weight = 1,
+pool_fit <- function(d, ..., bootstrap = FALSE, B = 4, cfg = NULL, quiet = TRUE, hp = list(nrounds = 15, max_depth = 2, eta = 0.3, min_child_weight = 1,
                      lambda = 1, colsample_bytree = 0.6, colsample_bylevel = 1, colsample_bynode = 1, subsample = 0.6)) {
   a <- list(fixed = y ~ x1 + x2, smp_data = d$smp, smp_weights = "wt", pop_data = d$pop, pop_weights = "npop",
             domains = "dom", sub_domains = "sub", transformation = "arcsin", bootstrap = bootstrap, B = B, L = 10, seed = 11)
   a <- utils::modifyList(c(a, if (is.null(cfg)) hp else list(configs = cfg)), list(...))
-  suppressWarnings(suppressMessages(utils::capture.output(res <- do.call(povmap::xgb, a))))
+  if (quiet) suppressWarnings(suppressMessages(utils::capture.output(res <- do.call(povmap::xgb, a))))
+  else suppressMessages(utils::capture.output(res <- do.call(povmap::xgb, a)))
   res
 }
 cfg_a <- data.frame(nrounds = 15, max_depth = 2, eta = 0.3, min_child_weight = 1, lambda = 1,
@@ -44,6 +45,8 @@ test_that("defaults: explicit default arguments reproduce the plain call, and no
   d <- make_pool_data()
   e0 <- pool_fit(d, bootstrap = TRUE)
   e1 <- pool_fit(d, bootstrap = TRUE, area_pool = "in_sample", sub_pool = "in_sample", area_deflate = FALSE, sub_deflate = FALSE)
+  ## the recorded call differs by the explicit arguments, and a booster is a pointer (never identical, even for two identical calls)
+  e0$out_call <- e1$out_call <- NULL; e0$model <- e1$model <- NULL
   expect_identical(e1, e0)
   expect_null(e0$pools)
 })
@@ -128,7 +131,7 @@ test_that("the sub-area pool: sub-areas of a domain are held out in different fo
   }
   r <- yt - hat
   rs <- r - (ave(r * smp$wt, smp$dom, FUN = sum) / ave(smp$wt, smp$dom, FUN = sum))
-  expect_equal(e$pools$configs[[1]]$resid_sub_domains, rs, tolerance = 1e-10)
+  expect_equal(unname(e$pools$configs[[1]]$resid_sub_domains), unname(rs), tolerance = 1e-10)
   ## sub_pool = "out_of_fold_domain" is the sub-area residual of the domain-grouped fits (the DRC scratch-hook construction)
   e2 <- pool_fit(d, sub_pool = "out_of_fold_domain")
   e3 <- pool_fit(d, area_pool = "out_of_fold", sub_pool = "out_of_fold_domain")
@@ -190,7 +193,7 @@ test_that("deflation: factor, scale conversion, input formats, floor, missing do
   d2$smp$av[1] <- d2$smp$av[1] * 2
   expect_error(pool_fit(d2, area_pool = "out_of_fold", area_deflate = TRUE, area_sampling_var = "av"), "constant within domain")
   ## domains missing from the vector are left out of both means, with a warning
-  expect_warning(pool_fit(d, area_pool = "out_of_fold", area_deflate = TRUE, area_sampling_var = v[-(1:3)]), "no sampling variance")
+  expect_warning(pool_fit(d, area_pool = "out_of_fold", area_deflate = TRUE, area_sampling_var = v[-(1:3)], quiet = FALSE), "no sampling variance")
   expect_error(pool_fit(d, area_deflate = TRUE, area_sampling_var = c(1, 2)), "named")
   ## default: cluster-robust variance of the domain mean from the sample rows
   hand <- vapply(split(seq_len(nrow(d$smp)), d$smp$dom), function(i) { w <- d$smp$wt[i]; y <- d$smp$y[i]; yb <- sum(w * y) / sum(w)
@@ -262,4 +265,16 @@ test_that("pool_tune: the area pool from the tuning folds equals the pool from f
   expect_error(pool_fit(d, area_pool = "out_of_fold", pool_tune = t0), "keep_oof")
   d3 <- d; d3$pop$x1 <- d3$pop$x1 + 0.1
   expect_error(pool_fit(d3, area_pool = "out_of_fold", pool_tune = tune), "differ")
+})
+
+test_that("DRC Stage 1b scratch hook reproduced by xgb(area_pool/sub_pool = out of fold) on access_water, fold 1, B = 100", {
+  ## inst/scripts/oof_pool_drc_reproduction.R re-runs the held-out territories of CV fold 1 (seed 123) with the package
+  ## options and compares with the saved scratch-hook job; this checks its small output file when present.
+  f <- "H:/david/SAE/DRC/data/candidate_estimates/drc_retune_20261010/oof_pool_repro_access_water_f01.csv"
+  skip_on_cran()
+  skip_if(!file.exists(f), "reproduction output not available")
+  r <- utils::read.csv(f)
+  expect_equal(r$n_territories[1], 21)
+  expect_lt(max(r$max_abs_diff), 1e-8)                    # Mean, Mean_bench, Lower, Upper, Lower_bench, Upper_bench
+  expect_lt(max(r$max_abs_diff_vs_insample_point, na.rm = TRUE), 1e-10)   # point estimates equal the in-sample job's
 })

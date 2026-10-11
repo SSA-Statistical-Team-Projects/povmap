@@ -54,7 +54,7 @@ xgb(
   keep_replicates = FALSE,
   interval_method = c("basic", "plus"),
   area_pool = c("in_sample", "out_of_fold"),
-  sub_pool = c("in_sample", "out_of_fold"),
+  sub_pool = c("in_sample", "out_of_fold", "out_of_fold_domain"),
   area_deflate = FALSE,
   sub_deflate = FALSE,
   area_sampling_var = NULL,
@@ -333,7 +333,12 @@ folds are grouped by sub-area within domains: a domain's sub-areas are dealt to
 different folds, so the model that predicts a held-out sub-area was trained on
 its domain's other sub-areas (all of them when a domain has at most
 \code{pool_folds} sub-areas, otherwise those not in the same fold). The two
-pools may be chosen independently. Fold models are fitted as \code{xgb()} fits
+pools may be chosen independently. \code{sub_pool = "out_of_fold_domain"} takes
+the sub-area pool from the same domain-grouped fold fits as the area pool (a
+unit's residual less its domain's mean, both from models that never saw the
+unit's whole domain): no extra fits, and the construction of the DRC holdout
+coverage check, but the sub-area residuals then carry the domain-level error
+too, so \code{"out_of_fold"} is the sub-area pool proper. Fold models are fitted as \code{xgb()} fits
 (weights rescaled within domain on the training rows, \code{variance_y}, the
 same hyperparameters) and predict at the census-cell covariates of the held-out
 unit's sub-area, which is how the in-sample residual is defined. The pools
