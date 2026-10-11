@@ -162,7 +162,7 @@
                                cluster_col, cluster, domains, folds,
                                early_stopping_rounds = NULL, nrounds_max = 2000,
                                seed = NULL, dots = list(), rescale_weights = TRUE,
-                               het = NULL, fit_seed = seed, y_resp = NULL, back = NULL) {
+                               het = NULL, fit_seed = seed, y_resp = NULL, back = NULL, keep_oof = FALSE) {
   ## scoring labels: the transformed outcome, or the raw one when scored on the response scale
   Y_score <- if (is.null(y_resp)) Y_smp[, 1] else y_resp
   dom_all <- X_smp[[paste0(domains)]]
@@ -206,7 +206,7 @@
   }
 
   tasks <- expand.grid(row = seq_len(nrow_g), fold = seq_len(folds))
-  res <- foreach::foreach(t = seq_len(nrow(tasks)), .combine = rbind,
+  res <- foreach::foreach(t = seq_len(nrow(tasks)), .combine = if (keep_oof) c else rbind,
                           .packages = "xgboost") %dopar% {
     row <- tasks$row[t]; fold <- tasks$fold[t]
     fi <- fold_info[[fold]]
@@ -242,6 +242,7 @@
     }
 
     hat <- predict(fit, data.matrix(X_final[fi$hold, ]))
+    hat_raw <- hat
     if (!is.null(back)) hat <- back(hat)
     dh  <- data.frame(hat = hat,
                       domains = X_smp[fi$hold, ][[paste0(domains)]],
@@ -250,12 +251,20 @@
     g   <- split(dh, dh$domains)
     mh  <- sapply(g, function(z) stats::weighted.mean(z$hat, w = z$wts))
     ml  <- sapply(g, function(z) stats::weighted.mean(z$labels, w = z$wts))
-    c(row = row, fold = fold, mse = mean((ml - mh)^2), best_iter = best_iter)
+    v <- c(row = row, fold = fold, mse = mean((ml - mh)^2), best_iter = best_iter)
+    if (keep_oof) list(list(v = v, hat = hat_raw)) else v
+  }
+  oof_pred <- NULL
+  if (keep_oof) {
+    ## out-of-fold predictions on the model (transformed) scale, one column per configuration
+    oof_pred <- matrix(NA_real_, nrow = nrow(X_final), ncol = nrow_g)
+    for (r in res) oof_pred[cluster_col$fold == r$v[["fold"]], r$v[["row"]]] <- r$hat
+    res <- do.call(rbind, lapply(res, `[[`, "v"))
   }
   res <- matrix(as.numeric(res), ncol = 4)
   for (k in seq_len(nrow(res))) {
     OPT[res[k, 1], res[k, 2]]  <- res[k, 3]
     ITER[res[k, 1], res[k, 2]] <- res[k, 4]
   }
-  list(OPT = OPT, ITER = ITER, domain_labels = domain_labels_list)
+  list(OPT = OPT, ITER = ITER, domain_labels = domain_labels_list, oof_pred = oof_pred)
 }

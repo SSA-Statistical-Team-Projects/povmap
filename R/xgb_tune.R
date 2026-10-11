@@ -174,6 +174,15 @@
 #' @param fit_seed seed passed to xgboost for every fit. \code{NULL} (default)
 #'   uses \code{seed}, as before. Set it to score on folds drawn from \code{seed}
 #'   while keeping the fit seed fixed.
+#' @param keep_oof logical. If \code{TRUE} (and \code{keep_candidates} is
+#'   \code{TRUE}), the result also carries \code{oof}: the out-of-fold
+#'   predictions of every candidate (model scale, one column per candidate, one
+#'   row per row of \code{smp_data}), the fold of each row, and what is needed to
+#'   check that a later \code{\link{xgb}} call is the same model on the same data
+#'   (outcome, weights, domain and cluster labels, covariates, transformation,
+#'   weighting options, fit seed). \code{\link{xgb}(pool_tune = )} builds the area
+#'   residual pool from these predictions with no new fits. No random numbers are
+#'   used and nothing else in the result changes. Default \code{FALSE}.
 #' @param verbose display progress. Defaults to FALSE.
 #' @param ... additional parameters to be passed to \code{xgb.train}.
 #'
@@ -235,6 +244,7 @@ xgb_tune <- function(fixed,
                      overfit_ratio = FALSE,
                      score_scale = c("transformed", "response"),
                      fit_seed = NULL,
+                     keep_oof = FALSE,
                      cpus = 1, 
                      verbose = TRUE,
                      ...){
@@ -406,7 +416,8 @@ xgb_tune <- function(fixed,
                      early_stopping_rounds = early_stopping_rounds,
                      nrounds_max = nrounds_max, seed = seed, dots = dots,
                      rescale_weights = rescale_weights, het = het,
-                     fit_seed = fit_seed, y_resp = y_resp, back = back)
+                     fit_seed = fit_seed, y_resp = y_resp, back = back,
+                     keep_oof = isTRUE(keep_oof) && isTRUE(keep_candidates))
 
   sc <- do.call(.xgb_score_configs, c(list(tunegrid = tunegrid), score_args))
   OPT <- sc$OPT; ITER <- sc$ITER; domain_labels_list <- sc$domain_labels
@@ -461,6 +472,16 @@ xgb_tune <- function(fixed,
     final_output$candidates      <- cand
     final_output$cv_by_fold      <- OPT
     final_output$fold_assignment <- cluster_unique
+    if (isTRUE(keep_oof)) {
+      final_output$oof <- list(
+        pred = sc$oof_pred, fold = cluster_col$fold, folds = folds,
+        outcome = Y_smp_raw[, 1], weights = as.numeric(smp_weights),
+        domain = as.character(X_smp[[domains]]), cluster = as.character(X_smp[[cluster]]),
+        domains = domains, cluster_var = cluster, covariates = colnames(X_final),
+        transformation = transformation, rescale_weights = rescale_weights,
+        variance_y = variance_y, het = het, fit_seed = fit_seed, early_stopping = es_on,
+        nround_used = if (es_on) round(rowMeans(ITER)) else tunegrid$nround)
+    }
     if (isTRUE(overfit_ratio)) {
       ## opt-in: out-of-fold / in-sample residual ratio of every candidate on the search's folds
       g_r <- tunegrid

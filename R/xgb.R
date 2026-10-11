@@ -415,6 +415,102 @@ ht_var_weighted_mean <- function(y, w, g) {
 #'   \code{interval_scale} (on the transformation scale for \code{"transformed"}).
 #'   The unbenchmarked interval is the spread of the simulated truth around the
 #'   estimate, not an error interval, and is not affected.
+#' @param area_pool,sub_pool where the residual pools that generate the bootstrap
+#'   population come from. \code{"in_sample"} (default, the behaviour before these
+#'   arguments existed) uses the residuals of the final fit, which are smaller than
+#'   the errors the model makes on units it has not seen. \code{"out_of_fold"} uses
+#'   residuals from models that did not train on the unit. The \strong{area} pool has
+#'   one value per sampled domain (the survey-weighted mean residual of its units,
+#'   drawn with the domain's summed weight); its folds are grouped by domain: the
+#'   domains are dealt into \code{pool_folds} folds at random (seeded by
+#'   \code{pool_seed}, balanced), and each fold model is trained on the other folds.
+#'   The \strong{sub-area} pool is a unit's residual less its domain's mean; its
+#'   folds are grouped by sub-area within domains: a domain's sub-areas are dealt to
+#'   different folds, so the model that predicts a held-out sub-area was trained on
+#'   its domain's other sub-areas (all of them when a domain has at most
+#'   \code{pool_folds} sub-areas, otherwise those not in the same fold). The two
+#'   pools may be chosen independently. \code{sub_pool = "out_of_fold_domain"} takes
+#'   the sub-area pool from the same domain-grouped fold fits as the area pool (a
+#'   unit's residual less its domain's mean, both from models that never saw the
+#'   unit's whole domain): no extra fits, and the construction of the DRC holdout
+#'   coverage check, but the sub-area residuals then carry the domain-level error
+#'   too, so \code{"out_of_fold"} is the sub-area pool proper. Fold models are fitted as \code{xgb()} fits
+#'   (weights rescaled within domain on the training rows, \code{variance_y}, the
+#'   same hyperparameters) and predict at the census-cell covariates of the held-out
+#'   unit's sub-area, which is how the in-sample residual is defined. The pools
+#'   replace the in-sample ones only for the bootstrap population (the weights
+#'   \code{wt_domains} and the unit weights are those the bootstrap draws with); the
+#'   point estimate is computed first and does not depend on the pool, and the
+#'   random-number streams are those of the default call. With \code{configs}, each
+#'   configuration gets its own pools, fitted with its own hyperparameters, and a
+#'   bootstrap replicate uses the pools of the configuration it draws. The fold
+#'   assignments, the pools and the deflation factors are returned in \code{$pools}
+#'   (only when an option is used).
+#' @param area_deflate,sub_deflate logical, default \code{FALSE}. Remove the
+#'   sampling error from the pool: the pool's model-error variance is its mean
+#'   squared residual (weighted by the pool's draw weights, uncentred, on the
+#'   transformed scale) minus the mean sampling variance (same weights), floored at
+#'   zero, and the pool's values are multiplied by
+#'   \code{sqrt(model-error variance / mean squared residual)}. Entries without a
+#'   sampling variance are left out of both means (a warning counts them). Works
+#'   with either pool source.
+#' @param area_sampling_var,sub_sampling_var the sampling variances for the
+#'   deflation, \strong{on the response scale} (the scale of the outcome, as a
+#'   variance, that is a squared standard error). They are moved to the transformed
+#'   scale by the delta method, variance times the squared slope of the
+#'   transformation (the package's \code{.perturb_slope}, evaluated at the estimate
+#'   and its standard error). \code{area_sampling_var}: the variance of each
+#'   domain's survey-weighted mean (its direct estimate), as a numeric vector
+#'   \emph{named by the domain labels} exactly as they appear in
+#'   \code{smp_data[[domains]]}, or the name of a column of \code{smp_data} that
+#'   holds it (constant within domain). Domains of the pool missing from the vector
+#'   count as having no variance; extra names are ignored. \code{NULL} (default)
+#'   computes it from the sample: the cluster-robust (Taylor linearisation,
+#'   with-replacement) variance of the domain's weighted mean treating the sample
+#'   rows as the clusters, \eqn{n/(n-1) \sum (w_i (y_i - \bar y))^2 / (\sum w_i)^2},
+#'   undefined (missing) for a domain with one row; if your rows are not the
+#'   sampling clusters, supply the variances. \code{sub_sampling_var}: the variance
+#'   of each unit's outcome, a numeric vector with one element per row of
+#'   \code{smp_data} (in its order) or the name of a column of \code{smp_data};
+#'   \code{NULL} uses the column \code{variance_y}, and is an error without it.
+#' @param pool_folds number of folds (default 10) for the out-of-fold pools, or,
+#'   for the area pool, a data.frame whose first two columns are the domain label
+#'   and its fold (for example the \code{fold_assignment} of an \code{xgb_tune}
+#'   result), to use a given assignment.
+#' @param pool_seed seed of the fold assignments (default 123).
+#' @param pool_fit_seed seed passed to xgboost for the fold fits; \code{NULL}
+#'   (default) leaves them to the \code{seed} protocol of \code{xgb()} (the
+#'   random-number generator is seeded with \code{seed} before each fit).
+#' @param pool_tune an \code{\link{xgb_tune}} result run with
+#'   \code{keep_oof = TRUE}, to build the \strong{area} pool from its out-of-fold
+#'   predictions with \strong{no new fits}: the tuning already fitted each candidate
+#'   on domain-grouped folds, so the selected configuration's out-of-fold residuals
+#'   are the pool (and the tune's fold assignment is used). Needs
+#'   \code{area_pool = "out_of_fold"}. The call stops with the reason unless the
+#'   tune is the same model on the same data: the same transformation,
+#'   \code{rescale_weights}, \code{variance_y}, covariates (and order), domain
+#'   variable, outcome, survey weights and domain labels, a candidate with this
+#'   configuration's hyperparameters and number of rounds, and sample covariates
+#'   equal to those of the census cells (the tuning predicts at the sample rows' own
+#'   covariates). The compute saving is the \code{pool_folds} model fits per
+#'   configuration that the area pool would otherwise need (the sub-area pool still
+#'   needs its own fits).
+#' @section Out-of-fold residual pools, usage:
+#' \preformatted{
+#' tune <- xgb_tune(fixed, smp_data, smp_weights = "wt", domains = "dom",
+#'                  transformation = "arcsin", search = "random", n_iter = 150,
+#'                  seed = 1, overfit_ratio = TRUE, keep_oof = TRUE)
+#' cfg  <- xgb_top_configs(tune, rule = "least_overfit", ratio_pool = "domain")
+#' est  <- xgb(fixed, smp_data, "wt", pop_data, "npop", domains = "dom",
+#'             sub_domains = "sub", transformation = "arcsin",
+#'             configs = cfg,
+#'             area_pool = "out_of_fold", pool_tune = tune,      # no new fits
+#'             sub_pool = "out_of_fold",                          # fits on sub-area folds
+#'             area_deflate = TRUE, sub_deflate = TRUE,
+#'             area_sampling_var = c("01" = 4e-4, "02" = 9e-4),   # named by domain, response-scale variance
+#'             sub_sampling_var = "vy")                           # smp_data column, response-scale variance
+#' est$pools$configs[[1]]$area_deflation$factor
+#' }
 #' @importFrom purrr as_vector
 #' @importFrom collapse fmean
 #' @importFrom foreach foreach %dopar% %do%
@@ -505,6 +601,16 @@ xgb <- function(fixed,
                 interval_scale = c("natural", "transformed"),
                 keep_replicates = FALSE,
                 interval_method = c("basic", "plus"),
+                area_pool = c("in_sample", "out_of_fold"),
+                sub_pool = c("in_sample", "out_of_fold", "out_of_fold_domain"),
+                area_deflate = FALSE,
+                sub_deflate = FALSE,
+                area_sampling_var = NULL,
+                sub_sampling_var = NULL,
+                pool_folds = 10,
+                pool_seed = 123,
+                pool_fit_seed = NULL,
+                pool_tune = NULL,
                 ...){
 
   #1. Initialize
@@ -512,6 +618,12 @@ xgb <- function(fixed,
   smearing <- match.arg(smearing)
   interval_scale <- match.arg(interval_scale)
   interval_method <- match.arg(interval_method)
+  area_pool <- match.arg(area_pool)
+  sub_pool <- match.arg(sub_pool)
+  if (!is.logical(area_deflate) || !is.logical(sub_deflate) || length(area_deflate) != 1L || length(sub_deflate) != 1L)
+    stop("area_deflate and sub_deflate must be TRUE or FALSE.", call. = FALSE)
+  if (!is.null(pool_tune) && area_pool != "out_of_fold")
+    stop("pool_tune is used only with area_pool = \"out_of_fold\".", call. = FALSE)
   if (interval_scale == "transformed") {
     if (isTRUE(boot_estimates)) stop("interval_scale = \"transformed\" is not available with boot_estimates = TRUE.")
     interval_fns <- .interval_scale_fns(transformation)   # stops for transformations without a bounded, invertible form
@@ -675,6 +787,23 @@ xgb <- function(fixed,
     ## the bootstrap below runs on configuration 1's parameters unless a replicate draws another
     params <- cfg_params[[1]]
     nrounds <- configs$nrounds[1]
+  }
+
+  ## Residual pools other than the fit's own (area_pool, sub_pool, deflation). Runs after the point estimate, so
+  ## the estimate does not depend on it, and leaves the random-number state alone.
+  pools_record <- NULL
+  if (area_pool != "in_sample" || sub_pool != "in_sample" || area_deflate || sub_deflate) {
+    pr <- .xgb_apply_pools(fits = if (is.null(configs)) list(xgb_model) else cfg_fits,
+                           cfg_params = if (is.null(configs)) list(params) else cfg_params,
+                           cfg_nrounds = if (is.null(configs)) nrounds else configs$nrounds,
+                           fwk = fwk, X_smp_xgb = X_smp_xgb, X_pop_xgb = X_pop_xgb, transform_outcome = transform_outcome,
+                           transformation = transformation, rescale_weights = rescale_weights, variance_y = variance_y,
+                           domains = domains, sub_domains = sub_domains, area_pool = area_pool, sub_pool = sub_pool,
+                           area_deflate = area_deflate, sub_deflate = sub_deflate, area_sampling_var = area_sampling_var,
+                           sub_sampling_var = sub_sampling_var, pool_folds = pool_folds, pool_seed = pool_seed,
+                           pool_fit_seed = pool_fit_seed, pool_tune = pool_tune, seed = seed)
+    if (is.null(configs)) xgb_model <- pr$fits[[1]] else { cfg_fits <- pr$fits; xgb_model <- cfg_fits[[1]] }
+    pools_record <- pr$record
   }
 
   xgb_fit <-  xgb_model$model
@@ -1436,6 +1565,8 @@ xgb <- function(fixed,
     result$ind_by_config <- by_cfg
     result$models <- lapply(cfg_fits, `[[`, "model")
   }
+
+  if (!is.null(pools_record)) result$pools <- pools_record
 
   class(result) <- c("xgb","povmap")
   return(result)

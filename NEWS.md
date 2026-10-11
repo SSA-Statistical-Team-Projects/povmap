@@ -1,5 +1,31 @@
 # povmap 1.0.1
 
+* **`xgb()`: out-of-fold residual pools (opt-in).** The bootstrap population draws from two residual pools, the area pool
+  (domain-mean residuals) and the sub-area pool (unit residual less domain mean). They were always the fit's own
+  residuals; with `area_pool = "out_of_fold"` and/or `sub_pool = "out_of_fold"` they come from models that did not train on
+  the unit. Area folds are grouped by domain (`pool_folds`, default 10, seeded by `pool_seed`, balanced; a data.frame
+  gives an assignment); sub-area folds are grouped by sub-area within domains (a domain's sub-areas get different folds,
+  so a held-out sub-area's model was trained on its siblings). `sub_pool = "out_of_fold_domain"` takes the sub-area pool
+  from the domain-grouped fits (the DRC scratch-hook construction; no extra fits). `area_deflate`/`sub_deflate`
+  remove the sampling error: pool values are multiplied by `sqrt(max(msr - msv, 0) / msr)`, msr the pool's mean
+  squared residual and msv its mean sampling variance (draw weights, model scale). **Sampling variances**
+  (`area_sampling_var`, `sub_sampling_var`) are on the RESPONSE scale (squared standard errors) and are moved to the model
+  scale by the delta method with the package slope `.perturb_slope`. `area_sampling_var`: a numeric vector NAMED by the
+  domain labels (as in `smp_data[[domains]]`) holding the variance of each domain's direct (weighted-mean) estimate, or the name
+  of a `smp_data` column constant within domain; domains of the pool without an entry are left out of both means (warning);
+  `NULL` computes the cluster-robust (Taylor, with-replacement) variance of the weighted mean with the sample rows as the clusters.
+  `sub_sampling_var`: a numeric vector with one element per row of `smp_data`, or a column name; `NULL` uses `variance_y`.
+  With `configs`, each configuration has its own pools and a replicate uses those of the configuration it draws. The pools are
+  built after the point estimate and with the random-number state saved and restored, so **point estimates do not depend
+  on the pool and an existing call is unchanged** (checked: `identical()` on the whole estimates object, pre-change build
+  vs this one, for log, arcsin and poisson, with and without benchmarking, perturbation, `variance_y` and `configs`). The folds,
+  pools and factors are returned in `$pools` (only when an option is used).
+  - `xgb_tune(keep_oof = TRUE)` keeps each candidate's out-of-fold predictions; `xgb(pool_tune = tune, area_pool = "out_of_fold")`
+    builds the area pool from them with no new fits (saving `pool_folds` fits per configuration), after checking that the tune
+    is the same model on the same data (transformation, weights, `variance_y`, covariates, domains, outcome, hyperparameters and
+    rounds, and sample covariates equal to the census cells') and stopping with the reason otherwise.
+  - Test: `tests/testthat/test_xgb_oof_pools.R`; the DRC scratch-hook construction (`oof_lib.R`) is reproduced exactly.
+
 * **Least-overfit configuration selection (opt-in).** `xgb_top_configs()` gains `rule = "least_overfit"`:
   among the configurations of the paired one-SE set (floor 1, no cap), the single one with the lowest
   out-of-fold to in-sample residual ratio, ties to the better score; and `rule = "one_se_ratio"`: the

@@ -37,6 +37,7 @@ xgb_tune(
   overfit_ratio = FALSE,
   score_scale = c("transformed", "response"),
   fit_seed = NULL,
+  keep_oof = FALSE,
   cpus = 1,
   verbose = TRUE,
   ...
@@ -218,6 +219,16 @@ model is trained on the transformed outcome either way. Defaults to
 \item{fit_seed}{seed passed to xgboost for every fit. \code{NULL} (default)
 uses \code{seed}, as before. Set it to score on folds drawn from \code{seed}
 while keeping the fit seed fixed.}
+
+\item{keep_oof}{logical. If \code{TRUE} (and \code{keep_candidates} is
+\code{TRUE}), the result also carries \code{oof}: the out-of-fold
+predictions of every candidate (model scale, one column per candidate, one
+row per row of \code{smp_data}), the fold of each row, and what is needed to
+check that a later \code{\link{xgb}} call is the same model on the same data
+(outcome, weights, domain and cluster labels, covariates, transformation,
+weighting options, fit seed). \code{\link{xgb}(pool_tune = )} builds the area
+residual pool from these predictions with no new fits. No random numbers are
+used and nothing else in the result changes. Default \code{FALSE}.}
 
 \item{verbose}{display progress. Defaults to FALSE.}
 
