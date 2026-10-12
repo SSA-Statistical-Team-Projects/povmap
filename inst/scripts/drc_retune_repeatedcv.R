@@ -15,12 +15,14 @@
 #     Ratio: the area-pool out-of-fold / in-sample SD ratio computed on each seed's folds, then averaged over the three seeds.
 # Ratios are computed only for the union of the members of the five sets (xgb_overfit_ratio(rows = union)), on each seed's folds; every
 # candidate that can be chosen has a ratio for all seeds. Set B is re-scored on every seed's folds as its own one-row tune (not a candidate).
-# Environment: INDICATORS, NW (workers), OUT (folder), SEED (20261010), DRC_DATA.
+# Environment: INDICATORS, NW (workers), OUT (folder), SEED (20261010), DRC_DATA, SCORE_SCALE ("transformed" (default), "response" or "training").
+# NOTE: the CV3 run (drc_retune_repeatedcv.csv) was made with score_scale = SCORE_SCALE, which was hard-coded then; reproduce it with SCORE_SCALE=response.
 suppressMessages(library(povmap))
 DATA <- Sys.getenv("DRC_DATA", "H:/david/SAE/DRC/data")
 OUT <- Sys.getenv("OUT", file.path(DATA, "candidate_estimates", "drc_retune_20261010", "repeatedcv"))
 N_ITER <- as.integer(Sys.getenv("N_ITER", "150")); NW <- as.integer(Sys.getenv("NW", "5")); SEED <- as.integer(Sys.getenv("SEED", "20261010")); FIT_SEED <- 123L
 SEEDS <- c(123L, 124L, 125L)
+SCORE_SCALE <- Sys.getenv("SCORE_SCALE", "transformed"); stopifnot(SCORE_SCALE %in% c("transformed", "response", "training"))
 dir.create(file.path(OUT, "detail"), showWarnings = FALSE, recursive = TRUE)
 survey <- readRDS(file.path(DATA, "survey_with_features")); census <- readRDS(file.path(DATA, "census_xgb_agepop"))
 X <- colnames(survey)[c(which(colnames(survey) == "population"), which(colnames(survey) == "ntl"):which(colnames(survey) == "FATALITIES"),
@@ -61,7 +63,7 @@ for (ind in names(cfg)) {
   smp <- survey[!is.na(survey[[ind]]), unique(c(ind, X, wc, hv, "ADM2CD_c"))]
   fx <- stats::reformulate(X, response = ind)
   common <- list(fx, smp_data = smp, smp_weights = wc, domains = "ADM2CD_c", transformation = tr, folds = 10, fit_seed = FIT_SEED,
-                 nthread = 1, variance_y = hv, score_scale = "response", cpus = NW, verbose = FALSE)
+                 nthread = 1, variance_y = hv, score_scale = SCORE_SCALE, cpus = NW, verbose = FALSE)
   t0 <- retry(suppressWarnings(do.call(xgb_tune, c(common, list(seed = SEED, search = "random", n_iter = N_ITER, bounds = BOUNDS)))))
   cand <- t0$candidates[, KEYS]; n <- nrow(cand)
   ## the draws other than lambda and min_child_weight are those of the previous bounds
