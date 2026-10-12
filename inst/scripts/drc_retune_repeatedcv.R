@@ -16,7 +16,7 @@
 # Ratios are computed only for the union of the members of the five sets (xgb_overfit_ratio(rows = union)), on each seed's folds; every
 # candidate that can be chosen has a ratio for all seeds. Set B is re-scored on every seed's folds as its own one-row tune (not a candidate).
 # Environment: INDICATORS, NW (workers), OUT (folder), SEED (20261010), DRC_DATA, SCORE_SCALE ("transformed" (default), "response" or "training").
-# NOTE: the CV3 run (drc_retune_repeatedcv.csv) was made with score_scale = SCORE_SCALE, which was hard-coded then; reproduce it with SCORE_SCALE=response.
+# NOTE: the CV3 run (drc_retune_repeatedcv.csv) was made with score_scale = "response", hard-coded then; reproduce it with SCORE_SCALE=response.
 suppressMessages(library(povmap))
 DATA <- Sys.getenv("DRC_DATA", "H:/david/SAE/DRC/data")
 OUT <- Sys.getenv("OUT", file.path(DATA, "candidate_estimates", "drc_retune_20261010", "repeatedcv"))
