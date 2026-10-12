@@ -35,7 +35,7 @@ xgb_tune(
   variance_y = NULL,
   grid = NULL,
   overfit_ratio = FALSE,
-  score_scale = c("transformed", "response"),
+  score_scale = c("transformed", "response", "training"),
   fit_seed = NULL,
   keep_oof = FALSE,
   cpus = 1,
@@ -213,8 +213,19 @@ always. \code{"response"} back-transforms the held-out predictions to the
 outcome's own scale (arcsin: \code{sin(clamp(h, 0, pi/2))^2}; log:
 \code{exp}; poisson: \code{pmax(0, expm1(h))}) and scores the weighted
 domain means against the weighted direct means of the raw outcome. The
-model is trained on the transformed outcome either way. Defaults to
-\code{"transformed"}, so existing calls are unchanged.}
+model is trained on the transformed outcome either way. \code{"training"}
+scores each fold with the loss the model is trained on, not with a domain-level
+error: the squared error of the held-out sample rows on the model (transformed)
+scale, \code{sum(w (y_t - hat)^2) / sum(w)}, where \code{w} are the weights the
+model gives the held-out rows (rescaled within domain, divided by their mean,
+times the heteroscedasticity factor, as in \code{\link{xgb}}). That is the
+\code{reg:squarederror} objective \code{xgb} uses by default, on the arcsine, log
+or log1p (poisson) transformed outcome; a poisson outcome is trained as squared
+error on \code{log1p(y)}, not with \code{count:poisson}, so its training loss
+is not a Poisson deviance. With \code{"training"} the candidate \code{mse} and the
+fold scores are on that scale, and \code{r2_oos} is \code{NA}. Defaults to
+\code{"transformed"} (the squared error of the weighted domain means on the
+model scale), so existing calls are unchanged.}
 
 \item{fit_seed}{seed passed to xgboost for every fit. \code{NULL} (default)
 uses \code{seed}, as before. Set it to score on folds drawn from \code{seed}

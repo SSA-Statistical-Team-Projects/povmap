@@ -169,8 +169,19 @@
 #'   outcome's own scale (arcsin: \code{sin(clamp(h, 0, pi/2))^2}; log:
 #'   \code{exp}; poisson: \code{pmax(0, expm1(h))}) and scores the weighted
 #'   domain means against the weighted direct means of the raw outcome. The
-#'   model is trained on the transformed outcome either way. Defaults to
-#'   \code{"transformed"}, so existing calls are unchanged.
+#'   model is trained on the transformed outcome either way. \code{"training"}
+#'   scores each fold with the loss the model is trained on, not with a domain-level
+#'   error: the squared error of the held-out sample rows on the model (transformed)
+#'   scale, \code{sum(w (y_t - hat)^2) / sum(w)}, where \code{w} are the weights the
+#'   model gives the held-out rows (rescaled within domain, divided by their mean,
+#'   times the heteroscedasticity factor, as in \code{\link{xgb}}). That is the
+#'   \code{reg:squarederror} objective \code{xgb} uses by default, on the arcsine, log
+#'   or log1p (poisson) transformed outcome; a poisson outcome is trained as squared
+#'   error on \code{log1p(y)}, not with \code{count:poisson}, so its training loss
+#'   is not a Poisson deviance. With \code{"training"} the candidate \code{mse} and the
+#'   fold scores are on that scale, and \code{r2_oos} is \code{NA}. Defaults to
+#'   \code{"transformed"} (the squared error of the weighted domain means on the
+#'   model scale), so existing calls are unchanged.
 #' @param fit_seed seed passed to xgboost for every fit. \code{NULL} (default)
 #'   uses \code{seed}, as before. Set it to score on folds drawn from \code{seed}
 #'   while keeping the fit seed fixed.
@@ -242,7 +253,7 @@ xgb_tune <- function(fixed,
                      variance_y = NULL,
                      grid = NULL,
                      overfit_ratio = FALSE,
-                     score_scale = c("transformed", "response"),
+                     score_scale = c("transformed", "response", "training"),
                      fit_seed = NULL,
                      keep_oof = FALSE,
                      cpus = 1, 
@@ -417,7 +428,8 @@ xgb_tune <- function(fixed,
                      nrounds_max = nrounds_max, seed = seed, dots = dots,
                      rescale_weights = rescale_weights, het = het,
                      fit_seed = fit_seed, y_resp = y_resp, back = back,
-                     keep_oof = isTRUE(keep_oof) && isTRUE(keep_candidates))
+                     keep_oof = isTRUE(keep_oof) && isTRUE(keep_candidates),
+                     train_loss = score_scale == "training")
 
   sc <- do.call(.xgb_score_configs, c(list(tunegrid = tunegrid), score_args))
   OPT <- sc$OPT; ITER <- sc$ITER; domain_labels_list <- sc$domain_labels
@@ -449,7 +461,7 @@ xgb_tune <- function(fixed,
   # Variance of domain-level mean outcomes pooled across all folds
   all_domain_labels <- unlist(domain_labels_list)
   var_labels <- var(all_domain_labels)
-  r2_oos <- 1 - mse_min / var_labels
+  r2_oos <- if (score_scale == "training") NA_real_ else 1 - mse_min / var_labels
 
   final_output <- list(nround_opt, max_depth_opt, colsample_bytree_opt, colsample_bylevel_opt,
                        colsample_bynode_opt, subsample_opt, min_child_weight_opt, eta_opt,
@@ -463,6 +475,7 @@ xgb_tune <- function(fixed,
   final_output$search    <- search
   final_output$n_configs <- nrow(tunegrid)
   final_output$rescale_weights <- rescale_weights
+  if (score_scale == "training") final_output$score_scale <- score_scale    # NULL otherwise: existing results gain no element
   final_output$variance_y <- variance_y    # NULL adds no element
   if (isTRUE(keep_candidates)) {
     cand <- tunegrid

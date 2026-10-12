@@ -162,7 +162,7 @@
                                cluster_col, cluster, domains, folds,
                                early_stopping_rounds = NULL, nrounds_max = 2000,
                                seed = NULL, dots = list(), rescale_weights = TRUE,
-                               het = NULL, fit_seed = seed, y_resp = NULL, back = NULL, keep_oof = FALSE) {
+                               het = NULL, fit_seed = seed, y_resp = NULL, back = NULL, keep_oof = FALSE, train_loss = FALSE) {
   ## scoring labels: the transformed outcome, or the raw one when scored on the response scale
   Y_score <- if (is.null(y_resp)) Y_smp[, 1] else y_resp
   dom_all <- X_smp[[paste0(domains)]]
@@ -201,8 +201,10 @@
                                 het_rows(es_train))
     w_val   <- if (es_on) .xgb_fit_weights(as.matrix(smp_weights)[es_val, ], dom_all[es_val], rescale_weights,
                                            het_rows(es_val)) else NULL
+    ## training-loss scoring: the held-out rows weighted as the model would weight them
+    w_hold <- if (train_loss) .xgb_fit_weights(as.matrix(smp_weights)[hold, ], dom_all[hold], rescale_weights, het_rows(hold)) else NULL
     fold_info[[fold]] <- list(hold = hold, es_train = es_train, es_val = es_val,
-                              w_train = w_train, w_val = w_val)
+                              w_train = w_train, w_val = w_val, w_hold = w_hold)
   }
 
   tasks <- expand.grid(row = seq_len(nrow_g), fold = seq_len(folds))
@@ -251,7 +253,8 @@
     g   <- split(dh, dh$domains)
     mh  <- sapply(g, function(z) stats::weighted.mean(z$hat, w = z$wts))
     ml  <- sapply(g, function(z) stats::weighted.mean(z$labels, w = z$wts))
-    v <- c(row = row, fold = fold, mse = mean((ml - mh)^2), best_iter = best_iter)
+    loss <- if (train_loss) sum(fi$w_hold * (Y_smp[fi$hold, ] - hat_raw)^2) / sum(fi$w_hold) else mean((ml - mh)^2)
+    v <- c(row = row, fold = fold, mse = loss, best_iter = best_iter)
     if (keep_oof) list(list(v = v, hat = hat_raw)) else v
   }
   oof_pred <- NULL

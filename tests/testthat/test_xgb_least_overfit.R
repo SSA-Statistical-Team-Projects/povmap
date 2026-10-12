@@ -377,3 +377,39 @@ test_that("ratio_pool accepts the area pool: 'domain' is the pool of the tuning 
   ov <- data.frame(row = 1:5, ratio_total = 5:1, ratio_domain = c(3, 2, 1, 9, 9), ratio_within_domain = 5:1)
   expect_equal(xgb_top_configs(t5, rule = "least_overfit", ratio = ov, ratio_pool = "domain")$nrounds, 103)
 })
+
+## ---- score_scale = "training": the loss the model is trained on -------------------------------------------
+
+test_that("xgb_tune(score_scale = 'training') is the weighted squared error of the held-out rows on the model scale", {
+  skip_if_not_installed("xgboost")
+  skip_on_cran()
+  d <- make_ratio_data()
+  g1 <- ratio_grid[2, ]
+  run <- function(...) suppressWarnings(suppressMessages(xgb_tune(
+    y ~ x1 + x2, smp_data = d, smp_weights = "wt", domains = "dom", folds = 4, grid = g1, seed = 5, variance_y = "v", verbose = FALSE, ...)))
+  tt <- run(transformation = "arcsin", score_scale = "training")
+  expect_equal(tt$score_scale, "training"); expect_true(is.na(tt$r2_oos))
+  ## by hand, fold 1
+  yt <- asin(sqrt(d$y)); X <- data.matrix(d[, c("x1", "x2")]); het <- d$v^-0.5
+  set.seed(5); cu <- unique(d$dom); fold <- sample(1:4, length(cu), replace = TRUE)[match(d$dom, cu)]
+  fw <- function(idx) { w <- d$wt[idx]; w <- w * ave(w, d$dom[idx], FUN = length) / ave(w, d$dom[idx], FUN = sum)
+    w <- w / mean(w); w * het[idx] / mean(w * het[idx]) }
+  p <- list(max_depth = g1$max_depth, colsample_bytree = g1$colsample_bytree, colsample_bylevel = 1, colsample_bynode = 1, subsample = g1$subsample,
+            min_child_weight = g1$min_child_weight, eta = g1$eta, gamma = 0, max_delta_step = 0, lambda = g1$lambda, alpha = 0, seed = 5)
+  tr <- fold != 1
+  fit <- xgboost::xgb.train(xgboost::xgb.DMatrix(X[tr, ], label = yt[tr], weight = fw(which(tr))), params = p, nrounds = g1$nround, verbose = 0)
+  wh <- fw(which(!tr)); hat <- predict(fit, X[!tr, ])
+  expect_equal(tt$cv_by_fold[1, 1], sum(wh * (yt[!tr] - hat)^2) / sum(wh), tolerance = 1e-8)
+  ## a poisson outcome is trained as squared error on log1p(y): same scores as the log1p outcome with no transformation
+  set.seed(9); d$cnt <- rpois(nrow(d), exp(0.3 + 0.5 * d$x1)); d$lcnt <- log1p(d$cnt)
+  tp <- suppressWarnings(suppressMessages(xgb_tune(cnt ~ x1 + x2, smp_data = d, smp_weights = "wt", domains = "dom", folds = 4, grid = g1, seed = 5,
+                                                   transformation = "poisson", score_scale = "training", verbose = FALSE)))
+  tl <- suppressWarnings(suppressMessages(xgb_tune(lcnt ~ x1 + x2, smp_data = d, smp_weights = "wt", domains = "dom", folds = 4, grid = g1, seed = 5,
+                                                   transformation = "no", score_scale = "training", verbose = FALSE)))
+  expect_identical(tp$cv_by_fold, tl$cv_by_fold)
+  ## the existing options are unchanged and gain no element
+  t0 <- run(transformation = "arcsin"); t1 <- run(transformation = "arcsin", score_scale = "transformed")
+  expect_identical(t0, t1); expect_null(t0$score_scale)
+  expect_null(run(transformation = "arcsin", score_scale = "response")$score_scale)
+  expect_false(isTRUE(all.equal(tt$cv_by_fold, t0$cv_by_fold)))
+})
