@@ -20,6 +20,18 @@
   on the pool and an existing call is unchanged** (checked: `identical()` on the whole estimates object, pre-change build
   vs this one, for log, arcsin and poisson, with and without benchmarking, perturbation, `variance_y` and `configs`). The folds,
   pools and factors are returned in `$pools` (only when an option is used).
+  - `area_pool = "by_status"`: in the bootstrap every census domain draws one area residual from the pool (a sampled domain's own residual is not attached
+    to it); under `by_status` a sampled domain draws from the in-sample pool and a census-only domain from the out-of-fold pool, at the same pool position
+    (same domains, same draw probabilities), so the random-number stream is that of the other settings. Without a benchmark the sampled domains' results equal
+    `in_sample`'s and the census-only domains' equal `out_of_fold`'s (tested at a fixed seed); with a benchmark the in-bootstrap re-estimation and the raking
+    mix the domains of a province, so only the draws are guaranteed equal. With `area_deflate`, each pool is deflated separately with its own residuals,
+    mean squared residual and the bootstrap's draw weights: `$pools$configs[[k]]$area_deflation` (in-sample pool) and `area_deflation_alt` (out-of-fold pool),
+    each with factor, msr, msv, n_missing and n_imputed. Works with `configs` and `pool_tune`.
+  - `deflate_from = "residuals"` (default `"outcomes"`, unchanged): the sampling variance of the area-pool deflation is the cluster-robust variance of the
+    domain's weighted mean of the unit residuals of the fit that produced the pool, on the model (transformed) scale, no conversion:
+    `m/(m-1) * sum_c (sum_{i in c} w_i (r_i - rbar))^2 / (sum w)^2`, clusters = sample rows grouped by `sub_domains`. A one-cluster domain is imputed (`impute_single_ea`:
+    pooled within-domain unit-residual variance per cluster / the domain's cluster count; the count is returned). Area pool only: the sub-area route
+    (`sub_sampling_var`) is unchanged. Not allowed together with `area_sampling_var`.
   - `xgb_tune(keep_oof = TRUE)` keeps each candidate's out-of-fold predictions; `xgb(pool_tune = tune, area_pool = "out_of_fold")`
     builds the area pool from them with no new fits (saving `pool_folds` fits per configuration), after checking that the tune
     is the same model on the same data (transformation, weights, `variance_y`, covariates, domains, outcome, hyperparameters and

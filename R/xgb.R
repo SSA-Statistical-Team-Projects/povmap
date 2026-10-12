@@ -423,7 +423,25 @@ ht_var_weighted_mean <- function(y, w, g) {
 #'   population come from. \code{"in_sample"} (default, the behaviour before these
 #'   arguments existed) uses the residuals of the final fit, which are smaller than
 #'   the errors the model makes on units it has not seen. \code{"out_of_fold"} uses
-#'   residuals from models that did not train on the unit. The \strong{area} pool has
+#'   residuals from models that did not train on the unit. For the area pool only,
+#'   \code{"by_status"} uses both: in the bootstrap every census domain draws one
+#'   area residual from the pool (the sampled domains' own residuals are not
+#'   attached to them), and under \code{"by_status"} a domain that is in the
+#'   sample draws from the in-sample pool and a domain that is not (census only)
+#'   from the out-of-fold pool; both pools have the same entries and draw
+#'   probabilities, so the two draws for a domain are the same position of the two
+#'   pools and the random-number stream is that of the other settings. Deflation
+#'   (\code{area_deflate}) under \code{"by_status"} deflates EACH pool separately, with its
+#'   own residuals, its own mean squared residual and the bootstrap's draw weights, so
+#'   there are two factors and two imputation counts: \code{area_deflation} (the
+#'   in-sample pool, sampled domains) and \code{area_deflation_alt} (the out-of-fold
+#'   pool, census-only domains) in \code{$pools}.
+#'   Without a benchmark, a domain's replicates are its own simulated truth, so the
+#'   results of the sampled domains equal those of \code{"in_sample"} and those of
+#'   the unsampled domains equal those of \code{"out_of_fold"}; with a benchmark the
+#'   re-estimation inside the bootstrap uses the sampled domains' draws and the
+#'   raking mixes the domains of a province, so only the sampled-domain draws
+#'   themselves are guaranteed equal. The \strong{area} pool has
 #'   one value per sampled domain (the survey-weighted mean residual of its units,
 #'   drawn with the domain's summed weight); its folds are grouped by domain: the
 #'   domains are dealt into \code{pool_folds} folds at random (seeded by
@@ -497,6 +515,25 @@ ht_var_weighted_mean <- function(y, w, g) {
 #'   numbers imputed are in \code{$pools$configs[[k]]$area_deflation$n_imputed} and
 #'   \code{sub_deflation$n_imputed} and reported in a message. \code{FALSE} drops
 #'   them with a warning.
+#' @param deflate_from \code{"outcomes"} (default): the sampling variances of the
+#'   deflation come from \code{area_sampling_var} or, if that is \code{NULL}, from
+#'   the cluster-robust variance of the domain's weighted mean OUTCOME.
+#'   \code{"residuals"} (area pool only; \code{area_sampling_var} must be
+#'   \code{NULL}): the sampling variance of the pool entry itself, the cluster-robust
+#'   variance of the domain's weighted mean of the UNIT RESIDUALS of the fit that
+#'   produced the pool (out-of-fold residuals for an out-of-fold pool, in-sample
+#'   residuals otherwise). The residuals are on the model (transformed) scale, so the
+#'   variance needs no conversion. For domain \eqn{d} with clusters \eqn{c} (the
+#'   sample rows grouped by \code{sub_domains}), \eqn{m_d} clusters and survey weights
+#'   \eqn{w_i}: \eqn{\hat v_d = m_d/(m_d-1) \sum_c (\sum_{i \in c} w_i (r_i - \bar r_d))^2 /
+#'   (\sum_i w_i)^2}, the Taylor linearisation with the clusters as primary units and
+#'   a with-replacement small-sample factor; a domain with one cluster has no variance
+#'   and takes the \code{impute_single_ea} path (the pooled within-domain variance of
+#'   the unit residuals per cluster divided by the domain's cluster count). Then the
+#'   usual deflation formula. The sub-area pool is always deflated with
+#'   \code{sub_sampling_var}. The variance estimates the sampling noise of the pool
+#'   entry (the domain-mean residual) around the domain's model error; it also contains
+#'   any cluster-level model error, so it is an upper-side estimate.
 #' @param pool_folds number of folds (default 10) for the out-of-fold pools, or,
 #'   for the area pool, a data.frame whose first two columns are the domain label
 #'   and its fold (for example the \code{fold_assignment} of an \code{xgb_tune}
@@ -625,7 +662,7 @@ xgb <- function(fixed,
                 interval_scale = c("natural", "transformed"),
                 keep_replicates = FALSE,
                 interval_method = c("basic", "plus"),
-                area_pool = c("in_sample", "out_of_fold"),
+                area_pool = c("in_sample", "out_of_fold", "by_status"),
                 sub_pool = c("in_sample", "out_of_fold", "out_of_fold_domain"),
                 area_deflate = FALSE,
                 sub_deflate = FALSE,
@@ -636,6 +673,7 @@ xgb <- function(fixed,
                 pool_fit_seed = NULL,
                 pool_tune = NULL,
                 impute_single_ea = TRUE,
+                deflate_from = c("outcomes", "residuals"),
                 ...){
 
   #1. Initialize
@@ -645,10 +683,13 @@ xgb <- function(fixed,
   interval_method <- match.arg(interval_method)
   area_pool <- match.arg(area_pool)
   sub_pool <- match.arg(sub_pool)
+  deflate_from <- match.arg(deflate_from)
+  if (deflate_from == "residuals" && !is.null(area_sampling_var))
+    stop("deflate_from = \"residuals\" computes the sampling variance from the residuals; leave area_sampling_var NULL.", call. = FALSE)
   if (!is.logical(area_deflate) || !is.logical(sub_deflate) || length(area_deflate) != 1L || length(sub_deflate) != 1L)
     stop("area_deflate and sub_deflate must be TRUE or FALSE.", call. = FALSE)
-  if (!is.null(pool_tune) && area_pool != "out_of_fold")
-    stop("pool_tune is used only with area_pool = \"out_of_fold\".", call. = FALSE)
+  if (!is.null(pool_tune) && !area_pool %in% c("out_of_fold", "by_status"))
+    stop("pool_tune is used only with area_pool = \"out_of_fold\" or \"by_status\".", call. = FALSE)
   if (interval_scale == "transformed") {
     if (isTRUE(boot_estimates)) stop("interval_scale = \"transformed\" is not available with boot_estimates = TRUE.")
     interval_fns <- .interval_scale_fns(transformation)   # stops for transformations without a bounded, invertible form
@@ -827,7 +868,8 @@ xgb <- function(fixed,
                            area_deflate = area_deflate, sub_deflate = sub_deflate, area_sampling_var = area_sampling_var,
                            sub_sampling_var = sub_sampling_var, pool_folds = pool_folds, pool_seed = pool_seed,
                            pool_fit_seed = pool_fit_seed, pool_tune = pool_tune, seed = seed,
-                           weighted_draw = (weightedBS == TRUE & !is.null(smp_weights)), impute_single_ea = impute_single_ea)
+                           weighted_draw = (weightedBS == TRUE & !is.null(smp_weights)), impute_single_ea = impute_single_ea,
+                           deflate_from = deflate_from)
     if (is.null(configs)) xgb_model <- pr$fits[[1]] else { cfg_fits <- pr$fits; xgb_model <- cfg_fits[[1]] }
     pools_record <- pr$record
   }
@@ -852,6 +894,9 @@ xgb <- function(fixed,
 
   resid_sub_domains <- xgb_model$resid_sub_domains
   resid_domains <- xgb_model$resid_domains
+  ## area_pool = "by_status": the out-of-fold pool the census-only (unsampled) domains draw from; NULL otherwise
+  resid_domains_alt <- xgb_model$resid_domains_alt
+  sampled_domain_names <- if (is.null(resid_domains_alt)) NULL else as.character(xgb_model$domains)
 
 
 
@@ -967,6 +1012,7 @@ xgb <- function(fixed,
     if (center_residuals==T) {
       resid_sub_domains <- resid_sub_domains-weighted.mean(resid_sub_domains,w=pop_subarea_d)
       resid_domains <- resid_domains-weighted.mean(resid_domains,w=pop_area_d)
+      if (!is.null(resid_domains_alt)) resid_domains_alt <- resid_domains_alt-weighted.mean(resid_domains_alt,w=pop_area_d)
       #resid_sub_domains_rescaled <- resid_sub_domains_rescaled-weighted.mean(resid_sub_domains_rescaled,w=pop_subarea_d)
       #resid_domains_rescaled <- resid_domains_rescaled-weighted.mean(resid_domains_rescaled,w=pop_area_d)
       if (!is.null(benchmark)) {
@@ -995,7 +1041,9 @@ xgb <- function(fixed,
           rs <- rs - weighted.mean(rs, w = pop_subarea_d)
           rd <- rd - weighted.mean(rd, w = pop_area_d)
         }
-        list(B_sub = f$sub_predictions, resid_sub_domains = rs, resid_domains = rd,
+        rda <- f$resid_domains_alt
+        if (!is.null(rda) && center_residuals==T) rda <- rda - weighted.mean(rda, w = pop_area_d)
+        list(B_sub = f$sub_predictions, resid_sub_domains = rs, resid_domains = rd, resid_domains_alt = rda,
              params = cfg_params[[k]], nrounds = configs$nrounds[k])
       })
       had_seed <- exists(".Random.seed", envir = globalenv(), inherits = FALSE)
@@ -1057,6 +1105,7 @@ xgb <- function(fixed,
                                   B_sub <- cfg_j$B_sub
                                   resid_sub_domains <- cfg_j$resid_sub_domains
                                   resid_domains <- cfg_j$resid_domains
+                                  resid_domains_alt <- cfg_j$resid_domains_alt
                                   params <- cfg_j$params
                                   nrounds <- cfg_j$nrounds
                                 }
@@ -1082,9 +1131,11 @@ xgb <- function(fixed,
                                   B_domains$hat_t <- .boot_domain_wmean(x=B_sub$hat_t,g=B_sub[,fwk$domains],w=B_sub[,fwk$pop_weights],what="hat_t")
 
                                   #B_domains <- data.frame("domains" = unique(B_sub$domains),"sim" = B_domains)
-                                  area_draw <- data.frame(domains=B_domains$domains,area_draw=resid_domains[sample(1:length(resid_domains),
-                                                                                                                   nrow(B_domains), prob=pop_area_d,
-                                                                                                                   replace = TRUE)])
+                                  area_idx <- sample(1:length(resid_domains), nrow(B_domains), prob=pop_area_d, replace = TRUE)
+                                  area_val <- resid_domains[area_idx]
+                                  ## area_pool = "by_status": census-only domains draw from the out-of-fold pool (same positions, same draws)
+                                  if (!is.null(resid_domains_alt)) { un <- !(as.character(B_domains$domains) %in% sampled_domain_names); area_val[un] <- resid_domains_alt[area_idx][un] }
+                                  area_draw <- data.frame(domains=B_domains$domains,area_draw=area_val)
                                   B_domains <- left_join(B_domains,area_draw,by="domains")
 
                                   # Add bootstrapped area residual and back transform
@@ -1116,9 +1167,10 @@ xgb <- function(fixed,
                                     # resid_domains_bench is (direct estimate - benchmarked model prediction) and is dominated
                                     # by sampling error in the direct estimate, not by the area random effect. The bootstrap
                                     # population should reflect the model's data-generating process, which uses resid_domains.
-                                    area_draws_bench <- data.frame(domains=B_domains$domains,area_draw=resid_domains[sample(1:length(resid_domains),
-                                                                                                                            nrow(B_domains), prob=pop_area_d,
-                                                                                                                            replace = TRUE)])
+                                    area_idx_b <- sample(1:length(resid_domains), nrow(B_domains), prob=pop_area_d, replace = TRUE)
+                                    area_val_b <- resid_domains[area_idx_b]
+                                    if (!is.null(resid_domains_alt)) { un_b <- !(as.character(B_domains$domains) %in% sampled_domain_names); area_val_b[un_b] <- resid_domains_alt[area_idx_b][un_b] }
+                                    area_draws_bench <- data.frame(domains=B_domains$domains,area_draw=area_val_b)
 
                                     colnames(area_draws_bench)[1]=fwk$domains
                                     B_sub <- dplyr:::left_join(B_sub,area_draws_bench,by=fwk$domains)

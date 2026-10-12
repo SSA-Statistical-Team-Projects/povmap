@@ -332,3 +332,98 @@ test_that("DRC Stage 1b scratch hook reproduced by xgb(area_pool/sub_pool = out 
   expect_lt(max(r$max_abs_diff), 1e-8)                    # Mean, Mean_bench, Lower, Upper, Lower_bench, Upper_bench
   expect_lt(max(r$max_abs_diff_vs_insample_point, na.rm = TRUE), 1e-10)   # point estimates equal the in-sample job's
 })
+
+## ---- area_pool = "by_status" and deflate_from = "residuals" ------------------------------------------------
+
+test_that("by_status: sampled domains equal the in-sample pool, census-only domains the out-of-fold pool (fixed seed, no benchmark)", {
+  skip_if_not_installed("xgboost")
+  d <- make_pool_data()
+  samp <- sort(unique(d$smp$dom)); un <- setdiff(unique(d$pop$dom), samp)
+  expect_equal(length(un), 6L)
+  r_in <- pool_fit(d, bootstrap = TRUE, B = 6)
+  r_oo <- pool_fit(d, bootstrap = TRUE, B = 6, area_pool = "out_of_fold")
+  r_bs <- pool_fit(d, bootstrap = TRUE, B = 6, area_pool = "by_status")
+  ## the bootstrap draws one area residual per census domain at the same pool positions in all three settings
+  key <- function(e) cbind(Domain = as.character(e$ind$Domain), e$CI[, c("Lower", "Upper")])
+  k_in <- key(r_in); k_oo <- key(r_oo); k_bs <- key(r_bs)
+  s <- k_bs$Domain %in% samp; u <- k_bs$Domain %in% un
+  expect_true(all(s | u))
+  expect_equal(k_bs[s, c("Lower", "Upper")], k_in[match(k_bs$Domain[s], k_in$Domain), c("Lower", "Upper")], tolerance = 1e-12)
+  expect_equal(k_bs[u, c("Lower", "Upper")], k_oo[match(k_bs$Domain[u], k_oo$Domain), c("Lower", "Upper")], tolerance = 1e-12)
+  expect_false(isTRUE(all.equal(k_in[u, c("Lower", "Upper")], k_oo[match(k_in$Domain[u], k_oo$Domain), c("Lower", "Upper")])))   # the pools differ for these
+  expect_equal(r_bs$ind$Mean, r_in$ind$Mean, tolerance = 1e-12)                                                                   # point estimates untouched
+  ## pools
+  pl <- r_bs$pools$configs[[1]]
+  r_is <- pool_fit(d, sub_pool = "out_of_fold")$pools$configs[[1]]$resid_domains     # the in-sample area pool, unchanged by a sub-pool choice
+  expect_equal(pl$resid_domains, r_is, tolerance = 1e-12)
+  expect_equal(pl$resid_domains_alt, r_oo$pools$configs[[1]]$resid_domains, tolerance = 1e-12)
+  expect_equal(r_bs$pools$n_unsampled_census_domains, 6L)
+  ## deflation under by_status deflates EACH pool with its own factor: the in-sample pool as the in-sample single-pool run, the out-of-fold pool
+  ## as the out-of-fold single-pool run
+  v <- stats::setNames(rep(3e-4, length(samp)), samp)
+  bd <- pool_fit(d, area_pool = "by_status", area_deflate = TRUE, area_sampling_var = v)
+  d_in <- pool_fit(d, area_pool = "in_sample", area_deflate = TRUE, area_sampling_var = v)
+  d_oo <- pool_fit(d, area_pool = "out_of_fold", area_deflate = TRUE, area_sampling_var = v)
+  pd <- bd$pools$configs[[1]]
+  expect_equal(pd$resid_domains, d_in$pools$configs[[1]]$resid_domains, tolerance = 1e-12)
+  expect_equal(pd$resid_domains_alt, d_oo$pools$configs[[1]]$resid_domains, tolerance = 1e-12)
+  expect_equal(pd$area_deflation$factor, d_in$pools$configs[[1]]$area_deflation$factor, tolerance = 1e-12)
+  expect_equal(pd$area_deflation_alt$factor, d_oo$pools$configs[[1]]$area_deflation$factor, tolerance = 1e-12)
+  expect_false(isTRUE(all.equal(pd$area_deflation$factor, pd$area_deflation_alt$factor)))
+  expect_true(all(c("n_imputed", "n_missing") %in% names(pd$area_deflation_alt)))
+  ## and with deflation on, each domain group matches the corresponding single-pool run (no benchmark, fixed seed)
+  b2 <- pool_fit(d, bootstrap = TRUE, B = 6, area_pool = "by_status", area_deflate = TRUE, area_sampling_var = v)
+  i2 <- pool_fit(d, bootstrap = TRUE, B = 6, area_pool = "in_sample", area_deflate = TRUE, area_sampling_var = v)
+  o2 <- pool_fit(d, bootstrap = TRUE, B = 6, area_pool = "out_of_fold", area_deflate = TRUE, area_sampling_var = v)
+  ss <- as.character(b2$ind$Domain) %in% samp
+  expect_equal(b2$CI[ss, c("Lower", "Upper")], i2$CI[ss, c("Lower", "Upper")], tolerance = 1e-12)
+  expect_equal(b2$CI[!ss, c("Lower", "Upper")], o2$CI[!ss, c("Lower", "Upper")], tolerance = 1e-12)
+})
+
+test_that("by_status works with configs averaging and with pool_tune", {
+  skip_if_not_installed("xgboost")
+  skip_on_cran()
+  d <- make_pool_data()
+  e <- pool_fit(d, cfg = rbind(cfg_a, cfg_b), area_pool = "by_status", bootstrap = TRUE, B = 4)
+  expect_length(e$pools$configs, 2L)
+  expect_false(isTRUE(all.equal(e$pools$configs[[1]]$resid_domains_alt, e$pools$configs[[2]]$resid_domains_alt)))
+  g1 <- data.frame(nround = 15, max_depth = 2, colsample_bytree = 0.6, colsample_bylevel = 1, colsample_bynode = 1, subsample = 0.6,
+                   min_child_weight = 1, eta = 0.3, gamma = 0, max_delta_step = 0, lambda = 1, alpha = 0)
+  tune <- suppressWarnings(suppressMessages(povmap::xgb_tune(y ~ x1 + x2, smp_data = d$smp, smp_weights = "wt", domains = "dom", transformation = "arcsin",
+                                                              folds = 5, grid = g1, seed = 21, fit_seed = 9, nthread = 1, keep_oof = TRUE, verbose = FALSE)))
+  bt <- pool_fit(d, area_pool = "by_status", pool_tune = tune)
+  fr <- pool_fit(d, area_pool = "out_of_fold", pool_folds = tune$fold_assignment, pool_fit_seed = 9)
+  expect_equal(bt$pools$configs[[1]]$resid_domains_alt, fr$pools$configs[[1]]$resid_domains, tolerance = 1e-10)
+  expect_error(pool_fit(d, area_pool = "in_sample", pool_tune = tune), "pool_tune")
+})
+
+test_that("deflate_from = 'residuals': cluster-robust variance of the domain-mean unit residuals, by hand", {
+  skip_if_not_installed("xgboost")
+  d <- make_pool_data()
+  e <- pool_fit(d, area_deflate = TRUE, deflate_from = "residuals")          # in-sample area pool
+  pl <- e$pools$configs[[1]]
+  smp <- d$smp; yt <- asin(sqrt(smp$y)); cellx <- as.matrix(d$pop[match(smp$sub, d$pop$sub), c("x1", "x2")])
+  r <- yt - predict(e$model, cellx)                                          # unit residuals of the fit that produced the pool (model scale)
+  w <- smp$wt
+  rd <- tapply(r * w, smp$dom, sum) / tapply(w, smp$dom, sum)
+  expect_equal(unname(pl$resid_domains[match(names(rd), pl$domains)]), as.numeric(rd) * pl$area_deflation$factor, tolerance = 1e-8)
+  vh <- vapply(names(rd), function(dm) { i <- smp$dom == dm; m <- sum(i); tc <- tapply(w[i] * (r[i] - rd[[dm]]), smp$sub[i], sum)
+    m / (m - 1) * sum(tc^2) / sum(w[i])^2 }, 1)
+  rd0 <- pool_fit(d)$pools                                                    # no pools element by default
+  expect_null(rd0)
+  wts <- as.numeric(tapply(w, smp$dom, sum))[match(pl$domains, names(rd))]
+  msr <- weighted.mean((rd[pl$domains])^2, wts); msv <- weighted.mean(vh[pl$domains], wts)
+  expect_equal(pl$area_deflation$msr, msr, tolerance = 1e-8); expect_equal(pl$area_deflation$msv, msv, tolerance = 1e-8)
+  expect_equal(pl$area_deflation$factor, sqrt(max(msr - msv, 0) / msr), tolerance = 1e-8)
+  ## not with a supplied variance; the default deflate_from is unchanged
+  expect_error(pool_fit(d, area_deflate = TRUE, deflate_from = "residuals", area_sampling_var = c("01" = 1)), "area_sampling_var")
+  e0 <- pool_fit(d, area_deflate = TRUE); e1 <- pool_fit(d, area_deflate = TRUE, deflate_from = "outcomes")
+  expect_equal(e0$pools$configs[[1]]$resid_domains, e1$pools$configs[[1]]$resid_domains, tolerance = 1e-15)
+  ## out-of-fold pool and a single-cluster domain (imputed on the model scale)
+  d1 <- d; keep <- !(d1$smp$dom == d1$smp$dom[1] & seq_len(nrow(d1$smp)) > 1); d1$smp <- d1$smp[keep, ]
+  ei <- pool_fit(d1, area_pool = "out_of_fold", area_deflate = TRUE, deflate_from = "residuals")
+  expect_equal(ei$pools$configs[[1]]$area_deflation$n_imputed, 1L)
+  expect_warning(pool_fit(d1, area_pool = "out_of_fold", area_deflate = TRUE, deflate_from = "residuals", impute_single_ea = FALSE, quiet = FALSE), "no sampling variance")
+  ## the sub-area pool still needs sub_sampling_var
+  expect_error(pool_fit(d, sub_deflate = TRUE, deflate_from = "residuals"), "needs sub_sampling_var")
+})

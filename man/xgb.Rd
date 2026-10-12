@@ -53,7 +53,7 @@ xgb(
   interval_scale = c("natural", "transformed"),
   keep_replicates = FALSE,
   interval_method = c("basic", "plus"),
-  area_pool = c("in_sample", "out_of_fold"),
+  area_pool = c("in_sample", "out_of_fold", "by_status"),
   sub_pool = c("in_sample", "out_of_fold", "out_of_fold_domain"),
   area_deflate = FALSE,
   sub_deflate = FALSE,
@@ -64,6 +64,7 @@ xgb(
   pool_fit_seed = NULL,
   pool_tune = NULL,
   impute_single_ea = TRUE,
+  deflate_from = c("outcomes", "residuals"),
   ...
 )
 }
@@ -328,7 +329,25 @@ estimate, not an error interval, and is not affected.}
 population come from. \code{"in_sample"} (default, the behaviour before these
 arguments existed) uses the residuals of the final fit, which are smaller than
 the errors the model makes on units it has not seen. \code{"out_of_fold"} uses
-residuals from models that did not train on the unit. The \strong{area} pool has
+residuals from models that did not train on the unit. For the area pool only,
+\code{"by_status"} uses both: in the bootstrap every census domain draws one
+area residual from the pool (the sampled domains' own residuals are not
+attached to them), and under \code{"by_status"} a domain that is in the
+sample draws from the in-sample pool and a domain that is not (census only)
+from the out-of-fold pool; both pools have the same entries and draw
+probabilities, so the two draws for a domain are the same position of the two
+pools and the random-number stream is that of the other settings. Deflation
+(\code{area_deflate}) under \code{"by_status"} deflates EACH pool separately, with its
+own residuals, its own mean squared residual and the bootstrap's draw weights, so
+there are two factors and two imputation counts: \code{area_deflation} (the
+in-sample pool, sampled domains) and \code{area_deflation_alt} (the out-of-fold
+pool, census-only domains) in \code{$pools}.
+Without a benchmark, a domain's replicates are its own simulated truth, so the
+results of the sampled domains equal those of \code{"in_sample"} and those of
+the unsampled domains equal those of \code{"out_of_fold"}; with a benchmark the
+re-estimation inside the bootstrap uses the sampled domains' draws and the
+raking mixes the domains of a province, so only the sampled-domain draws
+themselves are guaranteed equal. The \strong{area} pool has
 one value per sampled domain (the survey-weighted mean residual of its units,
 drawn with the domain's summed weight); its folds are grouped by domain: the
 domains are dealt into \code{pool_folds} folds at random (seeded by
@@ -431,6 +450,26 @@ with a missing \code{sub_sampling_var} get the pooled variance itself (one EA). 
 numbers imputed are in \code{$pools$configs[[k]]$area_deflation$n_imputed} and
 \code{sub_deflation$n_imputed} and reported in a message. \code{FALSE} drops
 them with a warning.}
+
+\item{deflate_from}{\code{"outcomes"} (default): the sampling variances of the
+deflation come from \code{area_sampling_var} or, if that is \code{NULL}, from
+the cluster-robust variance of the domain's weighted mean OUTCOME.
+\code{"residuals"} (area pool only; \code{area_sampling_var} must be
+\code{NULL}): the sampling variance of the pool entry itself, the cluster-robust
+variance of the domain's weighted mean of the UNIT RESIDUALS of the fit that
+produced the pool (out-of-fold residuals for an out-of-fold pool, in-sample
+residuals otherwise). The residuals are on the model (transformed) scale, so the
+variance needs no conversion. For domain \eqn{d} with clusters \eqn{c} (the
+sample rows grouped by \code{sub_domains}), \eqn{m_d} clusters and survey weights
+\eqn{w_i}: \eqn{\hat v_d = m_d/(m_d-1) \sum_c (\sum_{i \in c} w_i (r_i - \bar r_d))^2 /
+(\sum_i w_i)^2}, the Taylor linearisation with the clusters as primary units and
+a with-replacement small-sample factor; a domain with one cluster has no variance
+and takes the \code{impute_single_ea} path (the pooled within-domain variance of
+the unit residuals per cluster divided by the domain's cluster count). Then the
+usual deflation formula. The sub-area pool is always deflated with
+\code{sub_sampling_var}. The variance estimates the sampling noise of the pool
+entry (the domain-mean residual) around the domain's model error; it also contains
+any cluster-level model error, so it is an upper-side estimate.}
 
 \item{...}{additional parameters to be passed to \code{xgboost}.}
 

@@ -112,6 +112,19 @@
   if (den > 0) num / den else NA_real_
 }
 
+## Cluster-robust variance of the weighted mean of `r` within each domain g, clusters `cl`: m/(m - 1) * sum_c (sum_{i in c} w_i (r_i - rbar))^2 / (sum w)^2;
+## NA for a domain with a single cluster. Returns the variances v and the cluster counts m, both named by domain.
+.xgb_cluster_mean_var <- function(r, w, cl, g) {
+  g <- as.character(g); cl <- as.character(cl); u <- unique(g)
+  v <- stats::setNames(rep(NA_real_, length(u)), u); m <- stats::setNames(integer(length(u)), u)
+  for (d in u) {
+    i <- g == d; rb <- sum(w[i] * r[i]) / sum(w[i])
+    tc <- tapply(w[i] * (r[i] - rb), cl[i], sum); mm <- length(tc); m[d] <- mm
+    if (mm >= 2L) v[d] <- mm / (mm - 1) * sum(tc^2) / sum(w[i])^2
+  }
+  list(v = v, m = m)
+}
+
 ## Deflate pool values `r` (weights w) by sqrt(max(msr - msv, 0) / msr); msr and msv are weighted means over the
 ## entries that have a sampling variance (v_t, model scale).
 .xgb_deflate_pool <- function(r, w, v_t, what, n_imputed = 0L) {
@@ -183,7 +196,7 @@
 ## fits with resid_sub_domains, resid_domains, wt_sub_domains and wt_domains replaced, plus a record.
 .xgb_apply_pools <- function(fits, cfg_params, cfg_nrounds, fwk, X_smp_xgb, X_pop_xgb, transform_outcome, transformation,
                              rescale_weights, variance_y, domains, sub_domains, area_pool, sub_pool, area_deflate, sub_deflate,
-                             area_sampling_var, sub_sampling_var, pool_folds, pool_seed, pool_fit_seed, pool_tune, seed, weighted_draw = TRUE, impute_single_ea = TRUE) {
+                             area_sampling_var, sub_sampling_var, pool_folds, pool_seed, pool_fit_seed, pool_tune, seed, weighted_draw = TRUE, impute_single_ea = TRUE, deflate_from = "outcomes") {
   cell <- fwk$smp_data[[sub_domains]]
   rows_pop <- match(cell, fwk$X_pop[[sub_domains]]); ok <- !is.na(rows_pop)
   if (any(vapply(fits, function(f) length(f$resid_total) != sum(ok), TRUE)))
@@ -196,7 +209,7 @@
   Xcell <- as.matrix(X_pop_xgb)[rows_pop, , drop = FALSE]
   K <- if (is.data.frame(pool_folds)) NA_integer_ else as.integer(pool_folds)
   fold_a <- fold_s <- NULL
-  need_a <- area_pool == "out_of_fold" || sub_pool == "out_of_fold_domain"
+  need_a <- area_pool %in% c("out_of_fold", "by_status") || sub_pool == "out_of_fold_domain"
   if (need_a)
     fold_a <- if (!is.null(pool_tune)) as.integer(pool_tune$oof$fold) else
       .xgb_pool_fold_domain(dom_smp, K, pool_seed, if (is.data.frame(pool_folds)) pool_folds else NULL)
@@ -212,13 +225,20 @@
   for (k in seq_along(fits)) {
     f <- fits[[k]]
     pa <- list(resid = f$resid_domains, w = f$wt_domains, nm = f$domains)
+    pb <- NULL                       # by_status: the out-of-fold pool of the census-only domains
+    r_unit <- f$resid_total          # unit residuals of the fit that produced the pool being deflated (model scale)
     ps <- list(resid = f$resid_sub_domains, w = f$wt_sub_domains)
     if (need_a) {
       hat <- if (!is.null(pool_tune)) .xgb_tune_oof_hat(pool_tune, fwk, cfg_params[[k]], cfg_nrounds[k], transformation,
                                                          rescale_weights, variance_y, domains) else
         .xgb_oof_hat(fold_a, X_smp_xgb, y_t, w, dom_smp, het, Xcell, cfg_params[[k]], cfg_nrounds[k], rescale_weights, seed, pool_fit_seed)
       p_a <- .xgb_pools_from_resid((y_t - hat)[ok], w[ok], dom_pop)
-      if (area_pool == "out_of_fold") pa <- list(resid = p_a$resid_domains, w = p_a$wt_domains, nm = p_a$names)
+      if (area_pool == "out_of_fold") { pa <- list(resid = p_a$resid_domains, w = p_a$wt_domains, nm = p_a$names); r_unit <- (y_t - hat)[ok] }
+      if (area_pool == "by_status") {
+        pb <- list(resid = p_a$resid_domains, w = p_a$wt_domains, nm = p_a$names); r_unit <- (y_t - hat)[ok]
+        if (!identical(as.character(pb$nm), as.character(pa$nm)) || !isTRUE(all.equal(pb$w, pa$w, tolerance = 1e-10)))
+          stop("area_pool = \"by_status\": the in-sample and out-of-fold pools do not have the same domains and weights.", call. = FALSE)
+      }
       if (sub_pool == "out_of_fold_domain") ps <- list(resid = p_a$resid_sub_domains, w = p_a$wt_sub_domains)
     }
     if (sub_pool == "out_of_fold") {
@@ -231,19 +251,38 @@
     wa <- if (weighted_draw) pa$w else rep(1, length(pa$w))
     ws <- if (weighted_draw) ps$w else rep(1, length(ps$w))
     S2 <- if (impute_single_ea && (area_deflate || sub_deflate)) .xgb_pooled_ea_var(y_resp[ok], w[ok], dom_pop) else NA_real_
+    fa_alt <- NULL
     if (area_deflate) {
-      v <- .xgb_resolve_area_var(area_sampling_var, fwk, ok, dom_pop, pa$nm, y_resp[ok], w[ok])
-      n_imp <- 0L
-      if (impute_single_ea && is.finite(S2)) {
-        nd <- as.numeric(table(factor(dom_pop, levels = pa$nm)))
-        miss <- is.na(v); v[miss] <- S2 / nd[miss]; n_imp <- sum(miss)
+      ## one pool is deflated with its own residuals and the bootstrap's draw weights; area_pool = "by_status" has two pools and deflates each
+      ## separately (the in-sample pool for the sampled domains, the out-of-fold pool for the census-only domains), each with its own factor
+      defl_area <- function(tg, r_u, label) {
+        wa <- if (weighted_draw) tg$w else rep(1, length(tg$w))
+        n_imp <- 0L
+        if (deflate_from == "residuals") {
+          cv <- .xgb_cluster_mean_var(r_u, w[ok], as.character(cell)[ok], dom_pop)
+          v_t <- cv$v[tg$nm]
+          if (impute_single_ea) {
+            S2r <- .xgb_pooled_ea_var(r_u, w[ok], dom_pop)
+            if (is.finite(S2r)) { miss <- is.na(v_t); v_t[miss] <- S2r / cv$m[tg$nm][miss]; n_imp <- sum(miss) }
+          }
+        } else {
+          v <- .xgb_resolve_area_var(area_sampling_var, fwk, ok, dom_pop, tg$nm, y_resp[ok], w[ok])
+          if (impute_single_ea && is.finite(S2)) {
+            nd <- as.numeric(table(factor(dom_pop, levels = tg$nm)))
+            miss <- is.na(v); v[miss] <- S2 / nd[miss]; n_imp <- sum(miss)
+          }
+          est <- as.numeric(collapse:::fmean(y_resp[ok], g = dom_pop, w = w[ok], use.g.names = TRUE)[tg$nm])
+          v_t <- .xgb_var_to_model_scale(v, est, transformation, transform_outcome)
+        }
+        out <- .xgb_deflate_pool(tg$resid, wa, v_t, "area", n_imp)
+        if (k == 1L && n_imp > 0L)
+          message("xgb: area-pool deflation", label, ": sampling variance imputed for ", n_imp, " of ", length(tg$nm),
+                  " domains (pooled within-domain variance / the domain's cluster count).")
+        out
       }
-      est <- as.numeric(collapse:::fmean(y_resp[ok], g = dom_pop, w = w[ok], use.g.names = TRUE)[pa$nm])
-      fa <- .xgb_deflate_pool(pa$resid, wa, .xgb_var_to_model_scale(v, est, transformation, transform_outcome), "area", n_imp)
+      fa <- defl_area(pa, f$resid_total, if (is.null(pb)) "" else " (in-sample pool)")
       pa$resid <- fa$resid
-      if (k == 1L && n_imp > 0L)
-        message("xgb: area-pool deflation: sampling variance imputed for ", n_imp, " of ", length(pa$nm),
-                " domains (pooled within-domain EA variance / the domain's EA count).")
+      if (!is.null(pb)) { fa_alt <- defl_area(pb, r_unit, " (out-of-fold pool)"); pb$resid <- fa_alt$resid }
     }
     if (sub_deflate) {
       v <- .xgb_resolve_sub_var(sub_sampling_var, fwk, ok, variance_y)
@@ -256,15 +295,18 @@
                 " units (pooled within-domain EA variance).")
     }
     f$resid_domains <- pa$resid; f$wt_domains <- pa$w; f$domains <- pa$nm
+    f$resid_domains_alt <- if (is.null(pb)) NULL else pb$resid
     f$resid_sub_domains <- ps$resid; f$wt_sub_domains <- ps$w
     fits[[k]] <- f
-    info[[k]] <- list(resid_domains = pa$resid, wt_domains = pa$w, domains = pa$nm,
+    info[[k]] <- list(resid_domains = pa$resid, resid_domains_alt = if (is.null(pb)) NULL else pb$resid, wt_domains = pa$w, domains = pa$nm,
                       resid_sub_domains = ps$resid, wt_sub_domains = ps$w,
                       area_deflation = if (is.null(fa)) NULL else fa[c("factor", "msr", "msv", "n_missing", "n_imputed")],
+                      area_deflation_alt = if (is.null(fa_alt)) NULL else fa_alt[c("factor", "msr", "msv", "n_missing", "n_imputed")],
                       sub_deflation = if (is.null(fs)) NULL else fs[c("factor", "msr", "msv", "n_missing", "n_imputed")])
   }
   list(fits = fits,
-       record = list(area_pool = area_pool, sub_pool = sub_pool, area_deflate = area_deflate, sub_deflate = sub_deflate,
+       record = list(area_pool = area_pool, sub_pool = sub_pool, area_deflate = area_deflate, sub_deflate = sub_deflate, deflate_from = deflate_from,
+                     n_unsampled_census_domains = length(setdiff(unique(as.character(fwk$X_pop[[domains]])), unique(dom_pop))),
                      area_folds = if (is.null(fold_a)) NULL else data.frame(domain = unique(dom_smp), fold = fold_a[match(unique(dom_smp), dom_smp)]),
                      sub_folds = if (is.null(fold_s)) NULL else unique(data.frame(domain = dom_smp, sub_domain = as.character(cell), fold = fold_s)),
                      area_from_tune = !is.null(pool_tune), pool_seed = pool_seed, pool_fit_seed = pool_fit_seed, configs = info))
