@@ -1,3 +1,12 @@
+# povmap 1.0.2 (shared XGBoost estimation convention v0.6)
+
+* **Defaults now follow the convention** (the arguments are unchanged; only their defaults): `xgb(area_pool = "out_of_fold", weightedBS = FALSE)`
+  (`sub_pool = "in_sample"` and `area_deflate = FALSE` were already the defaults); `xgb_top_configs(floor = 1)`, so the paired one-SE set is not padded
+  (`cap = 8`); `xgb_tune(n_iter = 150, nrounds_max = 3000)` and the default random-search bounds eta 0.01-0.3, max_depth 1-12, subsample 0.5-1,
+  colsample_bytree 0.1-1, min_child_weight 1-1000, lambda 0.01-10000, nround 50-3000. `xgb_tune(search = )` stays `"grid"`, so existing grid calls are unchanged.
+* **New `xgb_tune_repeated()`**: one draw of `n_iter` configurations (`draw_seed`), scored on fold seeds 123, 124, 125; the result goes to `xgb_top_configs()`.
+* Calls that relied on the old defaults (`area_pool`, `weightedBS`, `floor`, the random-search bounds) give different results; pass the old value to reproduce them.
+
 # povmap 1.0.1
 
 * **`xgb()`: out-of-fold residual pools (opt-in).** The bootstrap population draws from two residual pools, the area pool

@@ -7,20 +7,20 @@
 ## than between 0.25 and 0.29 and a uniform draw spends most of its budget at the
 ## insensitive end.
 
-## Default search ranges. Only these six vary unless the caller names more in
+## Default search ranges (the shared XGBoost estimation convention, v0.6). Only these six vary unless the caller names more in
 ## `bounds`; a user exploring depth should not silently get gamma and alpha
 ## moving as well.
 .XGB_DEFAULT_BOUNDS <- list(
   eta              = c(0.01, 0.3),
-  max_depth        = c(2, 10),
-  min_child_weight = c(1, 50),
+  max_depth        = c(1, 12),
+  min_child_weight = c(1, 1000),
   subsample        = c(0.5, 1.0),
-  colsample_bytree = c(0.3, 1.0),
-  lambda           = c(0.1, 10),
+  colsample_bytree = c(0.1, 1.0),
+  lambda           = c(0.01, 10000),
   ## nround is searched rather than fixed by early stopping: unit-level
   ## stopping underfits a domain-level objective (measured: patience 20
   ## halted at 34 rounds when the optimum was near 1258, halving the r2).
-  nround           = c(50, 1500)
+  nround           = c(50, 3000)
 )
 
 ## Default sampling scale per parameter.
@@ -160,7 +160,7 @@
 
 .xgb_score_configs <- function(tunegrid, X_final, X_smp, Y_smp, smp_weights,
                                cluster_col, cluster, domains, folds,
-                               early_stopping_rounds = NULL, nrounds_max = 2000,
+                               early_stopping_rounds = NULL, nrounds_max = 3000,
                                seed = NULL, dots = list(), rescale_weights = TRUE,
                                het = NULL, fit_seed = seed, y_resp = NULL, back = NULL, keep_oof = FALSE, train_loss = FALSE) {
   ## scoring labels: the transformed outcome, or the raw one when scored on the response scale

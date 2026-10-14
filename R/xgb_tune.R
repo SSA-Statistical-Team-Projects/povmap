@@ -82,7 +82,7 @@
 #' conclusion is specific to cheap evaluations and would likely invert if a
 #' single evaluation took minutes.
 #' @param n_iter number of configurations drawn when \code{search = "random"}.
-#'   Defaults to 32. Note that 32 random draws is NOT equivalent in coverage to a
+#'   Defaults to 150 (the convention). Note that 32 random draws is NOT equivalent in coverage to a
 #'   32 point grid: the grid tests two values of five parameters and so
 #'   establishes direction rather than locating an optimum, whereas the random
 #'   draws explore the interior of the ranges but cover any single axis more
@@ -108,7 +108,7 @@
 #'   remains purely for scoring. Defaults to \code{NULL}, i.e. fixed
 #'   \code{nround} as before.
 #' @param nrounds_max ceiling on boosting rounds when early stopping is in use.
-#'   Defaults to 2000. If any fold stops at this ceiling a warning is raised,
+#'   Defaults to 3000. If any fold stops at this ceiling a warning is raised,
 #'   since the budget rather than the data then chose the stopping point.
 #' @param seed integer seed making the whole routine reproducible: the assignment
 #'   of clusters to folds, the random draw of configurations, and the underlying
@@ -243,10 +243,10 @@ xgb_tune <- function(fixed,
                      lambda = c(0.5, 1.5),
                      alpha = c(0),
                      search = c("grid", "random"),
-                     n_iter = 32,
+                     n_iter = 150,
                      bounds = NULL,
                      early_stopping_rounds = NULL,
-                     nrounds_max = 2000,
+                     nrounds_max = 3000,
                      seed = NULL,
                      keep_candidates = TRUE,
                      rescale_weights = TRUE,

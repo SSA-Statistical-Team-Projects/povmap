@@ -79,7 +79,7 @@ make_slope_data <- function(seed = 51) {
 fit_slope <- function(d, se = c(R1 = 0.02, R2 = 0.005, R3 = 0.01)) {
   suppressWarnings(suppressMessages(povmap::xgb(
     fixed = y ~ x1 + x2 + r2 + r3, smp_data = d$smp, smp_weights = "wt", pop_data = d$pop, pop_weights = "npop", domains = "dom", sub_domains = "sub",
-    transformation = "arcsin", bootstrap = TRUE, B = 150, L = 5, cpus = 1, seed = 3, nrounds = 20, eta = 0.3, max_depth = 2,
+    transformation = "arcsin", area_pool = "in_sample", weightedBS = TRUE, bootstrap = TRUE, B = 150, L = 5, cpus = 1, seed = 3, nrounds = 20, eta = 0.3, max_depth = 2,
     colsample_bylevel = 1, colsample_bynode = 1, subsample = 1, benchmark = "Mean", benchmark_level = "reg", benchmark_type = "logit_raking",
     perturb_benchmark = TRUE, benchmark_target_se = se, keep_replicates = TRUE)))
 }

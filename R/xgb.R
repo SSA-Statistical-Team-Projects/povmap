@@ -214,7 +214,7 @@ ht_var_weighted_mean <- function(y, w, g) {
 #' point estimates when using a transformation. Defaults to 100.
 #' @param weightedBS. If TRUE and smp_weights is specified, gives each area and subarea weight proportional to
 #' their sample weight when implementing the cluster residual bootstrap. If FALSE, gives each area and subarea
-#' equal weight. Defaults to TRUE.
+#' equal weight. Defaults to FALSE (the shared estimation convention, v0.6).
 #' @param boot_estimates. If TRUE, point_estimates are set equal to the average of the bootstrap replications. If set to FALSE, point estimates
 #' are set equal to the XGboost prediction. Defaults to FALSE.
 #' @param center_residuals. If TRUE, the mean of the residuals during the bootstrap are subtracted from the residuals prior to the bootstrapping procedure.
@@ -420,10 +420,9 @@ ht_var_weighted_mean <- function(y, w, g) {
 #'   The unbenchmarked interval is the spread of the simulated truth around the
 #'   estimate, not an error interval, and is not affected.
 #' @param area_pool,sub_pool where the residual pools that generate the bootstrap
-#'   population come from. \code{"in_sample"} (default, the behaviour before these
-#'   arguments existed) uses the residuals of the final fit, which are smaller than
+#'   population come from. \code{"in_sample"} (the default of \code{sub_pool}, and of \code{area_pool} before convention v0.6) uses the residuals of the final fit, which are smaller than
 #'   the errors the model makes on units it has not seen. \code{"out_of_fold"} uses
-#'   residuals from models that did not train on the unit. For the area pool only,
+#'   residuals from models that did not train on the unit; it is the default of \code{area_pool} (convention v0.6). For the area pool only,
 #'   \code{"by_status"} uses both: in the bootstrap every census domain draws one
 #'   area residual from the pool (the sampled domains' own residuals are not
 #'   attached to them), and under \code{"by_status"} a domain that is in the
@@ -647,7 +646,7 @@ xgb <- function(fixed,
                 benchmark_level = NULL,
                 benchmark_weights = NULL,
                 ydump = NULL,
-                weightedBS = T,
+                weightedBS = FALSE,
                 boot_estimates = F,
                 center_residuals = F,
                 variance_y = NULL,
@@ -662,7 +661,7 @@ xgb <- function(fixed,
                 interval_scale = c("natural", "transformed"),
                 keep_replicates = FALSE,
                 interval_method = c("basic", "plus"),
-                area_pool = c("in_sample", "out_of_fold", "by_status"),
+                area_pool = c("out_of_fold", "in_sample", "by_status"),
                 sub_pool = c("in_sample", "out_of_fold", "out_of_fold_domain"),
                 area_deflate = FALSE,
                 sub_deflate = FALSE,

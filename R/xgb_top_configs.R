@@ -32,7 +32,7 @@
 #'   \code{"least_overfit"}. Both need the ratios, see \code{ratio}.
 #' @param k number of configurations for \code{rule = "k_best"}.
 #' @param floor,cap the set is filled up to \code{floor} configurations with the
-#'   next best by score, and cut to the \code{cap} best by score. Defaults 3 and 8.
+#'   next best by score, and cut to the \code{cap} best by score. Defaults 1 (the set is not padded) and 8.
 #'   For \code{rule = "least_overfit"} neither applies; for \code{"one_se_ratio"}
 #'   only \code{cap} does.
 #' @param ratio the out-of-fold to in-sample residual ratio of each candidate, used
@@ -76,7 +76,7 @@
 #' @seealso \code{\link{xgb_tune}}, \code{\link{xgb}}
 #' @export
 xgb_top_configs <- function(tune, rule = c("one_se_paired", "one_se", "k_best", "least_overfit", "one_se_ratio"),
-                            k = 5, floor = 3, cap = 8, ratio = NULL,
+                            k = 5, floor = 1, cap = 8, ratio = NULL,
                             ratio_pool = c("total", "domain", "within_domain"), max_ratio = 2, ratio_cap = 40) {
   ratio_pool <- match.arg(ratio_pool)
   rule <- match.arg(rule)

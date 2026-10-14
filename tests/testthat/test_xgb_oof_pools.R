@@ -30,7 +30,8 @@ make_pool_data <- function(seed = 7) {
 pool_fit <- function(d, ..., bootstrap = FALSE, B = 4, cfg = NULL, quiet = TRUE, hp = list(nrounds = 15, max_depth = 2, eta = 0.3, min_child_weight = 1,
                      lambda = 1, colsample_bytree = 0.6, colsample_bylevel = 1, colsample_bynode = 1, subsample = 0.6)) {
   a <- list(fixed = y ~ x1 + x2, smp_data = d$smp, smp_weights = "wt", pop_data = d$pop, pop_weights = "npop",
-            domains = "dom", sub_domains = "sub", transformation = "arcsin", bootstrap = bootstrap, B = B, L = 10, seed = 11)
+            domains = "dom", sub_domains = "sub", transformation = "arcsin", bootstrap = bootstrap, B = B, L = 10, seed = 11,
+            area_pool = "in_sample", weightedBS = TRUE)    # the pre-v0.6 defaults, so these tests isolate the option under test
   a <- utils::modifyList(c(a, if (is.null(cfg)) hp else list(configs = cfg)), list(...))
   if (quiet) suppressWarnings(suppressMessages(utils::capture.output(res <- do.call(povmap::xgb, a))))
   else utils::capture.output(res <- do.call(povmap::xgb, a))
