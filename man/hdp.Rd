@@ -192,7 +192,7 @@ proposed by \cite{Molina and Rao (2020)}. A parametric bootstrap method
 is used to estimate the mean squared errors.
 }
 \examples{
-#' \donttest{
+\donttest{
 # Loading data - population and sample data
 data("eusilcA_pop")
 data("eusilcA_smp")
