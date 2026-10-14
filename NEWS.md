@@ -1,3 +1,9 @@
+# povmap 1.0.2 (v0.6.1 fixes on top of the convention release)
+
+* **Arcsin back-transformation (`ebp`, `megb`).** The mean of `sin(x)^2` under normal error is now the exact `1/2 - 1/2 cos(2 mu) exp(-2 v)` (new internal `arcsin_expected_back()`), replacing a 9th-order series that had the wrong sign on the `v^2` term and lacked the double-factorial factors on the higher terms. Arcsin estimates move; the largest effect is at large `v`.
+* **`ebp()` at `L > 0` runs again.** The `Quantiles` indicator returned a different number of values from the indicator-name list since d5c0068/b014b53 (9 probabilities, 8 names, and a mis-indexed `keepthese`), so `monte_carlo()` failed on a replacement-length error. `Quantiles` now returns the 7 values `Quantile_5` ... `Quantile_95` (Minimum and Maximum are their own indicators), the stray `"Quantile"` name is gone, and `monte_carlo()` sizes its results array from what the indicator functions return and stops with a clear message if that disagrees with the names.
+* `sae` is in Suggests (the `hdp` example needs it).
+
 # povmap 1.0.2 (shared XGBoost estimation convention v0.6)
 
 * **Defaults now follow the convention** (the arguments are unchanged; only their defaults): `xgb(area_pool = "out_of_fold", weightedBS = FALSE)`

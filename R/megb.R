@@ -473,8 +473,8 @@ megb <- function(fixed,
   # ── 5b. Jensen-corrected back-transformation ─────────────────────────────────
   # E[g^{-1}(hat_t + e)] > g^{-1}(hat_t) for convex g^{-1}. We correct using
   # the MEGB-estimated error variance sigma2_e. Analytical formulae follow
-  # expected_untransformed_mean() in point_estimation.R (9th-order Taylor for
-  # arcsin; exact lognormal formula for log/log.shift/poisson).
+  # expected_untransformed_mean() in point_estimation.R (exact
+  # E[sin^2] formula for arcsin; exact lognormal formula for log/log.shift/poisson).
   sigma2_e <- tryCatch({
     err_sd <- megb_fit$megb_model$error_sd
     if (!is.null(err_sd) && !is.na(err_sd) && err_sd > 0) err_sd^2 else 0
@@ -499,13 +499,7 @@ megb <- function(fixed,
       "log.shift" = exp(hat_t + 0.5 * .sigma2) - .ls_lam,
       "poisson"   = pmax(0, expm1(hat_t + 0.5 * .sigma2)),
       "arcsin"    = {
-        term1 <- arcsin_transform_back(hat_t)
-        dy2dx <- -2 * sin(hat_t)^2 + 2 * cos(hat_t)^2
-        term1 +
-          0.5       * dy2dx * .sigma2 -
-          (1/24)    * (-4  * dy2dx) * 3   * .sigma2^2 +
-          (1/720)   * (-16 * dy2dx)       * .sigma2^3 +
-          (1/40320) * (-64 * dy2dx)       * .sigma2^4
+        arcsin_expected_back(hat_t, .sigma2)
       },
       hat_t
     )
