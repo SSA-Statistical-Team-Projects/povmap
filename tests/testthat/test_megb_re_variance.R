@@ -73,3 +73,27 @@ test_that("megb runs with the random-effect variance correction, point estimate 
     expect_false(anyNA(m$MSE$Mean %||% m$var$Mean))
   }
 })
+
+test_that("the correction varies with n_i and matches numerical integration for every domain (n_i from 2 to 50)", {
+  set.seed(21)
+  D <- 15
+  n_i <- round(seq(2, 50, length.out = D))
+  d <- data.frame(dom = factor(rep(sprintf("d%02d", seq_len(D)), n_i)))
+  d$r <- rnorm(D, 0, 0.6)[as.integer(d$dom)] + rnorm(nrow(d), 0, 0.5)
+  for (weighted in c(FALSE, TRUE)) {
+    d$w <- if (weighted) runif(nrow(d), 0.3, 3) else 1
+    fit <- suppressMessages(lme4::lmer(r ~ 1 + (1 | dom), data = d, REML = FALSE,
+                                       weights = if (weighted) d$w else NULL))
+    se2 <- stats::sigma(fit)^2
+    v <- povmap:::.megb_re_condvar(fit, levels(d$dom))
+    expect_true(all(diff(v) < 0 | weighted))                  # unweighted: variance falls as n_i grows
+    expect_gt(diff(range(v)), 0.05 * max(v))                  # and it does vary across domains
+    for (tr in c("log", "arcsin")) {
+      cbt <- povmap:::.megb_make_corrected_bt(se2, tr)
+      g_inv <- if (tr == "log") exp else function(x) sin(x)^2
+      mu <- if (tr == "log") 0.4 else 0.9
+      num <- vapply(seq_len(D), function(k) num_back(mu, v[k], se2, g_inv), numeric(1))
+      expect_equal(cbt(rep(mu, D), v), num, tolerance = 1e-7)
+    }
+  }
+})

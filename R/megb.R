@@ -683,7 +683,10 @@ megb <- function(fixed,
                     else fwk$smp_weights,
         .fwk      = fwk,
         .fixed    = fixed,
-        .corr_bt  = corrected_bt,
+        # y_star = gb + u* + e* already contains the unit error draw e*, like the observed y the
+        # fixed target uses, so it takes the plain back-transform (sigma2_e = 0): no Jensen correction.
+        .corr_bt  = .megb_make_corrected_bt(0, transformation,
+                                            if (transformation == "log.shift") ls_lambda else NULL),
         .add_bm   = add_benchmark_megb,
         .fixed_bm = fixed_bm_val
       ),
