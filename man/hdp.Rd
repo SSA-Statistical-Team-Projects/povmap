@@ -192,6 +192,7 @@ proposed by \cite{Molina and Rao (2020)}. A parametric bootstrap method
 is used to estimate the mean squared errors.
 }
 \examples{
+if (requireNamespace("sae", quietly = TRUE)) {
 \donttest{
 # Loading data - population and sample data
 data("eusilcA_pop")
@@ -213,6 +214,7 @@ povmap_model2 <- hdp(
   pop_domains = "district", smp_data = eusilcA_smp, smp_domains = "district",
   na.rm = TRUE, MSE=TRUE
 )
+}
 }
 }
 \references{

@@ -97,6 +97,7 @@ To check if a zip application is available they recommend the command
 \code{shell("zip")}.
 }
 \examples{
+\dontrun{
 
 \donttest{
 # Loading data - population and sample data
@@ -135,6 +136,7 @@ write.excel(povmap_model, indicator = "all", MSE = TRUE, CV = TRUE,
 # write.ods(povmap_model, indicator = "all", MSE = TRUE, CV = TRUE)
 }
 
+}
 }
 \seealso{
 \code{\link{direct}}, \code{\link{povmapObject}}, \code{\link{ebp}},

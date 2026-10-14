@@ -8,7 +8,7 @@ xgb_top_configs(
   tune,
   rule = c("one_se_paired", "one_se", "k_best", "least_overfit", "one_se_ratio"),
   k = 5,
-  floor = 3,
+  floor = 1,
   cap = 8,
   ratio = NULL,
   ratio_pool = c("total", "domain", "within_domain"),
@@ -47,7 +47,7 @@ qualify, the single configuration with the lowest ratio, as for
 \item{k}{number of configurations for \code{rule = "k_best"}.}
 
 \item{floor, cap}{the set is filled up to \code{floor} configurations with the
-next best by score, and cut to the \code{cap} best by score. Defaults 3 and 8.
+next best by score, and cut to the \code{cap} best by score. Defaults 1 (the set is not padded) and 8.
 For \code{rule = "least_overfit"} neither applies; for \code{"one_se_ratio"}
 only \code{cap} does.}
 

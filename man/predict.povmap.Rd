@@ -25,6 +25,7 @@ the generic function \code{\link{estimators}}. The methods for object of
 class "povmap" allows to select among the indicators of interest.
 }
 \examples{
+\dontrun{
 \donttest{
 # Example for class ebp
 povmap_model <- ebp(
@@ -36,6 +37,7 @@ povmap_model <- ebp(
 )
 
 povmap::predict(povmap_model)
+}
 }
 }
 \seealso{

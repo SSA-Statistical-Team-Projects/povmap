@@ -79,6 +79,7 @@ documentation, see \code{\link[base]{as.data.frame}}), \code{subset} (for
 default documentation, see \code{\link[base]{subset}}).
 }
 \examples{
+\dontrun{
 \donttest{
 # Loading data - population and sample data
 data("eusilcA_pop")
@@ -112,6 +113,7 @@ subset(gini, Domain = "Wien")
 
 # Example 2: Choose custom indicators without MSE and CV
 estimators(povmap_model, indicator = "Custom")
+}
 }
 }
 \seealso{
