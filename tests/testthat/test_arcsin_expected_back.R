@@ -20,3 +20,14 @@ test_that("expected_untransformed_mean uses the exact arcsin form", {
   expect_equal(povmap:::expected_untransformed_mean(mu = mu, var = v, transformation = "arcsin", lambda = NULL),
                0.5 - 0.5 * cos(2 * mu) * exp(-2 * v), tolerance = 1e-14)
 })
+
+test_that("arcsin_expected_back clamps mu to [0, pi/2] and is monotone in mu", {
+  mu <- seq(-1, 3, length.out = 401)
+  for (v in c(0, 0.01, 0.1, 0.25)) {
+    e <- povmap:::arcsin_expected_back(mu, v)
+    expect_true(all(diff(e) >= -1e-14))
+    expect_equal(e[mu <= 0], rep(povmap:::arcsin_expected_back(0, v), sum(mu <= 0)))
+    expect_equal(e[mu >= pi / 2], rep(povmap:::arcsin_expected_back(pi / 2, v), sum(mu >= pi / 2)))
+  }
+  expect_equal(povmap:::arcsin_expected_back(c(-0.5, 2), 0), c(0, 1))
+})

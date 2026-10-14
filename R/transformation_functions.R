@@ -519,8 +519,10 @@ arcsin_transform_back <- function(y, shift = NULL) {
 
 # Exact mean of the back-transform under normal error: if x ~ N(mu, v), y = sin(x)^2 = (1 - cos(2x))/2 and
 # E[cos(2x)] = cos(2 mu) exp(-2 v), so E[y] = 1/2 - 1/2 cos(2 mu) exp(-2 v). Replaces the truncated Taylor series.
-# Unlike arcsin_transform_back it does not clamp mu to [0, pi/2].
+# mu is clamped to [0, pi/2] as in arcsin_transform_back; without it the cosine folds back at the boundaries
+# and the mean is no longer monotone in mu.
 arcsin_expected_back <- function(mu, var) {
+  mu <- pmax(0, pmin(mu, pi / 2))
   0.5 - 0.5 * cos(2 * mu) * exp(-2 * var)
 }
 
