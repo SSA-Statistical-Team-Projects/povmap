@@ -309,7 +309,9 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
       # estimate). lmm_only holds the booster fixed, so the per-cell fixed part is
       # the original gb_pop_vec; only u_d_boot is re-estimated this iteration.
       mean_boot_orig <- if (!is.null(corrected_bt)) {
-        cell_orig_boot <- corrected_bt(gb_pop_vec + u_d_boot[pop_dom_idx])
+        # the replicate's own conditional random-effect variance, as the point estimate uses
+        cell_orig_boot <- corrected_bt(gb_pop_vec + u_d_boot[pop_dom_idx],
+                                       .megb_re_condvar(lmer_boot, domains)[pop_dom_idx])
         agg_dom(cell_orig_boot)
       } else mean_boot_t
 
@@ -552,7 +554,8 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
           # u_d is constant within the domain and the weights sum to one
           LM$weighted + u_d_boot
         } else if (!is.null(corrected_bt)) {
-          cell_orig_boot <- corrected_bt(gb_pop_boot + u_d_boot[pop_dom_idx])
+          cell_orig_boot <- corrected_bt(gb_pop_boot + u_d_boot[pop_dom_idx],
+                                         .megb_re_condvar(lmer_boot, domains)[pop_dom_idx])
           agg_dom(cell_orig_boot)
         } else mean_boot_t
 
@@ -645,7 +648,9 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
     # (unit_preds, transformed, incl. the area effect); apply corrected_bt to each
     # cell, then aggregate, instead of back-transforming the aggregated mean.
     if (!is.null(.corrected_bt)) {
-      upp$.cell_orig <- .corrected_bt(upp$unit_preds)
+      .dom_chr <- as.character(upp$dom_name)
+      .re_cv   <- .megb_re_condvar(model_boot$effect_model, unique(.dom_chr))
+      upp$.cell_orig <- .corrected_bt(upp$unit_preds, .re_cv[match(.dom_chr, unique(.dom_chr))])
       # Population-weighted domain mean (matches megb.R:380); unweighted fallback
       # when no pop weights were supplied. .pw_pop is aligned to .pop_data rows.
       if (!is.null(.pw_pop)) {

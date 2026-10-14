@@ -480,45 +480,21 @@ megb <- function(fixed,
     if (!is.null(err_sd) && !is.na(err_sd) && err_sd > 0) err_sd^2 else 0
   }, error = function(e) 0)
 
-  # corrected_bt uses a lean captured environment (only scalar values + package ns)
-  # so parallel workers don't get the full megb() scope serialised (~1.5 GiB).
-  corrected_bt <- function(hat_t) {
-    if (.sigma2 == 0 || .transf %in% c("no", "logistic")) {
-      return(switch(.transf,
-        "no"        = hat_t,
-        "log"       = exp(hat_t),
-        "log.shift" = exp(hat_t) - .ls_lam,
-        "arcsin"    = arcsin_transform_back(hat_t),
-        "logistic"  = logit_transform_back(hat_t),
-        "poisson"   = expm1(hat_t),
-        hat_t
-      ))
-    }
-    switch(.transf,
-      "log"       = exp(hat_t + 0.5 * .sigma2),
-      "log.shift" = exp(hat_t + 0.5 * .sigma2) - .ls_lam,
-      "poisson"   = pmax(0, expm1(hat_t + 0.5 * .sigma2)),
-      "arcsin"    = {
-        arcsin_expected_back(hat_t, .sigma2)
-      },
-      hat_t
-    )
-  }
-  environment(corrected_bt) <- list2env(
-    list(
-      .sigma2 = sigma2_e,
-      .transf = transformation,
-      .ls_lam = if (transformation == "log.shift") ls_lambda else NULL
-    ),
-    parent = getNamespace("povmap")
-  )
+  # Jensen-corrected back-transformation (adds the random effect's conditional variance to sigma2_e)
+  corrected_bt <- .megb_make_corrected_bt(sigma2_e, transformation,
+    if (transformation == "log.shift") ls_lambda else NULL)
   # Marks the identity back-transform, the one case in which the leaves_only
   # bootstrap may aggregate from leaf values (povmap.leaves_only.leaf_aggregate).
   attr(corrected_bt, "identity") <- identical(transformation, "no")
 
   # ── 6. Back-transform unit predictions and aggregate to domain level ──────────
   unit_preds_pop      <- megb_fit$unit_preds_all       # columns: unit_preds, dom_name
-  unit_preds_pop$hat  <- corrected_bt(unit_preds_pop$unit_preds)
+  # Conditional variance of each domain's random effect (sigma_b^2 for unsampled domains,
+  # the BLUP's prediction variance for sampled ones), from the same lmer fit that predicts
+  # the random effect; added to sigma2_e in the back-transformation.
+  re_cv_dom <- .megb_re_condvar(megb_fit$megb_model$effect_model, all_levels)
+  re_cv_row <- as.numeric(re_cv_dom[match(as.character(unit_preds_pop$dom_name), all_levels)])
+  unit_preds_pop$hat  <- corrected_bt(unit_preds_pop$unit_preds, re_cv_row)
 
   if (!is.null(pop_weights)) {
     pw           <- fwk$pop_weights_vec                # same row order as pop_megb
@@ -556,7 +532,7 @@ megb <- function(fixed,
   crossfit_out <- NULL
   if (.fold_pred) {
     .agg <- function(u) {
-      h <- corrected_bt(u)
+      h <- corrected_bt(u, re_cv_row)
       m <- if (!is.null(pop_weights))
              tapply(h * fwk$pop_weights_vec, unit_preds_pop$dom_name, sum) /
              tapply(fwk$pop_weights_vec,     unit_preds_pop$dom_name, sum)
