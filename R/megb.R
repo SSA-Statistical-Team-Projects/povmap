@@ -58,6 +58,25 @@
 #'   matters when \code{benchmark} is character (internal, survey-derived
 #'   benchmarking); for numeric or data.frame benchmarks the target is a
 #'   constant by construction.
+#' @param perturb_benchmark logical, default \code{FALSE}. If \code{TRUE}, the benchmarked
+#'   bootstrap replicates are perturbed by the sampling error of the benchmark target,
+#'   exactly as in \code{\link{xgb}}: after the bootstrap, a draw from
+#'   \eqn{N(0, SE_g^2)} is added to the benchmarked replicate of every domain in benchmark
+#'   group \eqn{g}, on the model's transformed scale (the increment is the draw times the
+#'   local slope of the transformation, \code{.perturb_slope}) and back-transformed; for
+#'   \code{transformation = "no"} it is added directly. The truth side is not perturbed. The
+#'   \eqn{B \times G}{B x G} draws are made once from \code{seed} (a stream of their own, so the
+#'   bootstrap is unchanged). Needs \code{benchmark}, \code{benchmark_level},
+#'   \code{mse = TRUE} and \code{benchmark_target_se}. With \code{FALSE} the result is
+#'   identical to povmap 1.0.3. The result then also holds \code{Var_bench_unperturbed} and
+#'   \code{benchmark_perturbation}.
+#' @param benchmark_target_se a named numeric vector of the standard errors of the
+#'   benchmark targets, keyed by \code{benchmark_level} group; the SD of the perturbation.
+#'   Required when \code{perturb_benchmark = TRUE}; a missing group, or a non-finite,
+#'   negative or (unless \code{allow_zero_benchmark_se}) zero value is an error. Unlike
+#'   \code{xgb}, there is no internal Horvitz-Thompson fallback.
+#' @param allow_zero_benchmark_se logical, default \code{FALSE}. Allows a zero standard
+#'   error for some benchmark group (a warning is given; the perturbation adds nothing there).
 #'   \code{"random"} (default): recompute the target on every bootstrap
 #'   iteration from the bootstrap-simulated survey data. Both the target and
 #'   the model estimate vary together, preserving the joint sampling
@@ -309,6 +328,9 @@ megb <- function(fixed,
                  predict_sampled  = NULL,
                  predict_unsampled = NULL,
                  cv_nfold         = getOption("megb.cv_nfold", 10L),
+                 perturb_benchmark = FALSE,
+                 benchmark_target_se = NULL,
+                 allow_zero_benchmark_se = FALSE,
                  ...) {
   # weightedBS: when TRUE and smp_weights is supplied, the bootstrap residual
   # sampling uses probabilities proportional to weights (mirroring xgb's
@@ -325,6 +347,14 @@ megb <- function(fixed,
   if (!is.numeric(cv_nfold) || length(cv_nfold) != 1L || is.na(cv_nfold) || cv_nfold < 2 || cv_nfold != round(cv_nfold))
     stop("cv_nfold must be a whole number of at least 2.")
   cv_nfold <- as.integer(cv_nfold)
+  if (!is.logical(perturb_benchmark) || length(perturb_benchmark) != 1L || is.na(perturb_benchmark))
+    stop("perturb_benchmark must be TRUE or FALSE.")
+  if (perturb_benchmark) {
+    if (is.null(benchmark) || is.null(benchmark_level) || !mse)
+      stop("perturb_benchmark = TRUE needs a benchmark, a benchmark_level and mse = TRUE.")
+    if (is.null(benchmark_target_se))
+      stop("perturb_benchmark = TRUE needs benchmark_target_se, a named vector of the standard errors of the benchmark targets, keyed by benchmark_level group.")
+  }
   # Fold-model prediction (predict_sampled = "crossfit", predict_unsampled =
   # "foldmean"; the defaults from povmap 1.0.1) needs the xgboost engine, folds of
   # whole domains and, with mse = TRUE, a bootstrap that refits it
@@ -783,6 +813,21 @@ megb <- function(fixed,
     )
   }
 
+  # ── 6e. Benchmark-target perturbation (perturb_benchmark = TRUE) ──────────────
+  # As in xgb: after the bootstrap, add the pre-drawn target noise to the benchmarked replicates on the
+  # model's transformed scale; the truth side is not perturbed.
+  bm_perturbation <- NULL
+  if (perturb_benchmark && !is.null(mse_estimated$tau_b_bench)) {
+    mse_estimated <- .megb_perturb_bench(
+      mse_estimated, benchmark_target_se = benchmark_target_se,
+      allow_zero = allow_zero_benchmark_se, B = B, seed = seed,
+      dom_group = fwk$pop_data[[benchmark_level]][match(as.character(mse_estimated$MSE_estimates[[1]]),
+                                                         as.character(fwk$pop_data[[domains]]))],
+      transformation = transformation, transform_outcome = transform_outcome,
+      back_transform_outcome = back_transform_outcome)
+    bm_perturbation <- mse_estimated$benchmark_perturbation
+  }
+
   # ── 7. Variance / MSE and CI ─────────────────────────────────────────────────
   # mse_type = "var" (default, mirrors xgb): empirical bootstrap variance and
   #   quantile-based CIs in original space. Benchmarked CIs use the centred
@@ -933,6 +978,15 @@ megb <- function(fixed,
     }
   }
 
+  # Unperturbed benchmarked variance (var) or MSE (mse), kept next to the perturbed one as in xgb.
+  var_bench_unpert_df <- NULL
+  if (!is.null(mse_estimated$tau_b_bench_unperturbed)) {
+    err0 <- mse_estimated$tau_b_bench_unperturbed - mse_estimated$tau_star_orig_bench
+    v0   <- if (mse_type == "var") .megb_error_interval(err0, alpha)$var else rowMeans(err0^2, na.rm = TRUE)
+    var_bench_unpert_df <- data.frame(Domain = as.character(mse_estimated$MSE_estimates[[1]]),
+                                      Var_bench_unperturbed = as.numeric(v0), stringsAsFactors = FALSE)
+  }
+
   # ── 8. Sample-level predictions (back-transformed) ───────────────────────────
   unit_pred_smp_bt <- corrected_bt(megb_fit$unit_pred_smp)
   yhat <- data.frame(
@@ -1029,6 +1083,11 @@ megb <- function(fixed,
     cv_nfold       = cv_nfold,
     crossfit       = crossfit_out
   )
+
+  if (perturb_benchmark) {
+    result$Var_bench_unperturbed <- var_bench_unpert_df
+    result$benchmark_perturbation <- bm_perturbation
+  }
 
   class(result) <- c("megb", "xgb", "povmap")
   return(result)

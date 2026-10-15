@@ -1,7 +1,7 @@
 Package: povmap
 Title: Extension to the 'emdi' Package
-Version: 1.0.3
-Date: 2026-10-14
+Version: 1.0.4
+Date: 2026-10-15
 Authors@R: c(person("Ifeanyi", "Edochie", role="aut", email = "iedochie@worldbank.org"),
   person("David", "Newhouse", role="aut", email = "dnewhouse@worldbank.org"), 
   person("Nora", "Würz", role=c("aut", "cre"), email = "nora.wuerz@uni-bamberg.de"), 
