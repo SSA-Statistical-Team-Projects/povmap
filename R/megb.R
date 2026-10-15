@@ -492,7 +492,7 @@ megb <- function(fixed,
   # Conditional variance of each domain's random effect (sigma_b^2 for unsampled domains,
   # the BLUP's prediction variance for sampled ones), from the same lmer fit that predicts
   # the random effect; added to sigma2_e in the back-transformation.
-  re_cv_dom <- .megb_re_condvar(megb_fit$megb_model$effect_model, all_levels)
+  re_cv_dom <- .megb_re_var(corrected_bt, megb_fit$megb_model$effect_model, all_levels)
   re_cv_row <- as.numeric(re_cv_dom[match(as.character(unit_preds_pop$dom_name), all_levels)])
   unit_preds_pop$hat  <- corrected_bt(unit_preds_pop$unit_preds, re_cv_row)
 

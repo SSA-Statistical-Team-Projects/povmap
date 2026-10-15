@@ -61,10 +61,20 @@ data_info <- function(dom_name, pop, smp) {
       hat_t
     )
   }
+  # The random-effect variance enters only for the log, log.shift, poisson and arcsin back-transformations;
+  # for 'no' and 'logistic' callers skip .megb_re_condvar (see .megb_re_var).
+  attr(corrected_bt, "uses_re_var") <- transformation %in% c("log", "log.shift", "poisson", "arcsin")
   environment(corrected_bt) <- list2env(
     list(.sigma2 = sigma2_e, .transf = transformation,
          .ls_lam = if (transformation == "log.shift") ls_lambda else NULL),
     parent = getNamespace("povmap")
   )
   corrected_bt
+}
+
+# Internal: re_var argument for a corrected_bt: the conditional random-effect variances when the
+# back-transformation uses them, otherwise zeros (untransformed and logistic megb run as before).
+.megb_re_var <- function(corrected_bt, lmefit, domains) {
+  if (isTRUE(attr(corrected_bt, "uses_re_var"))) .megb_re_condvar(lmefit, domains)
+  else rep(0, length(domains))
 }

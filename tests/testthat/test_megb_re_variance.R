@@ -97,3 +97,37 @@ test_that("the correction varies with n_i and matches numerical integration for 
     }
   }
 })
+
+test_that(".megb_re_var computes the random-effect variance only for log, log.shift, poisson and arcsin", {
+  s <- sim_megb_lmm(FALSE)
+  doms <- levels(s$d$dom)
+  for (tr in c("log", "log.shift", "poisson", "arcsin")) {
+    cbt <- povmap:::.megb_make_corrected_bt(0.2, tr, if (tr == "log.shift") 1 else NULL)
+    expect_equal(povmap:::.megb_re_var(cbt, s$fit, doms), povmap:::.megb_re_condvar(s$fit, doms))
+  }
+  for (tr in c("no", "logistic")) {
+    cbt <- povmap:::.megb_make_corrected_bt(0.2, tr)
+    expect_identical(povmap:::.megb_re_var(cbt, s$fit, doms), rep(0, length(doms)))
+  }
+})
+
+# Untransformed and logistic megb are unchanged from the v0.6 convention release (b64e60a, povmap 1.0.2,
+# xgboost 3.1.2.1). The fixture holds that build's ind, var (the MSE-type uncertainty) and CI on this data.
+test_that("megb(transformation = 'no' / 'logistic') matches the b64e60a fixture", {
+  fx <- testthat::test_path("fixtures", "megb_identity_b64e60a.rds")
+  skip_if_not(file.exists(fx), "fixture missing")
+  ref <- readRDS(fx)
+  set.seed(7); D <- 14; n_pop <- 15; n_smp <- 6
+  pop <- data.frame(dom = factor(rep(sprintf("d%02d", 1:D), each = n_pop)), x1 = rnorm(D * n_pop), x2 = runif(D * n_pop), w = rpois(D * n_pop, 20) + 1)
+  pop$y <- 0.4 * pop$x1 + rnorm(D, 0, 0.4)[as.integer(pop$dom)] + rnorm(nrow(pop), 0, 0.4)
+  pop$p <- plogis(0.5 * pop$x1 + rnorm(D, 0, 0.4)[as.integer(pop$dom)] + rnorm(nrow(pop), 0, 0.3))
+  smp <- do.call(rbind, lapply(split(pop, pop$dom)[1:11], function(d) d[sample(nrow(d), n_smp), ]))
+  for (cfg in list(list(f = y ~ x1 + x2, tr = "no"), list(f = p ~ x1 + x2, tr = "logistic"))) {
+    m <- suppressMessages(suppressWarnings(megb(fixed = cfg$f, smp_data = smp, pop_data = pop[, c("dom", "x1", "x2", "w")],
+      pop_weights = "w", domains = "dom", transformation = cfg$tr, mse = TRUE, B = 3, bootstrap_refit = "lmm_only",
+      na.rm = FALSE, seed = 5, gradient_params = list(eta = 0.3, max_depth = 2, subsample = 1, nrounds = 30))))
+    expect_identical(m$ind, ref[[cfg$tr]]$ind)
+    expect_equal(m$var, ref[[cfg$tr]]$var, tolerance = 1e-10)
+    expect_equal(m$CI, ref[[cfg$tr]]$CI, tolerance = 1e-10)
+  }
+})
