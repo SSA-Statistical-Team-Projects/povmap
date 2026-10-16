@@ -34,6 +34,8 @@ megb(
   predict_sampled = NULL,
   predict_unsampled = NULL,
   cv_nfold = getOption("megb.cv_nfold", 10L),
+  em_maxit = 25L,
+  em_tol = 1e-04,
   perturb_benchmark = FALSE,
   benchmark_target_se = NULL,
   allow_zero_benchmark_se = FALSE,
@@ -277,6 +279,16 @@ When not supplied, the default is taken from
 \code{getOption("megb.cv_nfold", 10L)}. For the settings before povmap
 1.0.1 use \code{cv_nfold = 5, predict_sampled = "full",
 predict_unsampled = "full"}.}
+
+\item{em_maxit}{the maximum number of EM iterations of the point fit (and of each
+replicate fit of \code{bootstrap_refit = "full"}). Default 25. The EM stops earlier
+when the relative log-likelihood change falls below \code{em_tol}. A resampled
+cross-validation inside each iteration makes the log-likelihood jitter, so with
+boosting the rule is often not met and the fit runs to \code{em_maxit}; check the
+\eqn{\sigma_b^2} trajectory (\code{megb_model$iterations_used}) before relying on it.}
+
+\item{em_tol}{the EM stopping tolerance on the relative change of the log-likelihood.
+Default \code{1e-04}.}
 
 \item{perturb_benchmark}{logical, default \code{FALSE}. If \code{TRUE}, the benchmarked
 bootstrap replicates are perturbed by the sampling error of the benchmark target,

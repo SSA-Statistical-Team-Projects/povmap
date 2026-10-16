@@ -58,6 +58,14 @@
 #'   matters when \code{benchmark} is character (internal, survey-derived
 #'   benchmarking); for numeric or data.frame benchmarks the target is a
 #'   constant by construction.
+#' @param em_maxit the maximum number of EM iterations of the point fit (and of each
+#'   replicate fit of \code{bootstrap_refit = "full"}). Default 25. The EM stops earlier
+#'   when the relative log-likelihood change falls below \code{em_tol}. A resampled
+#'   cross-validation inside each iteration makes the log-likelihood jitter, so with
+#'   boosting the rule is often not met and the fit runs to \code{em_maxit}; check the
+#'   \eqn{\sigma_b^2} trajectory (\code{megb_model$iterations_used}) before relying on it.
+#' @param em_tol the EM stopping tolerance on the relative change of the log-likelihood.
+#'   Default \code{1e-04}.
 #' @param perturb_benchmark logical, default \code{FALSE}. If \code{TRUE}, the benchmarked
 #'   bootstrap replicates are perturbed by the sampling error of the benchmark target,
 #'   exactly as in \code{\link{xgb}}: after the bootstrap, a draw from
@@ -328,6 +336,8 @@ megb <- function(fixed,
                  predict_sampled  = NULL,
                  predict_unsampled = NULL,
                  cv_nfold         = getOption("megb.cv_nfold", 10L),
+                 em_maxit         = 25L,
+                 em_tol           = 1e-04,
                  perturb_benchmark = FALSE,
                  benchmark_target_se = NULL,
                  allow_zero_benchmark_se = FALSE,
@@ -347,6 +357,11 @@ megb <- function(fixed,
   if (!is.numeric(cv_nfold) || length(cv_nfold) != 1L || is.na(cv_nfold) || cv_nfold < 2 || cv_nfold != round(cv_nfold))
     stop("cv_nfold must be a whole number of at least 2.")
   cv_nfold <- as.integer(cv_nfold)
+  if (!is.numeric(em_maxit) || length(em_maxit) != 1L || is.na(em_maxit) || em_maxit < 1 || em_maxit != round(em_maxit))
+    stop("em_maxit must be a whole number of at least 1.")
+  em_maxit <- as.integer(em_maxit)
+  if (!is.numeric(em_tol) || length(em_tol) != 1L || is.na(em_tol) || em_tol <= 0)
+    stop("em_tol must be a positive number.")
   if (!is.logical(perturb_benchmark) || length(perturb_benchmark) != 1L || is.na(perturb_benchmark))
     stop("perturb_benchmark must be TRUE or FALSE.")
   if (perturb_benchmark) {
@@ -497,6 +512,8 @@ megb <- function(fixed,
     # the leaves_only bootstrap re-estimates the random effects from the fold
     # models' out-of-fold residuals, as the point estimate does
     keep_fold_models = mse && bootstrap_refit == "leaves_only" && gbm_engine == "xgboost",
+    em_maxit        = em_maxit,
+    em_tol          = em_tol,
     ...
   )
 
@@ -783,8 +800,8 @@ megb <- function(fixed,
       pop_data               = boot_pop_data,
       B                      = B,
       initial_random_effects = 0,
-      ErrorTolerance         = .megb_em_error_tolerance,
-      MaxIterations          = .megb_em_max_iterations,
+      ErrorTolerance         = em_tol,
+      MaxIterations          = em_maxit,
       cov_names              = megb_fit$cov_names_proc,
       gradient_params        = gradient_params,
       formula_random_effects = megb_fit$formula_random_effects,
