@@ -134,3 +134,26 @@ test_that("perturb_benchmark = TRUE needs its inputs", {
   expect_error(megb_bench_run(cfg, perturb_benchmark = NA), "TRUE or FALSE")
   expect_error(megb_bench_run(cfg, perturb_benchmark = TRUE, benchmark_target_se = c(A = 0.06, B = 0.06)), "missing 1 of 3")
 })
+
+test_that("the lower clamp applies to arcsin, log and poisson only; log.shift is not clamped", {
+  lam <- 2
+  tf <- function(y) list(y = log(y + lam), shift = NULL); bf <- function(y) exp(y) - lam
+  e <- fake_mse_est(); e$tau_b_bench[1:3, ] <- matrix(runif(3 * 40, -1.2, -0.3), 3, 40); e$tau_b_bench[4:6, ] <- matrix(runif(3 * 40, 0.3, 1.2), 3, 40)
+  p <- povmap:::.megb_perturb_bench(e, c(A = 0.05, B = 0.05), FALSE, B = 40, seed = 3, dom_group = grp6, transformation = "log.shift",
+                                   transform_outcome = tf, back_transform_outcome = bf)
+  for (g in c("A", "B")) {
+    r <- which(grp6 == g)
+    dz <- povmap:::.perturb_slope(mean(e$tau_b_bench[r, ]), 0.05, "log.shift", tf)
+    expected <- bf(tf(as.vector(e$tau_b_bench[r, ]))$y + as.vector(matrix(p$benchmark_perturbation[, g], length(r), 40, byrow = TRUE)) * dz)
+    expect_equal(as.vector(p$tau_b_bench[r, ]), expected)
+  }
+  expect_lt(min(p$tau_b_bench[1:3, ]), 0)                                      # negative replicates are kept, not clipped to 1e-9
+  e0 <- fake_mse_est(); e0$tau_b_bench[1, ] <- 0
+  for (tr in c("log", "poisson")) {
+    f <- if (tr == "log") list(log_transform, log_transform_back) else list(poisson_transform, poisson_transform_back)
+    q <- povmap:::.megb_perturb_bench(e0, c(A = 0.05, B = 0.05), FALSE, B = 40, seed = 3, dom_group = grp6, transformation = tr,
+                                     transform_outcome = f[[1]], back_transform_outcome = f[[2]])
+    expect_true(all(is.finite(q$tau_b_bench[1, ])))                              # a zero is clamped to 1e-9 before the transformation
+    expect_true(all(q$tau_b_bench[1, ] >= 0))
+  }
+})

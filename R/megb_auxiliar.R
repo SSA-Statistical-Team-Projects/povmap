@@ -107,7 +107,9 @@ data_info <- function(dom_name, pop, smp) {
                  dimnames = list(NULL, names(se)))
   keep <- if (is.null(mse_est$bench_keep)) seq_len(ncol(M)) else mse_est$bench_keep
   mse_est$tau_b_bench_unperturbed <- M
-  lo <- 1e-9
+  # The lower clamp only where the transformation is undefined at or below 0 (arcsin, log, poisson); log.shift
+  # (defined above -lambda), logistic and "no" are not clamped. The upper clamp is for arcsin only.
+  lo <- if (transformation %in% c("arcsin", "log", "poisson")) 1e-9 else -Inf
   hi <- if (transformation == "arcsin") 1 - 1e-9 else Inf
   for (g in groups) {
     r <- which(grp_row == g)
