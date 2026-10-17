@@ -39,7 +39,16 @@ data_info <- function(dom_name, pop, smp) {
 # (see .megb_re_condvar), which is added to sigma2_e; re_var = 0 gives the unit-error-only form.
 # Built with a lean captured environment (scalars + the package namespace) so parallel workers
 # do not serialise the full megb() scope (~1.5 GiB).
-.megb_make_corrected_bt <- function(sigma2_e, transformation, ls_lambda = NULL) {
+.megb_make_corrected_bt <- function(sigma2_e, transformation, ls_lambda = NULL, arcsin_plain = FALSE) {
+  # arcsin_plain = TRUE (megb(arcsin_backtransform = "plain"), arcsin only): the plain sin^2, with no Jensen term and no
+  # random-effect variance, for every use of the back-transformation (point estimate, bootstrap area estimates and truth,
+  # benchmark target). The same function REStat's wrapper _ct4_megb_task_bt.R puts in place of the exact form.
+  if (isTRUE(arcsin_plain) && identical(transformation, "arcsin")) {
+    plain_bt <- function(hat_t, re_var = 0) arcsin_transform_back(hat_t)
+    attr(plain_bt, "uses_re_var") <- FALSE
+    environment(plain_bt) <- list2env(list(), parent = getNamespace("povmap"))
+    return(plain_bt)
+  }
   corrected_bt <- function(hat_t, re_var = 0) {
     s2 <- .sigma2 + re_var
     if (all(s2 == 0) || .transf %in% c("no", "logistic")) {
@@ -79,6 +88,55 @@ data_info <- function(dom_name, pop, smp) {
   else rep(0, length(domains))
 }
 
+# Internal: the B x G draws of the benchmark-target error, N(0, se_g^2), shared by perturb_benchmark and
+# bench_target = "truth". Generated once from a stream of their own (seed + 7919); the caller RNG state is restored.
+# Returns list(draws = B x G matrix named by group, with attribute "se" the per-group SD). `what` prefixes the messages.
+.megb_bench_draws <- function(benchmark_target_se, groups, B, seed, allow_zero, what = "perturb_benchmark") {
+  nm <- names(benchmark_target_se)
+  if (is.null(nm)) stop(what, ": benchmark_target_se must be a named vector keyed by benchmark_level group.")
+  se <- stats::setNames(rep(NA_real_, length(groups)), groups)
+  hit <- intersect(groups, nm)
+  se[hit] <- as.numeric(benchmark_target_se[hit])
+  .check_benchmark_se(se[hit], "benchmark_target_se", allow_zero)
+  if (anyNA(se)) stop(sprintf("%s: benchmark_target_se is missing %d of %d benchmark groups: %s", what,
+                              sum(is.na(se)), length(se), paste(names(se)[is.na(se)], collapse = ", ")))
+  old <- if (exists(".Random.seed", envir = globalenv(), inherits = FALSE)) get(".Random.seed", envir = globalenv()) else NULL
+  on.exit(if (is.null(old)) { if (exists(".Random.seed", envir = globalenv(), inherits = FALSE)) rm(".Random.seed", envir = globalenv()) }
+          else assign(".Random.seed", old, envir = globalenv()), add = TRUE)
+  set.seed(as.integer(seed) + 7919L)
+  pert <- matrix(stats::rnorm(B * length(se), mean = 0, sd = rep(se, each = B)), nrow = B, ncol = length(se),
+                 dimnames = list(NULL, names(se)))
+  list(draws = pert, se = stats::setNames(as.numeric(se), names(se)))
+}
+
+# Internal: the clamp for a benchmark target or a perturbed replicate. The lower clamp only where the transformation is
+# undefined at or below 0 (arcsin, log, poisson); log.shift (defined above -lambda), logistic and "no" are not clamped.
+# The upper clamp is for arcsin only.
+.megb_bench_bounds <- function(transformation) {
+  c(lo = if (transformation %in% c("arcsin", "log", "poisson")) 1e-9 else -Inf,
+    hi = if (transformation == "arcsin") 1 - 1e-9 else Inf)
+}
+
+# Internal: bench_target = "truth". The target of each replicate: the simulated truth of every benchmark group,
+# aggregated from the domain truths with the weights benchmark_xgb_level aggregates the estimate with (the domain
+# population totals), plus that replicate's draw of the target error, clamped. tau_pc: D x B domain truths on the
+# original scale (rows in the order of `domains`); dom_group / dom_w: group and population total of each domain, named
+# by domain label; draws: B x G (columns named by group). Returns a G x B matrix (rows named by group); column b is
+# the target of replicate b.
+.megb_target_star <- function(tau_pc, domains, dom_group, dom_w, draws, lo = -Inf, hi = Inf) {
+  dom_chr <- as.character(domains)
+  g_of <- as.character(dom_group[match(dom_chr, names(dom_group))])
+  w <- as.numeric(dom_w[match(dom_chr, names(dom_w))])
+  if (anyNA(w)) stop("bench_target = \"truth\": no population total for some domains of the bootstrap truth.")
+  groups <- colnames(draws)
+  T0 <- matrix(NA_real_, nrow = length(groups), ncol = ncol(tau_pc), dimnames = list(groups, NULL))
+  for (k in seq_along(groups)) {
+    r <- which(g_of == groups[k])
+    T0[k, ] <- colSums(tau_pc[r, , drop = FALSE] * w[r]) / sum(w[r])
+  }
+  pmin(pmax(T0 + t(draws), lo), hi)
+}
+
 # Internal: benchmark-target perturbation for megb, the same method as perturb_benchmark in xgb.
 # A B x n_groups matrix of N(0, se^2) draws is generated once, before anything is applied, so parallel
 # bootstrap workers need no RNG and the draws depend only on the seed. They are drawn from a stream of their
@@ -91,26 +149,11 @@ data_info <- function(dom_name, pop, smp) {
   M <- mse_est$tau_b_bench
   grp_row <- as.character(dom_group)
   groups <- unique(grp_row[!is.na(grp_row)])
-  nm <- names(benchmark_target_se)
-  if (is.null(nm)) stop("perturb_benchmark: benchmark_target_se must be a named vector keyed by benchmark_level group.")
-  se <- stats::setNames(rep(NA_real_, length(groups)), groups)
-  hit <- intersect(groups, nm)
-  se[hit] <- as.numeric(benchmark_target_se[hit])
-  .check_benchmark_se(se[hit], "benchmark_target_se", allow_zero)
-  if (anyNA(se)) stop(sprintf("perturb_benchmark: benchmark_target_se is missing %d of %d benchmark groups: %s",
-                              sum(is.na(se)), length(se), paste(names(se)[is.na(se)], collapse = ", ")))
-  old <- if (exists(".Random.seed", envir = globalenv(), inherits = FALSE)) get(".Random.seed", envir = globalenv()) else NULL
-  on.exit(if (is.null(old)) { if (exists(".Random.seed", envir = globalenv(), inherits = FALSE)) rm(".Random.seed", envir = globalenv()) }
-          else assign(".Random.seed", old, envir = globalenv()), add = TRUE)
-  set.seed(as.integer(seed) + 7919L)
-  pert <- matrix(stats::rnorm(B * length(se), mean = 0, sd = rep(se, each = B)), nrow = B, ncol = length(se),
-                 dimnames = list(NULL, names(se)))
+  bd <- .megb_bench_draws(benchmark_target_se, groups, B, seed, allow_zero, "perturb_benchmark")
+  pert <- bd$draws; se <- bd$se
   keep <- if (is.null(mse_est$bench_keep)) seq_len(ncol(M)) else mse_est$bench_keep
   mse_est$tau_b_bench_unperturbed <- M
-  # The lower clamp only where the transformation is undefined at or below 0 (arcsin, log, poisson); log.shift
-  # (defined above -lambda), logistic and "no" are not clamped. The upper clamp is for arcsin only.
-  lo <- if (transformation %in% c("arcsin", "log", "poisson")) 1e-9 else -Inf
-  hi <- if (transformation == "arcsin") 1 - 1e-9 else Inf
+  b <- .megb_bench_bounds(transformation); lo <- b[["lo"]]; hi <- b[["hi"]]
   for (g in groups) {
     r <- which(grp_row == g)
     if (!length(r)) next

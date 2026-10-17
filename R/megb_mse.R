@@ -21,7 +21,11 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
                      fold_fit        = NULL,
                      predict_sampled = "full",
                      predict_unsampled = "full",
+                     bench_star = NULL,
                      ...) {
+  # bench_star (bench_target = "truth"): list(dom_group, dom_w, draws, lo, hi), see .megb_target_star(). Each replicate is
+  #   benchmarked to its own target, the simulated truth of the benchmark group plus the drawn target error. The target
+  #   travels with the replicate's data as attribute "bm_target" and is read by benchmark_fn; NULL leaves every path as before.
   # fold_fit (leaves_only, xgboost; .megb_fold_fit()): the fold models of the
   #   final EM iteration, the sample rows each held out (in the fit's row order),
   #   their out-of-fold predictions and, with domain folds, their domains. In each
@@ -241,6 +245,15 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
     }, numeric(length(domains)))
   }
 
+  # bench_target = "truth": the target of replicate b is the simulated provincial truth plus its drawn error
+  bm_target <- NULL
+  if (!is.null(bench_star)) {
+    if (is.null(tau_star_orig_pc))
+      stop("bench_target = \"truth\" needs the original-scale bootstrap truth, which needs a back-transformation function.")
+    bm_target <- .megb_target_star(tau_star_orig_pc, domains, bench_star$dom_group, bench_star$dom_w,
+                                   bench_star$draws, bench_star$lo, bench_star$hi)
+  }
+
   # ── Bootstrap "samples" are the original smp_data with y_star injected ──
   # No subsampling: each iter sees the same smp X distribution as the original
   # fit, which keeps gb_pop_boot ≈ gb_pop on average and (crucially) keeps
@@ -249,6 +262,7 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
   for (i in seq_len(B)) {
     bs                <- smp_data
     bs$y_star         <- y_star_smp[, i]
+    if (!is.null(bm_target)) attr(bs, "bm_target") <- bm_target[, i]
     boots_sample[[i]] <- bs
   }
 
@@ -318,6 +332,7 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
       mean_boot_bench <- if (!is.null(benchmark_fn)) {
         bs_for_bench <- smp_data
         bs_for_bench$y_star <- gb_smp + fit_data$r   # = y_star_smp[, i]
+        if (!is.null(bm_target)) attr(bs_for_bench, "bm_target") <- bm_target[, i]
         benchmark_fn(mean_boot_orig, bs_for_bench)
       } else NULL
 
@@ -562,6 +577,7 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
         mean_boot_bench <- if (!is.null(benchmark_fn)) {
           bs_for_bench <- smp_data
           bs_for_bench$y_star <- y_star_smp[, i]
+          if (!is.null(bm_target)) attr(bs_for_bench, "bm_target") <- bm_target[, i]
           benchmark_fn(mean_boot_orig, bs_for_bench)
         } else NULL
 
