@@ -687,7 +687,7 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
     list(
       .cov_names       = cov_names,
       .dom_name        = dom_name,
-      .pop_data        = pop_data,
+      .pop_data        = .megb_keep_cols(pop_data, c(dom_name, cov_names)),   # the workers read only the domain and the covariates
       .gradient_params = gradient_params,
       .formula_re      = formula_random_effects,
       .gbm_engine      = gbm_engine,

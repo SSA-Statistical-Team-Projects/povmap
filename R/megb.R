@@ -721,6 +721,10 @@ megb <- function(fixed,
         benchmark_type  = .bm_type
       )
     }
+    # What the workers receive: the framework without the census columns benchmark_fn never reads, and the formula
+    # without the environment it was written in (the whole megb() frame). Neither changes any number.
+    fixed_lean <- fixed
+    if (inherits(fixed_lean, "formula")) environment(fixed_lean) <- globalenv()
     environment(benchmark_fn) <- list2env(
       list(
         .bm       = benchmark,
@@ -728,8 +732,8 @@ megb <- function(fixed,
         .bm_type  = benchmark_type,
         .bm_w_var = if (!is.null(fwk$benchmark_weights)) fwk$benchmark_weights
                     else fwk$smp_weights,
-        .fwk      = fwk,
-        .fixed    = fixed,
+        .fwk      = .megb_lean_framework(fwk, benchmark_level),
+        .fixed    = fixed_lean,
         # y_star = gb + u* + e* already contains the unit error draw e*, like the observed y the
         # fixed target uses, so it takes the plain back-transform (sigma2_e = 0): no Jensen correction.
         .corr_bt  = .megb_make_corrected_bt(0, transformation,

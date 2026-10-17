@@ -131,3 +131,21 @@ data_info <- function(dom_name, pop, smp) {
   }
   mse_est
 }
+
+# Internal: keep only the named columns of a data frame (data.table and non-data-frames returned unchanged).
+# Used to cut what megb ships to parallel bootstrap workers; row order and column contents are untouched.
+.megb_keep_cols <- function(df, cols) {
+  if (!is.data.frame(df) || inherits(df, "data.table")) return(df)
+  df[, intersect(names(df), cols), drop = FALSE]
+}
+
+# Internal: the framework as benchmark_fn needs it. benchmark_xgb_level / benchmark_ebp_national read only the
+# domain, benchmark-level, outcome and weight columns of pop_data and smp_data (plus the small summary slots), so
+# the census columns are dropped. Without this every parallel worker received a second full copy of the census.
+.megb_lean_framework <- function(fwk, benchmark_level = NULL) {
+  cols <- unique(c(fwk$domains, fwk$smp_domains, benchmark_level, fwk$pop_weights, fwk$smp_weights,
+                   fwk$benchmark_weights, fwk$outcome, fwk$aggregate_to))
+  fwk$pop_data <- .megb_keep_cols(fwk$pop_data, cols)
+  fwk$smp_data <- .megb_keep_cols(fwk$smp_data, cols)
+  fwk
+}
