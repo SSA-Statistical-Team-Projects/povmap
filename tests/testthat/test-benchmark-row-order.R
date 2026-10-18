@@ -66,22 +66,61 @@ test_that("megb leaves_only (the default refit): benchmarked results do not depe
   }
 })
 
-test_that("megb: each benchmarked bootstrap replicate is scaled by one ratio factor per benchmark group, for any row order", {
-  # bench_target = "truth": replicate b is benchmarked to T*_gb. Captured through the replicate estimates of mse_megb.
-  cfg <- megb_bench_cfgs$no_ratio
-  for (pop in c("sorted", "shuffled")) {
+# Run megb() and capture what mse_megb() returns (the B x areas replicate matrices) and the calls of the benchmark function.
+capture_megb <- function(cfg, pop, arm, refit) {
+  ns <- asNamespace("povmap"); assign(".bro_calls", list(), envir = globalenv())
+  suppressMessages({
+    trace("mse_megb", exit = quote(assign(".bro_cap", returnValue(), envir = globalenv())), where = ns, print = FALSE)
+    trace("benchmark_xgb_level", quote(assign(".bro_calls", c(get(".bro_calls", envir = globalenv()),
+          list(data.frame(Domain = as.character(point_estim$ind$Domain), Mean = point_estim$ind$Mean))), envir = globalenv())), where = ns, print = FALSE)
+  })
+  on.exit(suppressMessages({ untrace("mse_megb", where = ns); untrace("benchmark_xgb_level", where = ns) }), add = TRUE)
+  fit <- run_megb_order(cfg, pop, arm, refit = refit)
+  cap <- get(".bro_cap", envir = globalenv()); calls <- get(".bro_calls", envir = globalenv())
+  rm(list = c(".bro_cap", ".bro_calls"), envir = globalenv())
+  list(fit = fit, cap = cap, calls = calls)
+}
 
-    suppressMessages(trace("mse_megb", exit = quote(assign(".bench_row_order_cap", returnValue(), envir = globalenv())), where = asNamespace("povmap"), print = FALSE))
-    fit <- run_megb_order(cfg, pop, "T")
-    suppressMessages(untrace("mse_megb", where = asNamespace("povmap"))); cap <- get(".bench_row_order_cap", envir = globalenv()); rm(".bench_row_order_cap", envir = globalenv())
-    expect_false(is.null(cap$tau_b_bench))
-    d <- perm_data(); w <- stats::aggregate(d[[pop]]$w, list(dom = as.character(d[[pop]]$dom)), sum); reg <- d[[pop]]$reg[match(as.character(cap$domains), as.character(d[[pop]]$dom))]
-    ww <- w$x[match(as.character(cap$domains), w$dom)]
-    # a replicate's benchmarked group mean must equal that replicate's target: its group mean ratio to the unbenchmarked one is the factor
-    fac <- cap$tau_b_bench / cap$tau_b_orig
-    for (g in unique(reg)) {
-      r <- which(reg == g)
-      expect_lt(max(apply(fac[r, , drop = FALSE], 2, function(z) diff(range(z)))), 1e-9)      # one factor per group and replicate
+test_that("megb bench_target = truth: each replicate hits its target (the group truth plus that replicate's draw, clamped), for any row order", {
+  # The target of replicate b in group g is the population-weighted group mean of tau_star_orig[, b] plus draw[b, g], clamped to
+  # the bounds of the transformation. The weighted group mean of the benchmarked replicate tau_b_bench[, b] must equal it.
+  for (cn in c("no_ratio", "arcsin_logit")) {
+    cfg <- megb_bench_cfgs[[cn]]; bnd <- povmap:::.megb_bench_bounds(cfg$tr)
+    for (pop in c("sorted", "shuffled")) for (refit in c("lmm_only", "leaves_only")) {
+      r <- capture_megb(cfg, pop, "T", refit); cap <- r$cap; draws <- r$fit$benchmark_target_draws
+      expect_false(is.null(cap$tau_b_bench)); expect_false(is.null(draws))
+      d <- perm_data()[[pop]]; wt <- tapply(d$w, as.character(d$dom), sum); dm <- as.character(cap$domains)
+      w <- as.numeric(wt[dm]); reg <- d$reg[match(dm, as.character(d$dom))]
+      keep <- cap$bench_keep; if (is.null(keep)) keep <- seq_len(ncol(cap$tau_b_bench))
+      expect_equal(length(keep), ncol(cap$tau_b_bench))
+      wm <- function(M, rows, j) sum(M[rows, j] * w[rows]) / sum(w[rows])
+      lg <- function(p) log(p / (1 - p))
+      for (g in colnames(draws)) {
+        rows <- which(reg == g)
+        for (j in seq_along(keep)) {
+          tgt <- min(max(wm(cap$tau_star_orig, rows, keep[j]) + draws[keep[j], g], bnd[["lo"]]), bnd[["hi"]])
+          expect_equal(wm(cap$tau_b_bench, rows, j), tgt, tolerance = 1e-6, info = paste(cn, pop, refit, g, "replicate", keep[j]))
+          if (cfg$bt == "logit_raking" && tgt > 1e-6 && tgt < 1 - 1e-6) {   # logit raking: one constant logit shift per group and replicate
+            sh <- lg(cap$tau_b_bench[rows, j]) - lg(cap$tau_b_orig[rows, keep[j]])
+            expect_lt(diff(range(sh)), 1e-5, label = paste(cn, pop, refit, g, "replicate", keep[j], "logit shift range"))
+          }
+        }
+      }
+    }
+  }
+})
+
+test_that("megb leaves_only: the domain labels handed to the benchmark are in the order of the replicate's estimates (mean_preds$dom_name vs mean_boot_orig)", {
+  # Each replicate's benchmark_xgb_level() call carries (Domain, Mean): the Mean of a domain must be that domain's unbenchmarked
+  # replicate estimate in tau_b_orig, so the labels are in the order of mean_boot_orig whatever the row order of pop_data.
+  cfg <- megb_bench_cfgs$no_ratio
+  for (pop in c("sorted", "reversed", "shuffled")) {
+    r <- capture_megb(cfg, pop, "T", "leaves_only"); cap <- r$cap; dm <- as.character(cap$domains)
+    rc <- r$calls[-1]                                           # the first call is the point estimate
+    expect_gte(length(rc), 1)
+    for (cl in rc) {
+      ok <- vapply(seq_len(ncol(cap$tau_b_orig)), function(j) isTRUE(all.equal(cl$Mean, cap$tau_b_orig[match(cl$Domain, dm), j], tolerance = 1e-10)), NA)
+      expect_true(any(ok), info = paste(pop, "a replicate's labelled estimates match no column of tau_b_orig"))
     }
   }
 })
