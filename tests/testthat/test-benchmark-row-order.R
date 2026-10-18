@@ -171,3 +171,38 @@ test_that("xgb: benchmarked point estimates do not depend on the row order of po
     }
   }
 })
+
+# National benchmark (benchmark_level = NULL), benchmark_ebp_national(): the population shares are matched to the estimates by
+# domain label. Before 1.0.7 they were built in sorted domain order and applied to megb() estimates held in population order,
+# so a population not sorted by domain missed the national target (5.004 against 4.999 on the Malawi test data).
+test_that("national benchmark (benchmark_level = NULL): exact target hit for any row order (ebp() and megb()), identical megb() results (ebp() simulates with row-order dependent draws, so only its target hit is compared)", {
+  d <- perm_data(); tgt <- mean(d$smp$z) * 1.05
+  wmean_dom <- function(ind, pop, col) { wt <- tapply(pop$w, as.character(pop$dom), sum); sum(wt[as.character(ind$Domain)] * ind[[col]]) / sum(wt) }
+  for (bt in c("ratio", "raking")) {
+    res <- list()
+    for (nm in c("sorted", "reversed", "shuffled")) {
+      pop <- d[[nm]]
+      e <- suppressMessages(suppressWarnings(povmap::ebp(fixed = z ~ x1 + x2, pop_data = pop, pop_domains = "dom", smp_data = d$smp, smp_domains = "dom",
+              L = 2, transformation = "no", MSE = FALSE, seed = 1, pop_weights = "w", benchmark = c(Mean = tgt), benchmark_type = bt, na.rm = TRUE)))
+      m <- suppressMessages(suppressWarnings(povmap::megb(fixed = z ~ x1 + x2, smp_data = d$smp, pop_data = pop, pop_weights = "w", domains = "dom",
+              transformation = "no", mse = FALSE, na.rm = FALSE, seed = 5, gradient_params = list(eta = 0.3, max_depth = 2, subsample = 1, nrounds = 30),
+              benchmark = c(Mean = tgt), benchmark_type = bt)))
+      ei <- e$ind[order(as.character(e$ind$Domain)), ]; mi <- m$ind[order(as.character(m$ind$Domain)), ]
+      expect_equal(wmean_dom(ei, pop, "Mean_bench"), tgt, tolerance = 1e-9, info = paste("ebp", bt, nm))
+      expect_equal(wmean_dom(mi, pop, "Mean_bench"), tgt, tolerance = 1e-9, info = paste("megb", bt, nm))
+      res[[nm]] <- list(e = ei$Mean_bench, m = mi$Mean_bench)
+    }
+    for (nm in c("reversed", "shuffled")) {
+      expect_equal(res[[nm]]$m, res$sorted$m, tolerance = 1e-8, info = paste("megb", bt, nm))
+    }
+  }
+})
+
+test_that("benchmark_ebp_national stops when the labelled estimates do not cover the population domains exactly once", {
+  fwk <- list(pop_data = data.frame(dom = c("a", "b", "c"), w = 1:3), pop_weights = "w", smp_domains = "dom", aggregate_to = NULL)
+  ok <- list(ind = data.frame(Domain = c("c", "a", "b"), Mean = c(3, 1, 2)))
+  out <- povmap:::benchmark_ebp_national(ok, fwk, y ~ x, c(Mean = 2), "ratio")
+  expect_equal(sum(out$Mean_bench[match(c("a", "b", "c"), out$Domain)] * (1:3) / 6), 2)     # the share of "c" goes with c's estimate
+  expect_error(povmap:::benchmark_ebp_national(list(ind = data.frame(Domain = c("a", "a", "b"), Mean = c(1, 2, 3))), fwk, y ~ x, c(Mean = 2), "ratio"), "exactly once")
+  expect_error(povmap:::benchmark_ebp_national(list(ind = data.frame(Domain = c("a", "b", "z"), Mean = c(1, 2, 3))), fwk, y ~ x, c(Mean = 2), "ratio"), "exactly once")
+})

@@ -76,7 +76,23 @@ benchmark_ebp_national <- function (point_estim, framework, fixed, benchmark,
     }
   }
 
- 
+  # Alignment. The shares above come out of tapply() in sorted domain order, whereas the estimates are in the order of
+  # point_estim$ind. When the estimates carry their domain labels, the shares are matched to them BY NAME and the labels
+  # must cover the share domains exactly once (otherwise: error). Estimates without labels (the bootstrap matrix of the
+  # EBP, built in the framework's sorted domain order) are only checked for length. Before 1.0.7 a population not sorted
+  # by domain, with megb() estimates labelled in population order, gave a benchmark that missed its target.
+  pe_dom <- NULL
+  if (is.list(point_estim) && !is.null(point_estim$ind$Domain)) pe_dom <- as.character(point_estim$ind$Domain)
+  if (!is.null(pe_dom) && !is.null(names(share))) {
+    if (length(pe_dom) != length(estim[[1]]) || anyDuplicated(pe_dom) || !setequal(pe_dom, names(share)))
+      stop(sprintf(paste0("benchmark_ebp_national: the domain labels of the estimates do not cover the %d domains of the ",
+                          "population shares exactly once (%d labels, %d not among the shares)."),
+                   length(share), length(pe_dom), length(setdiff(pe_dom, names(share)))))
+    share <- unname(share[pe_dom])
+  } else if (length(share) != length(estim[[1]])) {
+    stop(sprintf("benchmark_ebp_national: %d population shares for %d estimates.", length(share), length(estim[[1]])))
+  }
+
   for(i in names(benchmark)) {
 
     if (benchmark_type == "raking") {
