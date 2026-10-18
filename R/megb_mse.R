@@ -333,7 +333,7 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
         bs_for_bench <- smp_data
         bs_for_bench$y_star <- gb_smp + fit_data$r   # = y_star_smp[, i]
         if (!is.null(bm_target)) attr(bs_for_bench, "bm_target") <- bm_target[, i]
-        benchmark_fn(mean_boot_orig, bs_for_bench)
+        benchmark_fn(mean_boot_orig, bs_for_bench, domains)
       } else NULL
 
       ran_sd <- as.data.frame(lme4::VarCorr(lmer_boot))$sdcor[1]
@@ -578,7 +578,7 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
           bs_for_bench <- smp_data
           bs_for_bench$y_star <- y_star_smp[, i]
           if (!is.null(bm_target)) attr(bs_for_bench, "bm_target") <- bm_target[, i]
-          benchmark_fn(mean_boot_orig, bs_for_bench)
+          benchmark_fn(mean_boot_orig, bs_for_bench, domains)
         } else NULL
 
         ran_sd <- as.data.frame(lme4::VarCorr(lmer_boot))$sdcor[1]
@@ -685,7 +685,7 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
     } else {
       mean_boot_orig <- mean_boot_t
     }
-    mean_boot_bench <- if (!is.null(.benchmark_fn)) .benchmark_fn(mean_boot_orig, x)
+    mean_boot_bench <- if (!is.null(.benchmark_fn)) .benchmark_fn(mean_boot_orig, x, as.character(mean_preds$dom_name))
                        else NULL
 
     list(

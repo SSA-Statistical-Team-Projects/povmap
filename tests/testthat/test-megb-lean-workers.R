@@ -27,8 +27,8 @@ test_that(".megb_lean_framework drops the census columns benchmark_fn never read
   est <- c(0.2, 0.3, 0.4, 0.5); bm <- c(A = 0.35, B = 0.45)
   for (bt in c("ratio", "logit_raking"))
     expect_identical(
-      benchmark_xgb_level(list(ind = data.frame(Mean = est)), lean, y ~ x1, bm, bt, "reg"),
-      benchmark_xgb_level(list(ind = data.frame(Mean = est)), fwk, y ~ x1, bm, bt, "reg"))
+      benchmark_xgb_level(list(ind = data.frame(Domain = letters[1:4], Mean = est)), lean, y ~ x1, bm, bt, "reg"),
+      benchmark_xgb_level(list(ind = data.frame(Domain = letters[1:4], Mean = est)), fwk, y ~ x1, bm, bt, "reg"))
 })
 
 test_that("the lean framework is much smaller to serialise when the census has many unused columns", {

@@ -90,7 +90,7 @@ test_that("the averaged point estimate is the benchmarked weighted mean of the c
   ## benchmarked once, on the average: state means of Mean_bench hit the targets, and Mean_bench is
   ## add_benchmark() of the averaged Mean
   bm <- povmap:::add_benchmark(x = cab$ind$Mean, benchmark_level = "reg", fwk = cab$framework,
-                               fixed = y ~ x1 + x2, benchmark = "Mean", benchmark_type = "ratio")
+                               fixed = y ~ x1 + x2, benchmark = "Mean", benchmark_type = "ratio", domains = cab$ind$Domain)
   expect_equal(cab$ind$Mean_bench, bm, tolerance = 1e-12)
   expect_false(isTRUE(all.equal(cab$ind$Mean, ca$ind$Mean)))
 })

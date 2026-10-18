@@ -450,8 +450,8 @@ megb <- function(fixed,
   # all-NA Mean_bench).
   add_benchmark_megb <- function(x, benchmark_level, fwk, fixed,
                                  benchmark, benchmark_type, domain_labels = NULL) {
-    # Carry domain labels so benchmark_xgb_level can assert positional alignment
-    # with unique(pop_data[[domains]]) (guards the key-alignment fix above).
+    # Carry the domain labels so benchmark_xgb_level matches the estimates to domains by name (it refuses unlabelled
+    # estimates). Every caller passes them: the point estimate and each bootstrap replicate (benchmark_fn).
     point_estim       <- if (!is.null(domain_labels))
                            list(ind = data.frame(Mean = x, Domain = domain_labels,
                                                  stringsAsFactors = FALSE))
@@ -700,7 +700,12 @@ megb <- function(fixed,
   if (!is.null(benchmark) && mse) {
     # Use a lean captured environment: explicit values only, parent = package ns.
     # This prevents serialising the full megb() scope to each parallel worker.
-    benchmark_fn <- function(est_orig, boot_smp_data) {
+    # domain_labels: the domain of each element of est_orig, in the order of est_orig. Required: the benchmark matches the
+    # replicate's estimates to benchmark groups by these names (povmap <= 1.0.6 assumed the first-appearance order of
+    # pop_data, which differs from the order of est_orig, so replicates were benchmarked under another domain's group).
+    benchmark_fn <- function(est_orig, boot_smp_data, domain_labels) {
+      if (missing(domain_labels) || is.null(domain_labels) || length(domain_labels) != length(est_orig))
+        stop("benchmark_fn: domain_labels (one per element of est_orig) are required.")
       # Branch order: explicit user-supplied target → precomputed fixed target
       # (internal + bench_target="fixed") → recompute from bootstrap survey
       # (random target).
@@ -745,6 +750,7 @@ megb <- function(fixed,
       }
       .add_bm(
         x               = est_orig,
+        domain_labels   = as.character(domain_labels),
         benchmark_level = .bm_level,
         fwk             = .fwk,
         fixed           = .fixed,
@@ -812,7 +818,7 @@ megb <- function(fixed,
   bench_star <- NULL
   if (bench_target == "truth" && mse) {
     dom_lab   <- as.character(fwk$pop_data[[domains]])
-    dom_u     <- unique(dom_lab)
+    dom_u     <- sort(unique(dom_lab))   # sorted, not first-appearance: the draws are assigned to groups in this order, so they must not depend on the row order of pop_data (as in .megb_perturb_bench)
     dom_group <- stats::setNames(as.character(fwk$pop_data[[benchmark_level]][match(dom_u, dom_lab)]), dom_u)
     dom_w     <- tapply(as.numeric(fwk$pop_data[[fwk$pop_weights]]), dom_lab, sum)
     bm_draws  <- .megb_bench_draws(benchmark_target_se, unique(dom_group[!is.na(dom_group)]), B, seed,
