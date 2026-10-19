@@ -118,6 +118,21 @@
 #'   form raised sampled-area coverage by 0.06 to 0.16 and cut that bias by about three quarters at no
 #'   RMSE cost. The default is unchanged for now. The result then holds \code{arcsin_backtransform =
 #'   "plain"}.
+#' @param boot_area_var how the bootstrap world's area-level variance is built; one of
+#'   \code{"legacy"} (default), \code{"centred"} or \code{"centred_mm"}. Point estimates are the
+#'   same under every option; only the bootstrap (hence the MSE and the intervals) changes.
+#'   \code{"legacy"} reproduces the previous behaviour bit for bit: each sampled area redraws its own
+#'   residuals (rescaled globally to the fit's error SD), and the bootstrap area effects are drawn from
+#'   the rescaled EBLUPs. \code{"centred"}: the residual pool of each area is centred within the area
+#'   (mean over the area's sampled units, the weighted mean when \code{weightedBS = TRUE}) and scaled by
+#'   \eqn{\sqrt{n_i / (n_i - 1)}}; an area with a single sampled unit, and the unsampled areas, draw
+#'   from the pooled centred, scaled residuals of the areas with at least two units (single-unit areas
+#'   excluded). \code{"centred_mm"}: \code{"centred"} plus bootstrap area effects drawn, with
+#'   replacement, from the area deviations \eqn{d_i} (the weighted mean of the response minus its
+#'   cross-fitted prediction in each sampled area, centred with the area weights) rescaled to the
+#'   standard deviation \eqn{\hat\sigma_b(MM)}, where \eqn{\hat\sigma_b^2(MM) = \max(0, var_w(d_i) -
+#'   mean_w(\hat\sigma_e^2 / n_i))} with area weights the sums of the unit weights and, when weights are used, the effective area size (sum w)^2 / sum w^2 in the noise term; zero gives no area
+#'   effect. See the preregistration MEGB_BOOT_FIX_PREREG_v4.md.
 #' @param bootstrap_refit one of \code{"leaves_only"} (default),
 #'   \code{"full"}, or \code{"lmm_only"}.
 #'   \code{"leaves_only"} (xgboost only) freezes the tree structure of the
@@ -358,6 +373,7 @@ megb <- function(fixed,
                  benchmark_target_se = NULL,
                  allow_zero_benchmark_se = FALSE,
                  arcsin_backtransform = c("exact", "plain"),
+                 boot_area_var = c("legacy", "centred", "centred_mm"),
                  ...) {
   # weightedBS: when TRUE and smp_weights is supplied, the bootstrap residual
   # sampling uses probabilities proportional to weights (mirroring xgb's
@@ -369,6 +385,7 @@ megb <- function(fixed,
   bootstrap_refit <- match.arg(bootstrap_refit)
   bench_target    <- match.arg(bench_target)
   arcsin_backtransform <- match.arg(arcsin_backtransform)
+  boot_area_var   <- match.arg(boot_area_var)
   cv_folds        <- match.arg(cv_folds, c("domain", "rows"))
   if (!is.logical(early_stopping) || length(early_stopping) != 1L || is.na(early_stopping))
     stop("early_stopping must be TRUE or FALSE.")
@@ -884,7 +901,8 @@ megb <- function(fixed,
       fold_fit               = .megb_fold_fit(megb_fit$megb_model),
       predict_sampled        = predict_sampled,
       predict_unsampled      = predict_unsampled,
-      bench_star             = bench_star
+      bench_star             = bench_star,
+      boot_area_var          = boot_area_var
     )
   }
 
@@ -1126,6 +1144,8 @@ megb <- function(fixed,
       boot_ran_eff_sd_q  = qsum(mse_estimated$boot_ran_eff_sd_boot),
       boot_error_sd_q    = qsum(mse_estimated$boot_error_sd)
     )
+    # boot_area_var != "legacy": mode, the moment estimator sigma_b2(MM) and the pool sizes (absent for "legacy")
+    if (!identical(boot_area_var, "legacy")) boot_diag$boot_area_var <- mse_estimated$boot_area_mm
     message(sprintf(
       "Bootstrap diagnostics: original ran_eff_sd = %.4f, error_sd = %.4f.\n  Bootstrap ran_eff_sd quartiles (min,Q1,Q2,Q3,max) = %s\n  Bootstrap error_sd   quartiles                  = %s\n  Frac bootstrap iters with ran_eff_sd < 1e-4 = %.2f",
       megb_fit$megb_model$ran_eff_sd %||% NA_real_,

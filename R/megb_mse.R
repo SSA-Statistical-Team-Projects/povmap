@@ -22,6 +22,7 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
                      predict_sampled = "full",
                      predict_unsampled = "full",
                      bench_star = NULL,
+                     boot_area_var = "legacy",
                      ...) {
   # bench_star (bench_target = "truth"): list(dom_group, dom_w, draws, lo, hi), see .megb_target_star(). Each replicate is
   #   benchmarked to its own target, the simulated truth of the benchmark group plus the drawn target error. The target
@@ -73,6 +74,12 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
     unit_pred_smp <- unit_pred_smp - gb_smp + oof   # out-of-fold fit + the random effect
     gb_smp        <- oof
   }
+  # Held-out (cross-fitted) booster prediction for the area deviations d_i of
+  # boot_area_var = "centred_mm" (MEGB_BOOT_FIX_PREREG_v4.md, section 10): the
+  # fold model that held the area out, whatever predict_sampled is. NULL when
+  # the fit kept no fold models; "centred_mm" then stops.
+  gb_cf <- if (identical(predict_sampled, "crossfit")) gb_smp else model$oof_prediction
+  if (!is.null(gb_cf) && (length(gb_cf) != length(Y) || anyNA(gb_cf))) gb_cf <- NULL
 
   # Function-scoped definition so any branch that references collect_diag has
   # it in scope; branches that don't use it just leave it FALSE.
@@ -91,6 +98,7 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
   Y        <- Y[sort_smp]
   if (!is.null(unit_pred_smp))   unit_pred_smp   <- unit_pred_smp[sort_smp]
   if (!is.null(gb_smp))          gb_smp          <- gb_smp[sort_smp]
+  if (!is.null(gb_cf))           gb_cf           <- gb_cf[sort_smp]
   # Re-extract weights from the (now-sorted) column to guarantee alignment.
   smp_weights_vec <- if (!is.null(smp_weights_col) &&
                          smp_weights_col %in% colnames(smp_data)) {
@@ -179,8 +187,14 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
     Y = Y, smp_data = smp_data, unit_pred_smp = unit_pred_smp,
     error_sd = error_sd, dom_name = dom_name,
     cov_names = cov_names, model = model,
-    weights = smp_weights_vec
+    weights = smp_weights_vec,
+    boot_area_var = boot_area_var, gb_smp = gb_cf, weightedBS = weightedBS
   )
+  if (!is.null(.de <- getOption("povmap.boot_area_var.diag_env")) && is.environment(.de)) {   # test hook, no effect when unset
+    .de$gb_cf <- gb_cf; .de$gb_smp <- gb_smp; .de$Y <- Y; .de$dom <- as.character(smp_data[[dom_name]])
+  }
+  .bam <- if (identical(boot_area_var, "legacy")) NULL else
+    c(list(mode = boot_area_var, n_pool = length(ran_obj$pool_res)), ran_obj$area_mm)
   ran_effs <- ran_obj$ran_effs
   gb_res   <- ran_obj$gb_res
   smp_data <- ran_obj$smp_data
@@ -197,7 +211,8 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
   block_sample_e_smp <- function(x) {
     block_sample(domains = domains, in_samp = in_samp, smp_data = smp_data,
                  dom_name = dom_name, pop_data = smp_data, gb_res = gb_res,
-                 weights = smp_weights_vec, weightedBS = weightedBS)
+                 weights = smp_weights_vec, weightedBS = weightedBS,
+                 pool = ran_obj$pool_res, pool_w = ran_obj$pool_w)
   }
 
   # u_d* sampler: one fresh draw per domain per iteration, length D.
@@ -209,6 +224,9 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
 
   e_smp    <- apply(matrix(NA, nrow = length(gb_smp), ncol = B), 2, block_sample_e_smp)
   u_d_star <- apply(matrix(NA, nrow = length(domains), ncol = B), 2, sample_ud)
+  # test/diagnostic hook: options(povmap.boot_area_var.diag_env = <environment>) receives the drawn u* (no effect when unset)
+  .bav_env <- getOption("povmap.boot_area_var.diag_env")
+  if (is.environment(.bav_env)) .bav_env$u_d_star <- u_d_star
 
   # Map u_d* to smp-row level via domain index.
   smp_dom_idx <- match(as.character(smp_data[[dom_name]]), domains)
@@ -353,7 +371,7 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
       boots_models = boots_models, tau_star = tau_star, pop_data = pop_data,
       dom_name = dom_name, corrected_bt = corrected_bt,
       benchmark_fn = benchmark_fn, domains = domains, error_sd = error_sd,
-      tau_star_orig_pc = tau_star_orig_pc
+      tau_star_orig_pc = tau_star_orig_pc, boot_area_mm = .bam
     ))
   }
 
@@ -605,7 +623,7 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
         boots_models = boots_models, tau_star = tau_star, pop_data = pop_data,
         dom_name = dom_name, corrected_bt = corrected_bt,
         benchmark_fn = benchmark_fn, domains = domains, error_sd = error_sd,
-        tau_star_orig_pc = tau_star_orig_pc
+        tau_star_orig_pc = tau_star_orig_pc, boot_area_mm = .bam
       ))
     }
   }
@@ -757,7 +775,7 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
     boots_models = boots_models, tau_star = tau_star, pop_data = pop_data,
     dom_name = dom_name, corrected_bt = corrected_bt,
     benchmark_fn = benchmark_fn, domains = domains, error_sd = error_sd,
-    tau_star_orig_pc = tau_star_orig_pc
+    tau_star_orig_pc = tau_star_orig_pc, boot_area_mm = .bam
   )
 }
 
@@ -765,7 +783,7 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
 # summary frames mse_megb returns. Used by both the lmm_only and full paths.
 .mse_megb_collate <- function(boots_models, tau_star, pop_data, dom_name,
                               corrected_bt, benchmark_fn, domains, error_sd,
-                              tau_star_orig_pc = NULL) {
+                              tau_star_orig_pc = NULL, boot_area_mm = NULL) {
 
   # Robust column-bind of per-iteration vectors of length D. Drops iterations
   # whose slot is NULL or whose length disagrees with D (with a warning).
@@ -827,7 +845,7 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
   boot_ran_eff_sd_boot <- sapply(boots_models, getElement, "ran_eff_sd_boot") |> unlist()
   boot_em_iterations   <- vapply(boots_models, function(b) if (is.null(b$em_iterations)) NA_integer_ else as.integer(b$em_iterations), integer(1))
 
-  list(
+  res <- list(
     call                 = match.call(),
     MSE_estimates        = MSE_estimates,
     MSE_bench_estimates  = MSE_bench_estimates,
@@ -845,4 +863,7 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
     boot_em_iterations   = boot_em_iterations,
     error_sd_input       = error_sd
   )
+  # boot_area_var != "legacy": the moment estimator and the pool size (NULL, so absent, for "legacy": legacy output is unchanged)
+  if (!is.null(boot_area_mm)) res$boot_area_mm <- boot_area_mm
+  res
 }

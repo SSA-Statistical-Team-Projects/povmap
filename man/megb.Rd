@@ -40,6 +40,7 @@ megb(
   benchmark_target_se = NULL,
   allow_zero_benchmark_se = FALSE,
   arcsin_backtransform = c("exact", "plain"),
+  boot_area_var = c("legacy", "centred", "centred_mm"),
   ...
 )
 }
@@ -99,6 +100,18 @@ unbenchmarked estimator, and directly in original space for the
 benchmarked estimator — and uses a normal-approximation CI. \code{"mse"}
 is generally wider than \code{"var"} because it includes the irreducible
 variability of the random effect.}
+
+\item{boot_area_var}{how the bootstrap world's area-level variance is built; one of
+\code{"legacy"} (default), \code{"centred"} or \code{"centred_mm"}. Point estimates are the same under
+every option; only the bootstrap (hence the MSE and the intervals) changes. \code{"legacy"}
+reproduces the previous behaviour. \code{"centred"}: the residual pool of each area is centred within
+the area (weighted mean when \code{weightedBS = TRUE}) and scaled by \eqn{\sqrt{n_i/(n_i-1)}}; areas
+with a single sampled unit and unsampled areas draw from the pooled residuals of the areas with at
+least two units. \code{"centred_mm"}: \code{"centred"} plus bootstrap area effects drawn, with
+replacement, from the sampled areas' centred deviations \eqn{d_i} (weighted mean of the response minus
+its cross-fitted prediction) rescaled to the standard deviation \eqn{\hat\sigma_b(MM)} with
+\eqn{\hat\sigma_b^2(MM) = \max(0, var_w(d_i) - mean_w(\hat\sigma_e^2/n_i))}; zero gives no area
+effect.}
 
 \item{bootstrap_refit}{one of \code{"leaves_only"} (default),
 \code{"full"}, or \code{"lmm_only"}.
