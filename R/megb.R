@@ -118,6 +118,10 @@
 #'   form raised sampled-area coverage by 0.06 to 0.16 and cut that bias by about three quarters at no
 #'   RMSE cost. The default is unchanged for now. The result then holds \code{arcsin_backtransform =
 #'   "plain"}.
+#' @param boot_synthetic logical, default \code{FALSE}. \code{TRUE} (needs \code{mse = TRUE} and \code{bootstrap_refit = "leaves_only"}) adds
+#'   \code{boot_diag$synthetic}: the point fit's cross-fitted synthetic area prediction (booster part only, no area effect, the back-transformation of an
+#'   unsampled area, unbenchmarked, on the reporting scale), the same prediction of every bootstrap replicate, the replicates' unbenchmarked truth and the
+#'   bootstrap MSE of the synthetic prediction per area. Estimates, MSE and intervals are unchanged (bit for bit). Input of \code{megb_level_calibration()}.
 #' @param boot_area_var how the bootstrap world's area-level variance is built; one of
 #'   \code{"legacy"} (default), \code{"centred"} or \code{"centred_mm"}. Point estimates are the
 #'   same under every option; only the bootstrap (hence the MSE and the intervals) changes.
@@ -374,6 +378,7 @@ megb <- function(fixed,
                  allow_zero_benchmark_se = FALSE,
                  arcsin_backtransform = c("exact", "plain"),
                  boot_area_var = c("legacy", "centred", "centred_mm"),
+                 boot_synthetic = FALSE,
                  ...) {
   # weightedBS: when TRUE and smp_weights is supplied, the bootstrap residual
   # sampling uses probabilities proportional to weights (mirroring xgb's
@@ -386,6 +391,8 @@ megb <- function(fixed,
   bench_target    <- match.arg(bench_target)
   arcsin_backtransform <- match.arg(arcsin_backtransform)
   boot_area_var   <- match.arg(boot_area_var)
+  boot_synthetic  <- isTRUE(boot_synthetic)
+  if (boot_synthetic && !mse) stop("boot_synthetic = TRUE needs mse = TRUE.")
   cv_folds        <- match.arg(cv_folds, c("domain", "rows"))
   if (!is.logical(early_stopping) || length(early_stopping) != 1L || is.na(early_stopping))
     stop("early_stopping must be TRUE or FALSE.")
@@ -902,7 +909,8 @@ megb <- function(fixed,
       predict_sampled        = predict_sampled,
       predict_unsampled      = predict_unsampled,
       bench_star             = bench_star,
-      boot_area_var          = boot_area_var
+      boot_area_var          = boot_area_var,
+      boot_synthetic         = boot_synthetic
     )
   }
 
@@ -1146,6 +1154,23 @@ megb <- function(fixed,
     )
     # boot_area_var != "legacy": mode, the moment estimator sigma_b2(MM) and the pool sizes (absent for "legacy")
     if (!identical(boot_area_var, "legacy")) boot_diag$boot_area_var <- mse_estimated$boot_area_mm
+    # boot_synthetic = TRUE: the point fit's synthetic area prediction, the replicates' (reporting scale, unbenchmarked), their truth and the MSE of the
+    # synthetic prediction per area; the input of megb_level_calibration() (MEGB_BOOT_FIX_PREREG_v8_final.md, option A)
+    if (boot_synthetic && !is.null(mse_estimated$synth_boot_orig)) {
+      sy_dom <- as.character(mse_estimated$domains)
+      re_syn <- .megb_re_var(corrected_bt, megb_fit$megb_model$effect_model, rep(".synthetic.", nrow(unit_preds_pop)))
+      h_syn  <- corrected_bt(unit_preds_pop$gb_pop, re_syn)
+      sy_pt  <- if (!is.null(pop_weights)) tapply(h_syn * pw, unit_preds_pop$dom_name, sum) / tapply(pw, unit_preds_pop$dom_name, sum)
+                else tapply(h_syn, unit_preds_pop$dom_name, mean)
+      sy_truth <- mse_estimated$tau_star_orig_unb
+      boot_diag$synthetic <- list(
+        domains   = sy_dom,
+        sampled   = sy_dom %in% as.character(unique(fwk$smp_data[[domains]])),
+        point     = as.numeric(sy_pt[match(sy_dom, names(sy_pt))]),
+        boot      = mse_estimated$synth_boot_orig,
+        truth     = sy_truth,
+        mse_synth = rowMeans((mse_estimated$synth_boot_orig - sy_truth)^2, na.rm = TRUE))
+    }
     message(sprintf(
       "Bootstrap diagnostics: original ran_eff_sd = %.4f, error_sd = %.4f.\n  Bootstrap ran_eff_sd quartiles (min,Q1,Q2,Q3,max) = %s\n  Bootstrap error_sd   quartiles                  = %s\n  Frac bootstrap iters with ran_eff_sd < 1e-4 = %.2f",
       megb_fit$megb_model$ran_eff_sd %||% NA_real_,

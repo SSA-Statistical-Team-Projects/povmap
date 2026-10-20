@@ -23,7 +23,13 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
                      predict_unsampled = "full",
                      bench_star = NULL,
                      boot_area_var = "legacy",
+                     boot_synthetic = FALSE,
                      ...) {
+  # boot_synthetic = TRUE (MEGB_BOOT_FIX_PREREG_v8_final.md, option A): also return, for every replicate, the cross-fitted SYNTHETIC area prediction on the
+  # reporting scale (booster part only, no area effect, the back-transform of an unsampled area), so that the MSE of the synthetic prediction of the sampled
+  # areas can be read from the same replicates. Nothing else changes (estimates, MSE and intervals are bit-identical to boot_synthetic = FALSE).
+  if (isTRUE(boot_synthetic) && !identical(bootstrap_refit, "leaves_only"))
+    stop("boot_synthetic = TRUE needs bootstrap_refit = \"leaves_only\".")
   # bench_star (bench_target = "truth"): list(dom_group, dom_w, draws, lo, hi), see .megb_target_star(). Each replicate is
   #   benchmarked to its own target, the simulated truth of the benchmark group plus the drawn target error. The target
   #   travels with the replicate's data as attribute "bm_target" and is read by benchmark_fn; NULL leaves every path as before.
@@ -577,6 +583,15 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
           u_d_boot_mat[, i]           <- u_d_boot
         }
         mean_boot_t        <- gb_pop_d_mean_boot + u_d_boot   # transformed aggregate (mse path)
+        # synthetic area prediction of this replicate on the reporting scale: the booster part (cross-fitted for sampled areas, fold mean for unsampled
+        # ones, as refreshed above) back-transformed with the random-effect variance of an UNSAMPLED area (sigma_b^2) and no area effect
+        synth_boot <- NULL
+        if (isTRUE(boot_synthetic)) {
+          synth_boot <- if (!is.null(corrected_bt) && .use_leaf) LM$weighted
+                        else if (!is.null(corrected_bt))
+                          agg_dom(corrected_bt(gb_pop_boot, .megb_re_var(corrected_bt, lmer_boot, rep(".synthetic.", length(domains)))[pop_dom_idx]))
+                        else gb_pop_d_mean_boot
+        }
         # Original scale: per-cell back-transform then aggregate (mirror point
         # estimate). Uses this iteration's refreshed per-cell predictions
         # gb_pop_boot and re-estimated u_d_boot; same corrected_bt, same unweighted
@@ -610,6 +625,7 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
           ran_eff_sd_boot = ran_sd,
           em_iterations   = em$iterations
         )
+        if (isTRUE(boot_synthetic)) boots_models[[i]]$Mean_boot_synth <- synth_boot
       }
 
       if (collect_diag) {
@@ -865,5 +881,12 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
   )
   # boot_area_var != "legacy": the moment estimator and the pool size (NULL, so absent, for "legacy": legacy output is unchanged)
   if (!is.null(boot_area_mm)) res$boot_area_mm <- boot_area_mm
+  # boot_synthetic = TRUE: D x B' matrix of the replicate synthetic predictions (reporting scale), columns paired with tau_star_orig_unb
+  if (any(vapply(boots_models, function(b) !is.null(b$Mean_boot_synth), logical(1)))) {
+    cb_syn <- collate_boot("Mean_boot_synth")
+    synth <- matrix(NA_real_, nrow = D, ncol = length(keep_orig))
+    if (!is.null(cb_syn$mat)) { j <- match(cb_syn$keep, keep_orig); ok <- !is.na(j); synth[, j[ok]] <- cb_syn$mat[, ok, drop = FALSE] }
+    res$synth_boot_orig <- synth
+  }
   res
 }

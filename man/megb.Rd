@@ -41,6 +41,7 @@ megb(
   allow_zero_benchmark_se = FALSE,
   arcsin_backtransform = c("exact", "plain"),
   boot_area_var = c("legacy", "centred", "centred_mm"),
+  boot_synthetic = FALSE,
   ...
 )
 }
@@ -100,6 +101,11 @@ unbenchmarked estimator, and directly in original space for the
 benchmarked estimator — and uses a normal-approximation CI. \code{"mse"}
 is generally wider than \code{"var"} because it includes the irreducible
 variability of the random effect.}
+
+\item{boot_synthetic}{logical, default \code{FALSE}. \code{TRUE} (needs \code{mse = TRUE} and \code{bootstrap_refit = "leaves_only"}) adds
+\code{boot_diag$synthetic}: the point fit's cross-fitted synthetic area prediction (booster part only, no area effect, the back-transformation of an
+unsampled area, unbenchmarked, on the reporting scale), the same prediction of every bootstrap replicate, the replicates' unbenchmarked truth and the
+bootstrap MSE of the synthetic prediction per area. Estimates, MSE and intervals are unchanged (bit for bit). Input of \code{megb_level_calibration()}.}
 
 \item{boot_area_var}{how the bootstrap world's area-level variance is built; one of
 \code{"legacy"} (default), \code{"centred"} or \code{"centred_mm"}. Point estimates are the same under
