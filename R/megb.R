@@ -444,6 +444,9 @@ megb <- function(fixed,
   predict_sampled   <- .resolve(predict_sampled, "predict_sampled", "crossfit")
   predict_unsampled <- .resolve(predict_unsampled, "predict_unsampled", "foldmean")
   .fold_pred <- predict_sampled == "crossfit" || predict_unsampled == "foldmean"
+  # boot_synthetic: the synthetic prediction of a sampled area must be the held-out (cross-fitted) one, as in MEGB_BOOT_FIX_PREREG_v8_final.md
+  if (boot_synthetic && !identical(predict_sampled, "crossfit"))
+    stop("boot_synthetic = TRUE needs predict_sampled = \"crossfit\" (the synthetic prediction of a sampled area is its cross-fitted one).")
 
   # Local %||% so the diagnostic message below isn't fragile to NULLs.
   `%||%` <- function(a, b) if (is.null(a)) b else a

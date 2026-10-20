@@ -240,6 +240,11 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
   smp_data$gb_res <- NULL
 
   y_star_smp <- smp_pred_mat + u_smp + e_smp
+  # test hook, no effect when unset: options(povmap.boot_synthetic.perturb = list(domain = <label>, delta = <number>)) adds delta to the replicate response of one
+  # area (every replicate), to check that its cross-fitted synthetic prediction does not depend on its own replicate data
+  .pt <- getOption("povmap.boot_synthetic.perturb")
+  if (is.list(.pt) && !is.null(.pt$domain))
+    y_star_smp[as.character(smp_data[[dom_name]]) == as.character(.pt$domain), ] <- y_star_smp[as.character(smp_data[[dom_name]]) == as.character(.pt$domain), ] + .pt$delta
 
   # ── tau_star at POP level (analytical) ──
   # tau_star_d[b] = mean over pop_d of (gb_pop + u_d*[d, b]) ≈ gb_pop_d_mean + u_d*[d, b]
@@ -445,7 +450,12 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
         .D <- length(domains)
         gb_pop_d_mean_boot_mat <- matrix(NA_real_, nrow = .D, ncol = B)
         u_d_boot_mat           <- matrix(NA_real_, nrow = .D, ncol = B)
+        gb_pop_cell_boot_list  <- vector("list", B)     # per-cell replicate booster predictions (per-cell path only)
+        sb2_boot_vec           <- rep(NA_real_, B)      # the replicate's sigma_b*^2
       }
+      if (isTRUE(boot_synthetic) && isTRUE(getOption("povmap.leaves_only.em", FALSE)))
+        warning("boot_synthetic = TRUE with options(povmap.leaves_only.em = TRUE): the replicate EM estimates the random effect from all areas, so a fold model's ",
+                "training target depends weakly (through the variance components and the intercept) on the held-out area's replicate data; the default single pass is exactly held out.")
 
       boots_models <- vector("list", B)
 
@@ -581,6 +591,8 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
         if (collect_diag) {
           gb_pop_d_mean_boot_mat[, i] <- gb_pop_d_mean_boot
           u_d_boot_mat[, i]           <- u_d_boot
+          if (!is.null(gb_pop_boot)) gb_pop_cell_boot_list[[i]] <- gb_pop_boot
+          sb2_boot_vec[i] <- as.data.frame(lme4::VarCorr(lmer_boot))$vcov[1]
         }
         mean_boot_t        <- gb_pop_d_mean_boot + u_d_boot   # transformed aggregate (mse path)
         # synthetic area prediction of this replicate on the reporting scale: the booster part (cross-fitted for sampled areas, fold mean for unsampled
@@ -632,6 +644,8 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
         diag_env <- getOption("povmap.leaves_only.diag_env")
         assign("gb_pop_d_mean_boot_mat", gb_pop_d_mean_boot_mat, envir = diag_env)
         assign("u_d_boot_mat",           u_d_boot_mat,           envir = diag_env)
+        assign("gb_pop_cell_boot_list",  gb_pop_cell_boot_list,  envir = diag_env)
+        assign("sb2_boot_vec",           sb2_boot_vec,           envir = diag_env)
         assign("domains",                domains,                envir = diag_env)
       }
 

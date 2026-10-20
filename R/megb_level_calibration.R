@@ -39,7 +39,7 @@ megb_level_calibration <- function(fit, direct, bounds = c(0.1, 10), weights = c
   i   <- match(d$Domain, dom)
   if (anyNA(i)) stop("direct contains domains that are not in the fit: ", paste(utils::head(d$Domain[is.na(i)], 5), collapse = ", "))
   use <- syn$sampled[i] & is.finite(d$ydir) & is.finite(d$vdir) & is.finite(syn$point[i]) & is.finite(syn$mse_synth[i])
-  n_left_out <- sum(syn$sampled[i]) - sum(use)
+  n_left_out <- sum(syn$sampled) - sum(use)   # every sampled area not used: missing from direct, or without a finite ydir, vdir or synthetic prediction
   if (!any(use)) stop("no sampled area with a finite direct estimate, variance and synthetic prediction.")
   e2   <- (d$ydir[use] - syn$point[i][use])^2 - d$vdir[use]
   Bi   <- syn$mse_synth[i][use]
@@ -65,7 +65,8 @@ megb_level_calibration <- function(fit, direct, bounds = c(0.1, 10), weights = c
     z <- stats::qnorm(1 - (1 - conf_level) / 2)
     loD <- ifelse(uns, ctr - z * sqrt(pmax(mseD, 0)), lo0); hiD <- ifelse(uns, ctr + z * sqrt(pmax(mseD, 0)), hi0)
   } else {
-    loD <- ifelse(uns, ctr - sqrt(kappa) * (ctr - lo0), lo0); hiD <- ifelse(uns, ctr + sqrt(kappa) * (hi0 - ctr), hi0)
+    loD <- if (kappa == 1) lo0 else ifelse(uns, ctr - sqrt(kappa) * (ctr - lo0), lo0)
+    hiD <- if (kappa == 1) hi0 else ifelse(uns, ctr + sqrt(kappa) * (hi0 - ctr), hi0)
   }
   if (!is.null(clamp)) { loD <- ifelse(uns, pmax(loD, clamp[1]), loD); hiD <- ifelse(uns, pmin(hiD, clamp[2]), hiD) }
   list(kappa = kappa, kappa_raw = kappa_raw, M_hat = M_hat, B_hat = B_hat, clipped = clipped, fallback = fallback,
