@@ -105,11 +105,23 @@
 .megb_par_init <- function(S) { assign("S", S, envir = .megb_par_env); invisible(NULL) }
 .megb_par_run  <- function(i) .megb_leaf_rep(i, get("S", envir = .megb_par_env))
 
+# Start the PSOCK cluster, retrying after a short pause: makeCluster() can fail on a busy machine when the port it picked is taken (seen once in testing).
+.megb_make_cluster <- function(cores, tries = 3L, pause = 5) {
+  err <- NULL
+  for (a in seq_len(tries)) {
+    cl <- tryCatch(parallel::makeCluster(cores), error = function(e) e)
+    if (!inherits(cl, "error")) return(cl)
+    err <- cl
+    if (a < tries) { message("leaves_only bootstrap: cluster start failed (", conditionMessage(err), "); retrying in ", pause, " s"); Sys.sleep(pause) }
+  }
+  stop(err)
+}
+
 # Run the B replicates on `cores` PSOCK workers (each gets S once) and return the list in replicate order.
 # The workers inherit the environment of this process (R_LIBS, R_PROFILE_USER, OMP_NUM_THREADS), so they load the same povmap and
 # xgboost builds; set OMP_NUM_THREADS = 1 first for single-threaded refreshes, as the sequential default does.
 .megb_leaf_rep_parallel <- function(B, S, cores) {
-  cl <- parallel::makeCluster(cores)
+  cl <- .megb_make_cluster(cores)
   on.exit(parallel::stopCluster(cl), add = TRUE)
   parallel::clusterCall(cl, .megb_par_init, S)
   parallel::parLapplyLB(cl, seq_len(B), .megb_par_run, chunk.size = 2L)
