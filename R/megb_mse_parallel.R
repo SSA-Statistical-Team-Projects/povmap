@@ -121,6 +121,8 @@
 # The workers inherit the environment of this process (R_LIBS, R_PROFILE_USER, OMP_NUM_THREADS), so they load the same povmap and
 # xgboost builds; set OMP_NUM_THREADS = 1 first for single-threaded refreshes, as the sequential default does.
 .megb_leaf_rep_parallel <- function(B, S, cores) {
+  if (isTRUE(getOption("povmap.leaves_only.par_diag", FALSE)))   # serialised size of each object every worker receives
+    message("leaves_only bootstrap, MB sent to each worker: ", paste(names(S), round(vapply(S, function(x) length(serialize(x, NULL)), 0) / 1e6, 1), collapse = ", "))
   cl <- .megb_make_cluster(cores)
   on.exit(parallel::stopCluster(cl), add = TRUE)
   parallel::clusterCall(cl, .megb_par_init, S)
