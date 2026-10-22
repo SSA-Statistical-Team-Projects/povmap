@@ -12,8 +12,10 @@
 # This function is called within the EBP-function and the agruments benchmark
 # and benchmark_type are documented there.
 
+# .cache: optional environment for callers that benchmark many replicates of one fit (megb's bootstrap). The domain list and the domain -> benchmark-group
+# crosswalk depend only on framework$pop_data, so they are computed on the first call and reused; the values are the ones computed without the cache.
 benchmark_xgb_level <- function (point_estim, framework, fixed, benchmark,
-                                 benchmark_type, benchmark_level,benchmark_weights = NULL) {
+                                 benchmark_type, benchmark_level,benchmark_weights = NULL, .cache = NULL) {
 
   # Alignment guard. The point estimates must carry their domain labels (point_estim$ind$Domain): they are matched
   # to domains BY NAME below, so their order is free, but they must cover exactly the domains of pop_data, once each.
@@ -24,7 +26,8 @@ benchmark_xgb_level <- function (point_estim, framework, fixed, benchmark,
          "estimates are matched to domains by name, never by position.")
   }
   .pe_dom  <- as.character(point_estim$ind$Domain)
-  .pop_dom <- as.character(unique(framework$pop_data[[framework$domains]]))
+  .pop_dom <- if (!is.null(.cache) && !is.null(.cache$pop_dom)) .cache$pop_dom else as.character(unique(framework$pop_data[[framework$domains]]))
+  if (!is.null(.cache) && is.null(.cache$pop_dom)) .cache$pop_dom <- .pop_dom
   if (length(.pe_dom) != length(point_estim$ind$Mean) || anyDuplicated(.pe_dom) || !setequal(.pe_dom, .pop_dom)) {
     stop(sprintf(paste0("benchmark_xgb_level: the labelled point estimates do not ",
       "cover the domains of pop_data[['%s']] exactly once (%d labels, %d domains, %d not in pop_data)."),
@@ -47,10 +50,12 @@ benchmark_xgb_level <- function (point_estim, framework, fixed, benchmark,
   dom_labels <- .pe_dom
   benchmark_df <- data.frame(point_estim$ind$Mean, dom_labels, 1:length(point_estim$ind$Mean))
   colnames(benchmark_df) <- c("point_estim",framework$domains,"order")
-  crosswalk <- data.frame(unique(framework$pop_data[,c(framework$domains,benchmark_level)]))
-
-
-  colnames(crosswalk) <- c(framework$domains,benchmark_level)
+  crosswalk <- if (!is.null(.cache) && !is.null(.cache$crosswalk)) .cache$crosswalk else {
+    cw <- data.frame(unique(framework$pop_data[,c(framework$domains,benchmark_level)]))
+    colnames(cw) <- c(framework$domains,benchmark_level)
+    if (!is.null(.cache)) .cache$crosswalk <- cw
+    cw
+  }
   benchmark_df <- merge(benchmark_df,crosswalk,by=framework$domains,all.x=T,sort=F)
   benchmark_df <- merge(benchmark_df,benchmark_,by=benchmark_level,all.x=T,sort=F)
   # unfortunately because it is a many to one merge the sort order is not preserved, so we need to reorder by hand
