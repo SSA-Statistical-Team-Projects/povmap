@@ -494,6 +494,9 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
                   newdat_d = newdat_d, pop_dom_idx = pop_dom_idx, pw_pop = pw_pop, corrected_bt = corrected_bt, domains = domains, boot_synthetic = boot_synthetic,
                   benchmark_fn = benchmark_fn, bm_target = bm_target, smp_data = smp_data,
                   opt_em = getOption("povmap.leaves_only.em", FALSE), opt_em_start = getOption("povmap.leaves_only.em_start", "fit"))
+        if (!nzchar(Sys.getenv("OMP_NUM_THREADS")) && is.null(gradient_params$nthread))
+          warning("leaves_only bootstrap on ", bootstrap_cores, " workers: OMP_NUM_THREADS is not set and gradient_params has no nthread, so each worker's xgboost may use every core "
+                  , "(oversubscription, and multi-threaded sums can change the last digits). Set OMP_NUM_THREADS=1 before the call, or nthread = 1 in gradient_params.", call. = FALSE)
         message("leaves_only bootstrap: ", B, " replicates on ", bootstrap_cores, " workers")
         boots_models <- .megb_leaf_rep_parallel(B, S, bootstrap_cores)
       } else
