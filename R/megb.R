@@ -476,7 +476,7 @@ megb <- function(fixed,
   # which benchmark_ebp_level does not implement and would silently return
   # all-NA Mean_bench).
   add_benchmark_megb <- function(x, benchmark_level, fwk, fixed,
-                                 benchmark, benchmark_type, domain_labels = NULL) {
+                                 benchmark, benchmark_type, domain_labels = NULL, .cache = NULL) {
     # Carry the domain labels so benchmark_xgb_level matches the estimates to domains by name (it refuses unlabelled
     # estimates). Every caller passes them: the point estimate and each bootstrap replicate (benchmark_fn).
     point_estim       <- if (!is.null(domain_labels))
@@ -497,7 +497,8 @@ megb <- function(fixed,
         fixed           = fixed,
         benchmark       = benchmark,
         benchmark_type  = benchmark_type,
-        benchmark_level = benchmark_level)
+        benchmark_level = benchmark_level,
+        .cache          = .cache)
     }
     point_estim$ind$Mean_bench
   }
@@ -782,7 +783,8 @@ megb <- function(fixed,
         fwk             = .fwk,
         fixed           = .fixed,
         benchmark       = bm_val,
-        benchmark_type  = .bm_type
+        benchmark_type  = .bm_type,
+        .cache          = .bm_cache
       )
     }
     # What the workers receive: the framework without the census columns benchmark_fn never reads, and the formula
@@ -804,6 +806,7 @@ megb <- function(fixed,
                                             if (transformation == "log.shift") ls_lambda else NULL,
                                             arcsin_plain = arcsin_backtransform == "plain"),
         .add_bm   = add_benchmark_megb,
+        .bm_cache = new.env(parent = emptyenv()),   # domain list and crosswalk of the replicates' benchmark, filled on the first call
         .fixed_bm = fixed_bm_val
       ),
       parent = getNamespace("povmap")

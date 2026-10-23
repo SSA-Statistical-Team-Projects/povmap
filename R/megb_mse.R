@@ -484,6 +484,22 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
                                    pw_pop, .use_leaf, predict = .cfp,
                                    predict_unsampled = .cfu)
 
+      # bootstrap_cores > 1: the replicates run on a PSOCK cluster (megb_mse_parallel.R); the replicate draws no random numbers, so the result is the same as the sequential loop below.
+      if (!is.null(bootstrap_cores) && bootstrap_cores > 1 && !collect_diag) {
+        # the formula's environment is this function's frame (several GB: the census, the replicate data); .megb_oof_re_fit() resets it before use, so send it without
+        lmm_formula_lean <- lmm_formula; environment(lmm_formula_lean) <- globalenv()
+        S <- list(CFB = CFB, X_smp_mat = X_smp_mat, X_pop_mat = X_pop_mat, y_star_smp = y_star_smp, w_ref = w_ref, fit_data = fit_data, lmm_formula = lmm_formula_lean,
+                  smp_weights_vec = smp_weights_vec, use_leaf = .use_leaf, cfp = .cfp, cfu = .cfu, MaxIterations = MaxIterations, ErrorTolerance = ErrorTolerance,
+                  unit_pred_smp = unit_pred_smp, gb_smp = gb_smp, orig_booster = orig_booster, orig_nrounds = orig_nrounds, LA = if (.use_leaf) LA else NULL,
+                  newdat_d = newdat_d, pop_dom_idx = pop_dom_idx, pw_pop = pw_pop, corrected_bt = corrected_bt, domains = domains, boot_synthetic = boot_synthetic,
+                  benchmark_fn = benchmark_fn, bm_target = bm_target, smp_data = smp_data,
+                  opt_em = getOption("povmap.leaves_only.em", FALSE), opt_em_start = getOption("povmap.leaves_only.em_start", "fit"))
+        if (!nzchar(Sys.getenv("OMP_NUM_THREADS")) && is.null(gradient_params$nthread))
+          warning("leaves_only bootstrap on ", bootstrap_cores, " workers: OMP_NUM_THREADS is not set and gradient_params has no nthread, so each worker's xgboost may use every core "
+                  , "(oversubscription, and multi-threaded sums can change the last digits). Set OMP_NUM_THREADS=1 before the call, or nthread = 1 in gradient_params.", call. = FALSE)
+        message("leaves_only bootstrap: ", B, " replicates on ", bootstrap_cores, " workers")
+        boots_models <- .megb_leaf_rep_parallel(B, S, bootstrap_cores)
+      } else
       for (i in seq_len(B)) {
         if (i %% max(1L, B %/% 10L) == 0L)
           message("leaves_only bootstrap iteration ", i, " of ", B)
