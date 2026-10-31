@@ -122,6 +122,18 @@
 #'   \code{boot_diag$synthetic}: the point fit's cross-fitted synthetic area prediction (booster part only, no area effect, the back-transformation of an
 #'   unsampled area, unbenchmarked, on the reporting scale), the same prediction of every bootstrap replicate, the replicates' unbenchmarked truth and the
 #'   bootstrap MSE of the synthetic prediction per area. Estimates, MSE and intervals are unchanged (bit for bit). Input of \code{megb_level_calibration()}.
+#' @param boot_checkpoint_dir \code{NULL} (default, no checkpoint) or a directory. With \code{mse = TRUE} and \code{bootstrap_refit = "leaves_only"}
+#'   the finished bootstrap replicates are saved there, in chunks of \code{boot_chunk}, together with a fingerprint (hash) of the call and the data
+#'   (the sample and census covariates, the bootstrap draws, the fitted boosters, the benchmark, the seed, the settings and the povmap, xgboost and lme4
+#'   versions). Rerun the identical call with the same directory after an interruption: the saved replicates are loaded and only the others run, and the
+#'   result is identical, bit for bit, to an uninterrupted run (the replicates draw no random numbers). A directory written by a different call is
+#'   refused with the parts that differ. \code{bootstrap_cores} and \code{boot_chunk} may change between the runs. One run per directory at a time.
+#' @param boot_chunk replicates per chunk: the checkpoint granularity and the interval of the progress lines. Default \code{NULL}: 25, or
+#'   \code{max(25, 4 * bootstrap_cores)} on a cluster (a chunk is one parallel call, and the workers wait for its slowest replicate, so very small chunks
+#'   leave workers idle).
+#' @param boot_progress logical, default \code{FALSE}. \code{TRUE} prints, after every chunk, the replicates done, the elapsed time and the estimated time
+#'   remaining (from the main process: a worker's messages are lost under a PSOCK cluster).
+#' @param boot_progress_file \code{NULL} (default) or a file path to which the same lines are appended with a time stamp.
 #' @param boot_area_var how the bootstrap world's area-level variance is built; one of
 #'   \code{"legacy"} (default), \code{"centred"} or \code{"centred_mm"}. Point estimates are the
 #'   same under every option; only the bootstrap (hence the MSE and the intervals) changes.
@@ -379,6 +391,10 @@ megb <- function(fixed,
                  arcsin_backtransform = c("exact", "plain"),
                  boot_area_var = c("legacy", "centred", "centred_mm"),
                  boot_synthetic = FALSE,
+                 boot_checkpoint_dir = NULL,
+                 boot_chunk = NULL,
+                 boot_progress = FALSE,
+                 boot_progress_file = NULL,
                  ...) {
   # weightedBS: when TRUE and smp_weights is supplied, the bootstrap residual
   # sampling uses probabilities proportional to weights (mirroring xgb's
@@ -393,6 +409,13 @@ megb <- function(fixed,
   boot_area_var   <- match.arg(boot_area_var)
   boot_synthetic  <- isTRUE(boot_synthetic)
   if (boot_synthetic && !mse) stop("boot_synthetic = TRUE needs mse = TRUE.")
+  boot_progress   <- isTRUE(boot_progress)
+  if (!is.null(boot_checkpoint_dir) && !(is.character(boot_checkpoint_dir) && length(boot_checkpoint_dir) == 1L && !is.na(boot_checkpoint_dir) && nzchar(boot_checkpoint_dir)))
+    stop("boot_checkpoint_dir must be NULL or a single directory path.")
+  if (!is.null(boot_progress_file) && !(is.character(boot_progress_file) && length(boot_progress_file) == 1L && !is.na(boot_progress_file) && nzchar(boot_progress_file)))
+    stop("boot_progress_file must be NULL or a single file path.")
+  if ((!is.null(boot_checkpoint_dir) || boot_progress || !is.null(boot_progress_file)) && !(mse && identical(bootstrap_refit, "leaves_only") && identical(gbm_engine, "xgboost")))
+    stop("boot_checkpoint_dir, boot_progress and boot_progress_file need mse = TRUE, bootstrap_refit = \"leaves_only\" and gbm_engine = \"xgboost\".")
   cv_folds        <- match.arg(cv_folds, c("domain", "rows"))
   if (!is.logical(early_stopping) || length(early_stopping) != 1L || is.na(early_stopping))
     stop("early_stopping must be TRUE or FALSE.")
@@ -916,7 +939,11 @@ megb <- function(fixed,
       predict_unsampled      = predict_unsampled,
       bench_star             = bench_star,
       boot_area_var          = boot_area_var,
-      boot_synthetic         = boot_synthetic
+      boot_synthetic         = boot_synthetic,
+      boot_checkpoint_dir    = boot_checkpoint_dir,
+      boot_chunk             = boot_chunk,
+      boot_progress          = boot_progress,
+      boot_progress_file     = boot_progress_file
     )
   }
 

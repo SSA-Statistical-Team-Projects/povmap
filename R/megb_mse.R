@@ -24,6 +24,10 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
                      bench_star = NULL,
                      boot_area_var = "legacy",
                      boot_synthetic = FALSE,
+                     boot_checkpoint_dir = NULL,
+                     boot_chunk = NULL,
+                     boot_progress = FALSE,
+                     boot_progress_file = NULL,
                      ...) {
   # boot_synthetic = TRUE (MEGB_BOOT_FIX_PREREG_v8_final.md, option A): also return, for every replicate, the cross-fitted SYNTHETIC area prediction on the
   # reporting scale (booster part only, no area effect, the back-transform of an unsampled area), so that the MSE of the synthetic prediction of the sampled
@@ -484,8 +488,28 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
                                    pw_pop, .use_leaf, predict = .cfp,
                                    predict_unsampled = .cfu)
 
+      # opt-in progress log and checkpoint / resume (megb_boot_checkpoint.R); NULL (nothing changes) unless asked for
+      .par <- !is.null(bootstrap_cores) && bootstrap_cores > 1 && !collect_diag
+      .ck <- NULL
+      if (!is.null(boot_checkpoint_dir) || isTRUE(boot_progress) || !is.null(boot_progress_file)) {
+        if (collect_diag) stop("boot_checkpoint_dir / boot_progress cannot be combined with the leaves_only diagnostic environment (options(povmap.leaves_only.diag_env)).")
+        .ck <- .megb_boot_ckpt(
+          dir = boot_checkpoint_dir, B = B, chunk = boot_chunk, progress = boot_progress, progress_file = boot_progress_file, cores = if (.par) bootstrap_cores else 0L,
+          parts = if (is.null(boot_checkpoint_dir)) NULL else list(
+            pkg = c(.megb_pkg_id()[c("povmap_version", "remote_sha", "xgboost_version")], lme4 = as.character(utils::packageVersion("lme4"))),
+            settings = list(B = B, seed = seed, ErrorTolerance = ErrorTolerance, MaxIterations = MaxIterations, cov_names = cov_names, gradient_params = gradient_params,
+                            formula_random_effects = formula_random_effects, gbm_engine = gbm_engine, bootstrap_refit = bootstrap_refit, weightedBS = weightedBS,
+                            cv_folds = cv_folds, early_stopping = early_stopping, cv_nfold = cv_nfold, predict_sampled = predict_sampled, predict_unsampled = predict_unsampled,
+                            boot_area_var = boot_area_var, boot_synthetic = boot_synthetic, dom_name = dom_name, smp_weights_col = smp_weights_col,
+                            options = lapply(c(em = "povmap.leaves_only.em", em_start = "povmap.leaves_only.em_start", leaf_aggregate = "povmap.leaves_only.leaf_aggregate",
+                                             refresh_nrounds = "povmap.leaves_only.refresh_nrounds"), getOption)),
+            y_star_smp = y_star_smp, bm_target = bm_target, bench_star = bench_star, X_smp_mat = X_smp_mat, X_pop_mat = X_pop_mat, smp_data = smp_data,
+            weights = list(smp = smp_weights_vec, pop = pw_pop), pop_dom_idx = pop_dom_idx, domains = domains, point_fit = list(unit_pred_smp, gb_smp, error_sd),
+            booster = orig_booster, folds = fold_fit, benchmark_fn = benchmark_fn, corrected_bt = corrected_bt))
+      }
+
       # bootstrap_cores > 1: the replicates run on a PSOCK cluster (megb_mse_parallel.R); the replicate draws no random numbers, so the result is the same as the sequential loop below.
-      if (!is.null(bootstrap_cores) && bootstrap_cores > 1 && !collect_diag) {
+      if (.par) {
         # the formula's environment is this function's frame (several GB: the census, the replicate data); .megb_oof_re_fit() resets it before use, so send it without
         lmm_formula_lean <- lmm_formula; environment(lmm_formula_lean) <- globalenv()
         S <- list(CFB = CFB, X_smp_mat = X_smp_mat, X_pop_mat = X_pop_mat, y_star_smp = y_star_smp, w_ref = w_ref, fit_data = fit_data, lmm_formula = lmm_formula_lean,
@@ -498,9 +522,12 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
           warning("leaves_only bootstrap on ", bootstrap_cores, " workers: OMP_NUM_THREADS is not set and gradient_params has no nthread, so each worker's xgboost may use every core "
                   , "(oversubscription, and multi-threaded sums can change the last digits). Set OMP_NUM_THREADS=1 before the call, or nthread = 1 in gradient_params.", call. = FALSE)
         message("leaves_only bootstrap: ", B, " replicates on ", bootstrap_cores, " workers")
-        boots_models <- .megb_leaf_rep_parallel(B, S, bootstrap_cores)
-      } else
-      for (i in seq_len(B)) {
+        boots_models <- .megb_leaf_rep_parallel(B, S, bootstrap_cores, ck = .ck)
+      } else {
+      # opt-in progress log / checkpoint (megb_boot_checkpoint.R): replicates already saved are loaded and only the rest run
+      if (!is.null(.ck)) { boots_models[.ck$done] <- .ck$loaded[.ck$done] }
+      for (i in if (is.null(.ck)) seq_len(B) else .ck$todo) {
+        if (!is.null(.ck)) .ck$begin(i, boots_models)
         if (i %% max(1L, B %/% 10L) == 0L)
           message("leaves_only bootstrap iteration ", i, " of ", B)
 
@@ -654,6 +681,8 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
           em_iterations   = em$iterations
         )
         if (isTRUE(boot_synthetic)) boots_models[[i]]$Mean_boot_synth <- synth_boot
+      }
+      if (!is.null(.ck)) .ck$finish(boots_models)
       }
 
       if (collect_diag) {

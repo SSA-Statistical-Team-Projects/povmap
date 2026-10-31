@@ -42,6 +42,10 @@ megb(
   arcsin_backtransform = c("exact", "plain"),
   boot_area_var = c("legacy", "centred", "centred_mm"),
   boot_synthetic = FALSE,
+  boot_checkpoint_dir = NULL,
+  boot_chunk = NULL,
+  boot_progress = FALSE,
+  boot_progress_file = NULL,
   ...
 )
 }
@@ -106,6 +110,22 @@ variability of the random effect.}
 \code{boot_diag$synthetic}: the point fit's cross-fitted synthetic area prediction (booster part only, no area effect, the back-transformation of an
 unsampled area, unbenchmarked, on the reporting scale), the same prediction of every bootstrap replicate, the replicates' unbenchmarked truth and the
 bootstrap MSE of the synthetic prediction per area. Estimates, MSE and intervals are unchanged (bit for bit). Input of \code{megb_level_calibration()}.}
+
+\item{boot_checkpoint_dir}{\code{NULL} (default, no checkpoint) or a directory. With \code{mse = TRUE} and \code{bootstrap_refit = "leaves_only"}
+the finished bootstrap replicates are saved there, in chunks of \code{boot_chunk}, together with a fingerprint (hash) of the call and the data
+(the sample and census covariates, the bootstrap draws, the fitted boosters, the benchmark, the seed, the settings and the povmap, xgboost and lme4
+versions). Rerun the identical call with the same directory after an interruption: the saved replicates are loaded and only the others run, and the
+result is identical, bit for bit, to an uninterrupted run (the replicates draw no random numbers). A directory written by a different call is
+refused with the parts that differ. \code{bootstrap_cores} and \code{boot_chunk} may change between the runs. One run per directory at a time.}
+
+\item{boot_chunk}{replicates per chunk: the checkpoint granularity and the interval of the progress lines. Default \code{NULL}: 25, or
+\code{max(25, 4 * bootstrap_cores)} on a cluster (a chunk is one parallel call, and the workers wait for its slowest replicate, so very small chunks
+leave workers idle).}
+
+\item{boot_progress}{logical, default \code{FALSE}. \code{TRUE} prints, after every chunk, the replicates done, the elapsed time and the estimated time
+remaining (from the main process: a worker's messages are lost under a PSOCK cluster).}
+
+\item{boot_progress_file}{\code{NULL} (default) or a file path to which the same lines are appended with a time stamp.}
 
 \item{boot_area_var}{how the bootstrap world's area-level variance is built; one of
 \code{"legacy"} (default), \code{"centred"} or \code{"centred_mm"}. Point estimates are the same under

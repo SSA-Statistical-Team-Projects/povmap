@@ -146,14 +146,20 @@ Set R_LIBS / R_PROFILE_USER so that the workers see the same library first.", ca
 # Run the B replicates on `cores` PSOCK workers (each gets S once) and return the list in replicate order.
 # The workers inherit the environment of this process (R_LIBS, R_PROFILE_USER, OMP_NUM_THREADS), so they load the same povmap and
 # xgboost builds; set OMP_NUM_THREADS = 1 first for single-threaded refreshes, as the sequential default does.
-.megb_leaf_rep_parallel <- function(B, S, cores) {
+.megb_leaf_rep_parallel <- function(B, S, cores, ck = NULL) {
   if (isTRUE(getOption("povmap.leaves_only.par_diag", FALSE)))   # serialised size of each object every worker receives
     message("leaves_only bootstrap, MB sent to each worker: ", paste(names(S), round(vapply(S, function(x) length(serialize(x, NULL)), 0) / 1e6, 1), collapse = ", "))
   cl <- .megb_make_cluster(cores)
   on.exit(parallel::stopCluster(cl), add = TRUE)
   parallel::clusterCall(cl, .megb_par_init, S, .megb_pkg_id())
   # An error that the replicate does not catch stops the whole call here, as it stops the sequential loop; the error text comes from the worker.
-  res <- parallel::parLapplyLB(cl, seq_len(B), .megb_par_run, chunk.size = 2L)
+  if (is.null(ck)) {
+    res <- parallel::parLapplyLB(cl, seq_len(B), .megb_par_run, chunk.size = 2L)
+  } else {   # opt-in: chunks of ck$chunk replicates, each saved / logged by the main process when it returns (megb_boot_checkpoint.R)
+    for (idx in split(ck$todo, ceiling(seq_along(ck$todo) / ck$chunk)))
+      ck$save(idx, parallel::parLapplyLB(cl, idx, .megb_par_run, chunk.size = 2L))
+    res <- ck$loaded
+  }
   failed <- vapply(res, function(r) is.null(r$Mean_boot), NA)
   if (any(failed)) {   # the sequential loop message()s these; a worker's messages never reach the console, so say it here
     msgs <- vapply(res[failed], function(r) if (is.null(r$fail)) "no message" else as.character(r$fail), "")
