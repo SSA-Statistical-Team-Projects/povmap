@@ -740,6 +740,10 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
       Mean_boot       = mean_boot_t,
       Mean_boot_orig  = mean_boot_orig,
       Mean_boot_bench = mean_boot_bench,
+      # Area keys of the three vectors above, in their own order. dplyr::group_by() on a factor returns the groups in LEVEL order, which is the order of the
+      # framework's population frame (sampled areas first, then the rest as in the frame), not the alphabetical order of `domains` / tau_star. .mse_megb_collate()
+      # puts every replicate vector into the order of `domains` by these keys.
+      keys            = as.character(mean_preds$dom_name),
       error_sd_boot   = model_boot$error_sd,
       ran_eff_sd_boot = model_boot$ran_eff_sd
     )
@@ -824,6 +828,14 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
       if (is.null(v)) return(NULL)
       v <- as.numeric(v)
       if (length(v) != D) return(NULL)
+      # Pair by area key, not by row position: a replicate that carries its area keys (the full refit) is put into the order of `domains`, the order of tau_star.
+      # Replicates without keys (leaves_only, lmm_only) are built in the order of `domains` by construction.
+      if (!is.null(b$keys)) {
+        k <- as.character(b$keys)
+        if (length(k) != D || anyNA(match(domains, k)))
+          stop("megb bootstrap: the area keys of a replicate do not match the domains of the truth (", slot, ").")
+        v <- v[match(domains, k)]
+      }
       v
     })
     keep <- which(!vapply(cols, is.null, logical(1)))
