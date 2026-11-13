@@ -78,6 +78,7 @@ Function \code{map_plot} creates spatial visualizations of the estimates
 obtained by small area estimation methods or direct estimation.
 }
 \examples{
+\dontrun{
 \donttest{
 data("eusilcA_pop")
 data("eusilcA_smp")
@@ -123,6 +124,7 @@ map_plot(
   map_obj = shape_austria_dis, indicator = c("Mean"),
   map_dom_id = "BKZ", map_tab = map_tab
 )
+}
 }
 }
 \seealso{

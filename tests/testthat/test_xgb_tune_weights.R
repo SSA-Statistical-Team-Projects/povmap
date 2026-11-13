@@ -66,7 +66,7 @@ xgb_fit_weights_on <- function(d, rows, rescale_weights) {
   w <- capture_train_weights(suppressWarnings(povmap::xgb(
     fixed = y ~ x1 + x2, smp_data = d$smp[rows, ], smp_weights = "wt",
     pop_data = d$pop, pop_weights = "npop", domains = "dom", sub_domains = "sub",
-    transformation = "no", bootstrap = FALSE, L = 1, seed = 1, nrounds = 3, eta = 0.3,
+    transformation = "no", area_pool = "in_sample", weightedBS = TRUE, bootstrap = FALSE, L = 1, seed = 1, nrounds = 3, eta = 0.3,
     max_depth = 2, colsample_bylevel = 1, colsample_bynode = 1,
     rescale_weights = rescale_weights)))
   expect_length(w, 1L)
@@ -133,7 +133,7 @@ xgb_fit_weights_var_on <- function(d, rows, rescale_weights) {
   w <- capture_train_weights(suppressWarnings(povmap::xgb(
     fixed = y ~ x1 + x2, smp_data = d$smp[rows, ], smp_weights = "wt",
     pop_data = d$pop, pop_weights = "npop", domains = "dom", sub_domains = "sub",
-    transformation = "no", bootstrap = FALSE, L = 1, seed = 1, nrounds = 3, eta = 0.3,
+    transformation = "no", area_pool = "in_sample", weightedBS = TRUE, bootstrap = FALSE, L = 1, seed = 1, nrounds = 3, eta = 0.3,
     max_depth = 2, colsample_bylevel = 1, colsample_bynode = 1,
     rescale_weights = rescale_weights, variance_y = "v")))
   expect_length(w, 1L)

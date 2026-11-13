@@ -23,7 +23,11 @@
 #' numeric or a factor. Defaults to \code{"domains"}.
 #' @param transformation a character string. Two different transformation
 #' types for the dependent variable can be chosen (i) no transformation ("no");
-#' (ii) log transformation ("log"); (iii) Arcsin transformation ("arcsin").
+#' (ii) log transformation ("log"); (iii) Arcsin transformation ("arcsin");
+#' (iv) \code{log1p} for count data ("poisson"), trained exactly as \code{\link{xgb}}
+#' trains it. Until the fix of 2026-10, \code{"poisson"} was accepted but the candidates
+#' were trained on the untransformed counts, a different model from the one \code{xgb}
+#' fits; results of poisson tuning change, those of the other transformations do not.
 #' Defaults to \code{"no"}.
 #' @param folds number of folds. Defaults to 10.
 #' @param nround combination of maximum number of boosting iterations. Defaults to 150 and 250.
@@ -78,7 +82,7 @@
 #' conclusion is specific to cheap evaluations and would likely invert if a
 #' single evaluation took minutes.
 #' @param n_iter number of configurations drawn when \code{search = "random"}.
-#'   Defaults to 32. Note that 32 random draws is NOT equivalent in coverage to a
+#'   Defaults to 150 (the convention). Note that 32 random draws is NOT equivalent in coverage to a
 #'   32 point grid: the grid tests two values of five parameters and so
 #'   establishes direction rather than locating an optimum, whereas the random
 #'   draws explore the interior of the ranges but cover any single axis more
@@ -104,7 +108,7 @@
 #'   remains purely for scoring. Defaults to \code{NULL}, i.e. fixed
 #'   \code{nround} as before.
 #' @param nrounds_max ceiling on boosting rounds when early stopping is in use.
-#'   Defaults to 2000. If any fold stops at this ceiling a warning is raised,
+#'   Defaults to 3000. If any fold stops at this ceiling a warning is raised,
 #'   since the budget rather than the data then chose the stopping point.
 #' @param seed integer seed making the whole routine reproducible: the assignment
 #'   of clusters to folds, the random draw of configurations, and the underlying
@@ -150,6 +154,46 @@
 #'   names (\code{nround}, \code{max_depth}, ...); a hyperparameter missing from
 #'   it takes the first value of its argument. Only with \code{search = "grid"}.
 #'   \code{NULL} (default) scores the full cross of the vectors as before.
+#' @param overfit_ratio logical. If \code{TRUE} (and \code{keep_candidates} is
+#'   \code{TRUE}), every candidate is also refitted on the whole sample and the
+#'   ratio of its out-of-fold to its in-sample residual spread is computed on the
+#'   search's own fold assignment, see \code{\link{xgb_overfit_ratio}}. The
+#'   result gains an element \code{overfit} (a data.frame with one row per
+#'   candidate), which \code{\link{xgb_top_configs}(rule = "least_overfit")}
+#'   reads. This costs one more full fit and \code{folds} fold fits per
+#'   candidate, uses no random numbers and changes nothing else in the result.
+#'   Default \code{FALSE}.
+#' @param score_scale scale on which the held-out domain means are compared.
+#'   \code{"transformed"} (default) is the scale the models are trained on, as
+#'   always. \code{"response"} back-transforms the held-out predictions to the
+#'   outcome's own scale (arcsin: \code{sin(clamp(h, 0, pi/2))^2}; log:
+#'   \code{exp}; poisson: \code{pmax(0, expm1(h))}) and scores the weighted
+#'   domain means against the weighted direct means of the raw outcome. The
+#'   model is trained on the transformed outcome either way. \code{"training"}
+#'   scores each fold with the loss the model is trained on, not with a domain-level
+#'   error: the squared error of the held-out sample rows on the model (transformed)
+#'   scale, \code{sum(w (y_t - hat)^2) / sum(w)}, where \code{w} are the weights the
+#'   model gives the held-out rows (rescaled within domain, divided by their mean,
+#'   times the heteroscedasticity factor, as in \code{\link{xgb}}). That is the
+#'   \code{reg:squarederror} objective \code{xgb} uses by default, on the arcsine, log
+#'   or log1p (poisson) transformed outcome; a poisson outcome is trained as squared
+#'   error on \code{log1p(y)}, not with \code{count:poisson}, so its training loss
+#'   is not a Poisson deviance. With \code{"training"} the candidate \code{mse} and the
+#'   fold scores are on that scale, and \code{r2_oos} is \code{NA}. Defaults to
+#'   \code{"transformed"} (the squared error of the weighted domain means on the
+#'   model scale), so existing calls are unchanged.
+#' @param fit_seed seed passed to xgboost for every fit. \code{NULL} (default)
+#'   uses \code{seed}, as before. Set it to score on folds drawn from \code{seed}
+#'   while keeping the fit seed fixed.
+#' @param keep_oof logical. If \code{TRUE} (and \code{keep_candidates} is
+#'   \code{TRUE}), the result also carries \code{oof}: the out-of-fold
+#'   predictions of every candidate (model scale, one column per candidate, one
+#'   row per row of \code{smp_data}), the fold of each row, and what is needed to
+#'   check that a later \code{\link{xgb}} call is the same model on the same data
+#'   (outcome, weights, domain and cluster labels, covariates, transformation,
+#'   weighting options, fit seed). \code{\link{xgb}(pool_tune = )} builds the area
+#'   residual pool from these predictions with no new fits. No random numbers are
+#'   used and nothing else in the result changes. Default \code{FALSE}.
 #' @param verbose display progress. Defaults to FALSE.
 #' @param ... additional parameters to be passed to \code{xgb.train}.
 #'
@@ -199,15 +243,19 @@ xgb_tune <- function(fixed,
                      lambda = c(0.5, 1.5),
                      alpha = c(0),
                      search = c("grid", "random"),
-                     n_iter = 32,
+                     n_iter = 150,
                      bounds = NULL,
                      early_stopping_rounds = NULL,
-                     nrounds_max = 2000,
+                     nrounds_max = 3000,
                      seed = NULL,
                      keep_candidates = TRUE,
                      rescale_weights = TRUE,
                      variance_y = NULL,
                      grid = NULL,
+                     overfit_ratio = FALSE,
+                     score_scale = c("transformed", "response", "training"),
+                     fit_seed = NULL,
+                     keep_oof = FALSE,
                      cpus = 1, 
                      verbose = TRUE,
                      ...){
@@ -254,16 +302,31 @@ xgb_tune <- function(fixed,
 
   # Transformation
   #_____________________________________________________________________________
+  Y_smp_raw <- Y_smp
   if (transformation=="arcsin"){
     Y_smp <- asin(sqrt(Y_smp))
   }
   if (transformation=="log"){
     Y_smp <- log(Y_smp)
   }
+  if (transformation=="poisson"){
+    Y_smp <- log1p(Y_smp)        # as xgb() transforms a poisson outcome (poisson_transform)
+  }
+  score_scale <- match.arg(score_scale)
+  y_resp <- NULL; back <- NULL
+  if (score_scale == "response") {
+    if (!transformation %in% c("no", "arcsin", "log", "poisson"))
+      stop("score_scale = \"response\" supports transformation no, arcsin, log and poisson.", call. = FALSE)
+    y_resp <- Y_smp_raw[, 1]
+    back <- switch(transformation, no = identity,
+                   arcsin = function(h) sin(pmax(0, pmin(h, pi / 2)))^2,
+                   log = exp, poisson = function(h) pmax(0, expm1(h)))
+  }
 
   # Search mode, seed
   #_____________________________________________________________________________
   search <- match.arg(search)
+  if (is.null(fit_seed)) fit_seed <- seed
   ## Seeding covers BOTH the fold assignment below and the random draw. The fold
   ## assignment was previously unseeded, so even grid search was not reproducible
   ## run to run; seed = NULL preserves that old behaviour exactly.
@@ -363,7 +426,10 @@ xgb_tune <- function(fixed,
                      cluster = cluster, domains = domains, folds = folds,
                      early_stopping_rounds = early_stopping_rounds,
                      nrounds_max = nrounds_max, seed = seed, dots = dots,
-                     rescale_weights = rescale_weights, het = het)
+                     rescale_weights = rescale_weights, het = het,
+                     fit_seed = fit_seed, y_resp = y_resp, back = back,
+                     keep_oof = isTRUE(keep_oof) && isTRUE(keep_candidates),
+                     train_loss = score_scale == "training")
 
   sc <- do.call(.xgb_score_configs, c(list(tunegrid = tunegrid), score_args))
   OPT <- sc$OPT; ITER <- sc$ITER; domain_labels_list <- sc$domain_labels
@@ -395,7 +461,7 @@ xgb_tune <- function(fixed,
   # Variance of domain-level mean outcomes pooled across all folds
   all_domain_labels <- unlist(domain_labels_list)
   var_labels <- var(all_domain_labels)
-  r2_oos <- 1 - mse_min / var_labels
+  r2_oos <- if (score_scale == "training") NA_real_ else 1 - mse_min / var_labels
 
   final_output <- list(nround_opt, max_depth_opt, colsample_bytree_opt, colsample_bylevel_opt,
                        colsample_bynode_opt, subsample_opt, min_child_weight_opt, eta_opt,
@@ -409,6 +475,7 @@ xgb_tune <- function(fixed,
   final_output$search    <- search
   final_output$n_configs <- nrow(tunegrid)
   final_output$rescale_weights <- rescale_weights
+  if (score_scale == "training") final_output$score_scale <- score_scale    # NULL otherwise: existing results gain no element
   final_output$variance_y <- variance_y    # NULL adds no element
   if (isTRUE(keep_candidates)) {
     cand <- tunegrid
@@ -418,6 +485,25 @@ xgb_tune <- function(fixed,
     final_output$candidates      <- cand
     final_output$cv_by_fold      <- OPT
     final_output$fold_assignment <- cluster_unique
+    if (isTRUE(keep_oof)) {
+      final_output$oof <- list(
+        pred = sc$oof_pred, fold = cluster_col$fold, folds = folds,
+        outcome = Y_smp_raw[, 1], weights = as.numeric(smp_weights),
+        domain = as.character(X_smp[[domains]]), cluster = as.character(X_smp[[cluster]]),
+        domains = domains, cluster_var = cluster, covariates = colnames(X_final),
+        transformation = transformation, rescale_weights = rescale_weights,
+        variance_y = variance_y, het = het, fit_seed = fit_seed, early_stopping = es_on,
+        nround_used = if (es_on) round(rowMeans(ITER)) else tunegrid$nround)
+    }
+    if (isTRUE(overfit_ratio)) {
+      ## opt-in: out-of-fold / in-sample residual ratio of every candidate on the search's folds
+      g_r <- tunegrid
+      if (es_on) g_r$nround <- round(rowMeans(ITER))
+      final_output$overfit <- .xgb_overfit_core(
+        g_r, X = X_final, yt = Y_smp[, 1], w = as.numeric(smp_weights), dom = X_smp[[domains]],
+        fold = cluster_col$fold, folds = folds, rescale_weights = rescale_weights, het = het,
+        fit_seed = fit_seed, cpus = cpus, dots = dots)
+    }
   }
   if (es_on) {
     final_output$best_iters_by_fold <- best_iters

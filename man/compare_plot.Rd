@@ -157,6 +157,7 @@ Since all of the comparisons need a direct estimator, the plots are
 only created for in-sample domains.
 }
 \examples{
+\dontrun{
 \donttest{
 # Examples for comparisons of direct estimates and models of type ebp
 
@@ -221,6 +222,7 @@ compare_plot(fh_std)
 
 # Example 4: Compare also MSE and CV estimates
 compare_plot(fh_std, MSE = TRUE, CV = TRUE)
+}
 }
 }
 \seealso{

@@ -27,21 +27,27 @@ data("eusilcA_pop")
 data("eusilcA_smp")
 
 # Create subdomains; equal to individuals in each area
-eusilcA_smp$subDomain <- ave(eusilcA_smp$district,
+eusilcA_smp$subDomain <- ave(seq_along(eusilcA_smp$district),
                              eusilcA_smp$district,
                              FUN = seq_along)
-eusilcA_pop$subDomain <- ave(eusilcA_pop$district,
+eusilcA_pop$subDomain <- ave(seq_along(eusilcA_pop$district),
                              eusilcA_pop$district,
                              FUN = seq_along)
+# Sample and population weights (equal weights here)
+eusilcA_pop$pop_weight <- 1
+eusilcA_smp$smp_weight <- 1
 
 xgb_model <- xgb(fixed = eqIncome ~ eqsize + cash + self_empl +
                  unempl_ben + age_ben + surv_ben + sick_ben + dis_ben +
                  rent + fam_allow + house_allow + cap_inv + tax_adj +
-                 district + subDomain,
+                 subDomain,
                  smp_data = eusilcA_smp,
                  pop_data = eusilcA_pop,
+                 smp_weights = "smp_weight",
+                 pop_weights = "pop_weight",
                  domains = "district",
-                 sub_domains = "subDomain")
+                 sub_domains = "subDomain",
+                 area_pool = "in_sample") # the example sample rows do not map one to one onto census cells
 
 # Receive first overview
 summary(xgb_model)

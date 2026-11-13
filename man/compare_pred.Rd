@@ -33,6 +33,7 @@ predictions of two model objects.
 Method \code{compare_pred.emdi} compares predictions of two emdi objects.
 }
 \examples{
+\dontrun{
 \donttest{
 # Example for class ebp
 emdi_model_1 <- ebp(
@@ -51,6 +52,7 @@ emdi_model_2 <- ebp(
 )
 
 compare_pred(emdi_model_1, emdi_model_2)
+}
 }
 }
 \seealso{

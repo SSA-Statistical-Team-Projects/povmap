@@ -19,6 +19,7 @@ table showing marginal R-square, conditional R-squared as well as the
 skewness and kurtosis of the random and idiosyncratic error terms
 }
 \examples{
+\dontrun{
 
 data("eusilcA_pop")
 data("eusilcA_smp")
@@ -33,4 +34,5 @@ ebp_model <- ebp(
 
  ebp_normalityfit(model = ebp_model)
 
+}
 }

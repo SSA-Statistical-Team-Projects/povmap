@@ -6,10 +6,14 @@
 \usage{
 xgb_top_configs(
   tune,
-  rule = c("one_se_paired", "one_se", "k_best"),
+  rule = c("one_se_paired", "one_se", "k_best", "least_overfit", "one_se_ratio"),
   k = 5,
-  floor = 3,
-  cap = 8
+  floor = 1,
+  cap = 8,
+  ratio = NULL,
+  ratio_pool = c("total", "domain", "within_domain"),
+  max_ratio = 2,
+  ratio_cap = 40
 )
 }
 \arguments{
@@ -29,12 +33,54 @@ splits and its standard error is the typical single-split one (it is not
 divided further by the number of splits, because the splits reuse the same
 sample). \code{"one_se"}: every configuration whose score is at most the
 best score plus the best configuration's own standard error.
-\code{"k_best"}: the \code{k} configurations with the lowest scores.}
+\code{"k_best"}: the \code{k} configurations with the lowest scores.
+\code{"least_overfit"}: among the configurations of the
+\code{"one_se_paired"} set (taken with \code{floor = 1} and no \code{cap},
+whatever those arguments say), the single one with the lowest
+out-of-fold to in-sample residual ratio (see \code{\link{xgb_overfit_ratio}}).
+Ties go to the better score. \code{"one_se_ratio"}: the configurations of
+that set whose ratio is at most \code{max_ratio}, averaged with equal
+weights (at most \code{cap} of them, best scores first); when fewer than two
+qualify, the single configuration with the lowest ratio, as for
+\code{"least_overfit"}. Both need the ratios, see \code{ratio}.}
 
 \item{k}{number of configurations for \code{rule = "k_best"}.}
 
 \item{floor, cap}{the set is filled up to \code{floor} configurations with the
-next best by score, and cut to the \code{cap} best by score. Defaults 3 and 8.}
+next best by score, and cut to the \code{cap} best by score. Defaults 1 (the set is not padded) and 8.
+For \code{rule = "least_overfit"} neither applies; for \code{"one_se_ratio"}
+only \code{cap} does.}
+
+\item{ratio}{the out-of-fold to in-sample residual ratio of each candidate, used
+by the two ratio rules: either a numeric vector with one element per row of
+the candidates (\code{NA} for candidates without one, which cannot be chosen),
+taken to be of the pool \code{ratio_pool}, or the data.frame returned by
+\code{\link{xgb_overfit_ratio}} (with a \code{row} column, other candidates
+getting \code{NA}), from which the \code{ratio_pool} column is used. If
+\code{NULL} (default) it is read from the \code{overfit} element of the
+\code{xgb_tune} results (run with \code{overfit_ratio = TRUE}), averaged over
+those results that have it.}
+
+\item{ratio_pool}{the residual pool whose ratio is ranked on and thresholded:
+\code{"total"} (default, the unit-level residuals, which is what the DRC
+selection uses), \code{"domain"} (domain-mean residuals) or
+\code{"within_domain"} (unit residuals less their domain mean); see
+\code{\link{xgb_overfit_ratio}}. Not used when \code{ratio} is a plain vector.
+The pool is recorded in the \code{ratio_pool} attribute of the result.}
+
+\item{max_ratio}{largest ratio an averaged configuration may have, for
+\code{rule = "one_se_ratio"}. Default 2. \strong{This default is provisional
+and has not been validated.} If out-of-fold residual pools are adopted, the
+threshold only needs to exclude badly overfitted configurations, not to fine-tune
+the choice. Observed ratios on comparable pools run about 1.1 to 1.9 (DRC, total
+pool, lowest-ratio member of each set), but other members and the domain pool
+run much higher, so look at the ratios of your own problem and pool before
+relying on the default.}
+
+\item{ratio_cap}{for the ratio rules, only the \code{ratio_cap} best-scoring
+members of the one-SE set are considered, which bounds the number of ratios
+needed. Default 40, as in the DRC selection; \code{NULL} considers the
+whole set.}
 }
 \value{
 a data.frame with one row per selected configuration, best first:
@@ -44,8 +90,10 @@ a data.frame with one row per selected configuration, best first:
   \code{min_child_weight}, \code{eta}, \code{gamma}, \code{max_delta_step},
   \code{lambda}, \code{alpha}), \code{weight} (equal weights summing to 1),
   \code{cv_score} (mean cross-validation error) and \code{rank} (rank of the
-  score among all candidates). It can be passed to \code{xgb(configs = )}
-  as it is.
+  score among all candidates). The ratio rules add \code{overfit_ratio}. It can
+  be passed to \code{xgb(configs = )} as it is. The ratio rules also set the
+  attribute \code{rows} (the row of each selected configuration in the
+  candidates) and \code{ratio_pool} (the pool of \code{overfit_ratio}).
 }
 \description{
 Configuration averaging fits several near-equivalent tuned configurations

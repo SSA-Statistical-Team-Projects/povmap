@@ -727,12 +727,7 @@ expected_untransformed_mean <- function(mu=mu,var=var,transformation=transformat
     expected_mean <- mu   
   }
   else if (transformation=="arcsin") {
-    term1 <- arcsin_transform_back(mu) # y = sin(x)^2,  
-    # dy/dx = 2(sin(x)*cos(x))  
-    dy2dx <- -2*sin(mu)^2+2*cos(mu)^2 # product rule for differentiation, f=2sin(x),g=cos(x),f'=2cos(x),g'=-sin(x),dy2dx=f*g'+g*f'=-2sin(x)^2+2*cos(X)^2   
-    #dy3dx = -4*sin(mu)*cos(m)-4*cos(x)*sin(x)=-8*sin(x)*cos(x)=-4*dy/dyx
-    #dy4/dx <- -4*dy2dx, dy5/dx=-4*dy3dx = 32*sin(x)*cos(x)=16*dydx, dy6/dx <- 16*dy2dx, dy8/dx <- -64*dy2dx
-    expected_mean <- term1+0.5*dy2dx*(var)-(1/24)*-4*dy2dx*3*(var^2)+(1/720)*-16*dy2dx*(var^3)+(1/40320)*-64*dy2dx*(var^4)  # 9th order Taylor series
+    expected_mean <- arcsin_expected_back(mu, var) # exact: 1/2 - 1/2 cos(2 mu) exp(-2 var)
   }
   else if (transformation=="log") {
     expected_mean <- exp(mu+(0.5*var))
@@ -855,10 +850,19 @@ monte_carlo <- function(mixed_model,
   }
 
   
+  # Size the results array from what the indicator functions return, not from the name list:
+  # a mismatch between the two otherwise surfaces as an unreadable replacement-length error.
+  n_ind_out <- tryCatch(sum(lengths(lapply(framework$indicator_list, function(f)
+    f(y = c(1, 2, 3, 4), pop_weights = c(1, 1, 1, 1), threshold = framework$threshold)))),
+    error = function(e) length(framework$indicator_names))
+  if (n_ind_out != length(framework$indicator_names)) {
+    stop("The indicator functions return ", n_ind_out, " values but there are ",
+         length(framework$indicator_names), " indicator names.", call. = FALSE)
+  }
   ests_mcmc <- array(dim = c(
     N_dom_pop_tmp,
     L,
-    length(framework$indicator_names)
+    n_ind_out
   ))
 
   betas <- model_par$betas 

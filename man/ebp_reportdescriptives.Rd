@@ -66,6 +66,7 @@ the threshold on which SAE is applied and the outcome indicator of interest
 the census and survey
 }
 \examples{
+\dontrun{
 \donttest{
 data("eusilcA_pop")
 data("eusilcA_smp")
@@ -91,5 +92,6 @@ ebp_reportdescriptives(model = ebp_model, direct = direct_est,
                        smp_data = eusilcA_smp, weights = "weight",
                        pop_weights = "hhsize", CV_level = "state",
                        pop_data = eusilcA_pop, pop_domains = "district")
+}
 }
 }

@@ -46,35 +46,97 @@
 #'   comparing specifications with and without the area-level covariates
 #'   and by leave-areas-out cross-validation, rather than by truncating
 #'   the EM loop.
-#' @param bench_target one of \code{"fixed"} (default) or \code{"random"}.
-#'   Controls how the benchmark target is treated *inside the bootstrap*. "fixed"
-#'   rakes every replicate to the observed (province/level) target, so the
-#'   benchmarked MSE/CI is the spread of the estimate around the realised truth at
-#'   the observed target — the correct choice for benchmarking to an observed survey
-#'   target. "random" recomputes the target from each replicate's own resampled
-#'   survey, which makes the benchmarked estimate track its own bootstrap mean and
-#'   collapses the level variance, giving too-narrow intervals (census-validated:
-#'   well-sampled-area coverage 0.74 under "random" vs 0.96 under "fixed"). Only
-#'   matters when \code{benchmark} is character (internal, survey-derived
-#'   benchmarking); for numeric or data.frame benchmarks the target is a
-#'   constant by construction.
-#'   \code{"random"} (default): recompute the target on every bootstrap
-#'   iteration from the bootstrap-simulated survey data. Both the target and
-#'   the model estimate vary together, preserving the joint sampling
-#'   correlation between them — which is the right thing for re-sampling-based
-#'   inference about the unconditional variance of the benchmarked estimator.
-#'   In practice this is also typically *narrower* than \code{"fixed"} for
-#'   internal benchmarks: when survey resamples shift the target up they also
-#'   shift the model estimate up, so the benchmark-adjustment shift \eqn{c}
-#'   has less work to do, and \eqn{var(c) \propto var(T - WM)} stays small.
-#'   \code{"fixed"}: hold the target at the value computed from the *observed*
-#'   survey and reuse it on every iteration. The resulting variance is
-#'   conditional on the target — \eqn{Var(\hat\theta_{bench} \mid target)}.
-#'   Use this when the benchmark target really is a known constraint that you
-#'   don't want to bootstrap over. For survey-derived (internal) benchmarks
-#'   the target *is* itself a sample statistic, so this conditioning is a
-#'   somewhat artificial inferential target — \code{"random"} is usually
-#'   preferable.
+#' @param bench_target one of \code{"fixed"} (default), \code{"random"} or \code{"truth"}.
+#'   Controls how the benchmark target is treated *inside the bootstrap*.
+#'   \describe{
+#'     \item{\code{"fixed"}}{rakes every replicate to the observed (province/level)
+#'       target, so the benchmarked MSE/CI is the spread of the estimate around the
+#'       realised truth at the observed target. This is the default and the choice
+#'       for benchmarking to an observed survey target.}
+#'     \item{\code{"random"}}{recomputes the target from each replicate's own resampled
+#'       survey, weighted by \code{benchmark_weights}. The benchmarked estimate then
+#'       tracks its own bootstrap mean and the level variance collapses, giving
+#'       too-narrow intervals. Only matters when \code{benchmark} is character
+#'       (internal, survey-derived benchmarking); for numeric or data.frame
+#'       benchmarks the target is a constant by construction.}
+#'     \item{\code{"truth"}}{rakes replicate b to \eqn{T^*_{g,b} = \tau_{g,b} + \epsilon_{g,b}},
+#'       where \eqn{\tau_{g,b}} is the simulated truth of benchmark group g in that
+#'       replicate, aggregated from the domain truths with the population totals the
+#'       benchmark aggregates the estimate with, and \eqn{\epsilon_{g,b} \sim N(0, SE_g^2)}
+#'       is the error of the observed target, with \eqn{SE_g} from \code{benchmark_target_se}.
+#'       The provincial error of the benchmarked estimate is then \eqn{\epsilon_{g,b}}
+#'       alone: the sampling error of the target is counted once, and the spread
+#'       of the simulated provincial truth is not added to it. The \eqn{B \times G}{B x G}
+#'       draws come once from \code{seed} on a stream of their own (the same stream and
+#'       draws as \code{perturb_benchmark}), the target is clamped like the perturbed
+#'       replicates (lower bound 1e-9 for arcsin, log and poisson, upper bound 1 - 1e-9
+#'       for arcsin), and the point estimate is unchanged, raked to the observed
+#'       \code{benchmark}. With \eqn{SE_g = 0} the provincial error is zero. Needs
+#'       \code{benchmark}, \code{benchmark_level}, \code{pop_weights}, \code{mse = TRUE}
+#'       and \code{benchmark_target_se}, and excludes \code{perturb_benchmark}.
+#'       Works with every \code{bootstrap_refit}. The result then holds
+#'       \code{bench_target = "truth"} and \code{benchmark_target_draws}.}
+#'   }
+#' @param em_maxit the maximum number of EM iterations of the point fit (and of each
+#'   replicate fit of \code{bootstrap_refit = "full"}). Default 25. The EM stops earlier
+#'   when the relative log-likelihood change falls below \code{em_tol}. A resampled
+#'   cross-validation inside each iteration makes the log-likelihood jitter, so with
+#'   boosting the rule is often not met and the fit runs to \code{em_maxit}; check the
+#'   \eqn{\sigma_b^2} trajectory (\code{megb_model$iterations_used}) before relying on it.
+#' @param em_tol the EM stopping tolerance on the relative change of the log-likelihood.
+#'   Default \code{1e-04}.
+#' @param perturb_benchmark logical, default \code{FALSE}. If \code{TRUE}, the benchmarked
+#'   bootstrap replicates are perturbed by the sampling error of the benchmark target,
+#'   exactly as in \code{\link{xgb}}: after the bootstrap, a draw from
+#'   \eqn{N(0, SE_g^2)} is added to the benchmarked replicate of every domain in benchmark
+#'   group \eqn{g}, on the model's transformed scale (the increment is the draw times the
+#'   local slope of the transformation, \code{.perturb_slope}) and back-transformed; for
+#'   \code{transformation = "no"} it is added directly. The truth side is not perturbed. The
+#'   \eqn{B \times G}{B x G} draws are made once from \code{seed} (a stream of their own, so the
+#'   bootstrap is unchanged). Needs \code{benchmark}, \code{benchmark_level},
+#'   \code{mse = TRUE} and \code{benchmark_target_se}. With \code{FALSE} the result is
+#'   identical to povmap 1.0.3. The result then also holds \code{Var_bench_unperturbed} and
+#'   \code{benchmark_perturbation}. Exclusive with \code{bench_target = "truth"}, which draws
+#'   the target error itself.
+#' @param benchmark_target_se a named numeric vector of the standard errors of the
+#'   benchmark targets, keyed by \code{benchmark_level} group; the SD of the perturbation
+#'   (\code{perturb_benchmark = TRUE}) or of the target error (\code{bench_target = "truth"}).
+#'   Required by either; a missing group, or a non-finite,
+#'   negative or (unless \code{allow_zero_benchmark_se}) zero value is an error. Unlike
+#'   \code{xgb}, there is no internal Horvitz-Thompson fallback.
+#' @param allow_zero_benchmark_se logical, default \code{FALSE}. Allows a zero standard
+#'   error for some benchmark group (a warning is given; the perturbation or the target
+#'   error adds nothing there).
+#' @param arcsin_backtransform one of \code{"exact"} (default) or \code{"plain"}; used only with
+#'   \code{transformation = "arcsin"}. \code{"exact"} back-transforms each census cell with the exact
+#'   mean of \eqn{\sin^2} under normal error, \eqn{1/2 - 1/2 \cos(2\mu) e^{-2v}}, where \eqn{v} is
+#'   \eqn{\sigma_e^2} plus the conditional variance of the area random effect. \code{"plain"} uses
+#'   \eqn{\sin^2(\mu)} with no variance term, everywhere the back-transformation is used: the point
+#'   estimate, the bootstrap area estimates and truths, the benchmark target of the replicates, and the
+#'   random-effect variance term (which is then not computed). REStat's preregistered census-truth test
+#'   found that the exact form overshoots near zero and biases low-prevalence areas upward; the plain
+#'   form raised sampled-area coverage by 0.06 to 0.16 and cut that bias by about three quarters at no
+#'   RMSE cost. The default is unchanged for now. The result then holds \code{arcsin_backtransform =
+#'   "plain"}.
+#' @param boot_synthetic logical, default \code{FALSE}. \code{TRUE} (needs \code{mse = TRUE} and \code{bootstrap_refit = "leaves_only"}) adds
+#'   \code{boot_diag$synthetic}: the point fit's cross-fitted synthetic area prediction (booster part only, no area effect, the back-transformation of an
+#'   unsampled area, unbenchmarked, on the reporting scale), the same prediction of every bootstrap replicate, the replicates' unbenchmarked truth and the
+#'   bootstrap MSE of the synthetic prediction per area. Estimates, MSE and intervals are unchanged (bit for bit). Input of \code{megb_level_calibration()}.
+#' @param boot_area_var how the bootstrap world's area-level variance is built; one of
+#'   \code{"legacy"} (default), \code{"centred"} or \code{"centred_mm"}. Point estimates are the
+#'   same under every option; only the bootstrap (hence the MSE and the intervals) changes.
+#'   \code{"legacy"} reproduces the previous behaviour bit for bit: each sampled area redraws its own
+#'   residuals (rescaled globally to the fit's error SD), and the bootstrap area effects are drawn from
+#'   the rescaled EBLUPs. \code{"centred"}: the residual pool of each area is centred within the area
+#'   (mean over the area's sampled units, the weighted mean when \code{weightedBS = TRUE}) and scaled by
+#'   \eqn{\sqrt{n_i / (n_i - 1)}}; an area with a single sampled unit, and the unsampled areas, draw
+#'   from the pooled centred, scaled residuals of the areas with at least two units (single-unit areas
+#'   excluded). \code{"centred_mm"}: \code{"centred"} plus bootstrap area effects drawn, with
+#'   replacement, from the area deviations \eqn{d_i} (the weighted mean of the response minus its
+#'   cross-fitted prediction in each sampled area, centred with the area weights) rescaled to the
+#'   standard deviation \eqn{\hat\sigma_b(MM)}, where \eqn{\hat\sigma_b^2(MM) = \max(0, var_w(d_i) -
+#'   mean_w(\hat\sigma_e^2 / n_i))} with area weights the sums of the unit weights and, when weights are used, the effective area size (sum w)^2 / sum w^2 in the noise term; zero gives no area
+#'   effect. See the preregistration MEGB_BOOT_FIX_PREREG_v4.md.
 #' @param bootstrap_refit one of \code{"leaves_only"} (default),
 #'   \code{"full"}, or \code{"lmm_only"}.
 #'   \code{"leaves_only"} (xgboost only) freezes the tree structure of the
@@ -290,7 +352,7 @@ megb <- function(fixed,
                  mse              = TRUE,
                  mse_type         = c("var", "mse"),
                  bootstrap_refit  = c("leaves_only", "full", "lmm_only"),
-                 bench_target     = c("fixed", "random"),
+                 bench_target     = c("fixed", "random", "truth"),
                  B                = 100,
                  bootstrap_cores  = 0,
                  conf_level       = 0.95,
@@ -309,6 +371,14 @@ megb <- function(fixed,
                  predict_sampled  = NULL,
                  predict_unsampled = NULL,
                  cv_nfold         = getOption("megb.cv_nfold", 10L),
+                 em_maxit         = 25L,
+                 em_tol           = 1e-04,
+                 perturb_benchmark = FALSE,
+                 benchmark_target_se = NULL,
+                 allow_zero_benchmark_se = FALSE,
+                 arcsin_backtransform = c("exact", "plain"),
+                 boot_area_var = c("legacy", "centred", "centred_mm"),
+                 boot_synthetic = FALSE,
                  ...) {
   # weightedBS: when TRUE and smp_weights is supplied, the bootstrap residual
   # sampling uses probabilities proportional to weights (mirroring xgb's
@@ -319,12 +389,39 @@ megb <- function(fixed,
   mse_type        <- match.arg(mse_type)
   bootstrap_refit <- match.arg(bootstrap_refit)
   bench_target    <- match.arg(bench_target)
+  arcsin_backtransform <- match.arg(arcsin_backtransform)
+  boot_area_var   <- match.arg(boot_area_var)
+  boot_synthetic  <- isTRUE(boot_synthetic)
+  if (boot_synthetic && !mse) stop("boot_synthetic = TRUE needs mse = TRUE.")
   cv_folds        <- match.arg(cv_folds, c("domain", "rows"))
   if (!is.logical(early_stopping) || length(early_stopping) != 1L || is.na(early_stopping))
     stop("early_stopping must be TRUE or FALSE.")
   if (!is.numeric(cv_nfold) || length(cv_nfold) != 1L || is.na(cv_nfold) || cv_nfold < 2 || cv_nfold != round(cv_nfold))
     stop("cv_nfold must be a whole number of at least 2.")
   cv_nfold <- as.integer(cv_nfold)
+  if (!is.numeric(em_maxit) || length(em_maxit) != 1L || is.na(em_maxit) || em_maxit < 1 || em_maxit != round(em_maxit))
+    stop("em_maxit must be a whole number of at least 1.")
+  em_maxit <- as.integer(em_maxit)
+  if (!is.numeric(em_tol) || length(em_tol) != 1L || is.na(em_tol) || em_tol <= 0)
+    stop("em_tol must be a positive number.")
+  if (!is.logical(perturb_benchmark) || length(perturb_benchmark) != 1L || is.na(perturb_benchmark))
+    stop("perturb_benchmark must be TRUE or FALSE.")
+  if (perturb_benchmark) {
+    if (is.null(benchmark) || is.null(benchmark_level) || !mse)
+      stop("perturb_benchmark = TRUE needs a benchmark, a benchmark_level and mse = TRUE.")
+    if (is.null(benchmark_target_se))
+      stop("perturb_benchmark = TRUE needs benchmark_target_se, a named vector of the standard errors of the benchmark targets, keyed by benchmark_level group.")
+  }
+  if (bench_target == "truth") {
+    if (perturb_benchmark)
+      stop("bench_target = \"truth\" already draws the target error (it replaces perturb_benchmark); set perturb_benchmark = FALSE.")
+    if (is.null(benchmark) || is.null(benchmark_level) || !mse)
+      stop("bench_target = \"truth\" needs a benchmark, a benchmark_level and mse = TRUE.")
+    if (is.null(benchmark_target_se))
+      stop("bench_target = \"truth\" needs benchmark_target_se, a named vector of the standard errors of the benchmark targets, keyed by benchmark_level group.")
+    if (is.null(pop_weights))
+      stop("bench_target = \"truth\" needs pop_weights: the simulated truth of a benchmark group is aggregated with the weights the benchmark uses.")
+  }
   # Fold-model prediction (predict_sampled = "crossfit", predict_unsampled =
   # "foldmean"; the defaults from povmap 1.0.1) needs the xgboost engine, folds of
   # whole domains and, with mse = TRUE, a bootstrap that refits it
@@ -347,6 +444,9 @@ megb <- function(fixed,
   predict_sampled   <- .resolve(predict_sampled, "predict_sampled", "crossfit")
   predict_unsampled <- .resolve(predict_unsampled, "predict_unsampled", "foldmean")
   .fold_pred <- predict_sampled == "crossfit" || predict_unsampled == "foldmean"
+  # boot_synthetic: the synthetic prediction of a sampled area must be the held-out (cross-fitted) one, as in MEGB_BOOT_FIX_PREREG_v8_final.md
+  if (boot_synthetic && !identical(predict_sampled, "crossfit"))
+    stop("boot_synthetic = TRUE needs predict_sampled = \"crossfit\" (the synthetic prediction of a sampled area is its cross-fitted one).")
 
   # Local %||% so the diagnostic message below isn't fragile to NULLs.
   `%||%` <- function(a, b) if (is.null(a)) b else a
@@ -377,8 +477,8 @@ megb <- function(fixed,
   # all-NA Mean_bench).
   add_benchmark_megb <- function(x, benchmark_level, fwk, fixed,
                                  benchmark, benchmark_type, domain_labels = NULL) {
-    # Carry domain labels so benchmark_xgb_level can assert positional alignment
-    # with unique(pop_data[[domains]]) (guards the key-alignment fix above).
+    # Carry the domain labels so benchmark_xgb_level matches the estimates to domains by name (it refuses unlabelled
+    # estimates). Every caller passes them: the point estimate and each bootstrap replicate (benchmark_fn).
     point_estim       <- if (!is.null(domain_labels))
                            list(ind = data.frame(Mean = x, Domain = domain_labels,
                                                  stringsAsFactors = FALSE))
@@ -467,64 +567,37 @@ megb <- function(fixed,
     # the leaves_only bootstrap re-estimates the random effects from the fold
     # models' out-of-fold residuals, as the point estimate does
     keep_fold_models = mse && bootstrap_refit == "leaves_only" && gbm_engine == "xgboost",
+    em_maxit        = em_maxit,
+    em_tol          = em_tol,
     ...
   )
 
   # ── 5b. Jensen-corrected back-transformation ─────────────────────────────────
   # E[g^{-1}(hat_t + e)] > g^{-1}(hat_t) for convex g^{-1}. We correct using
   # the MEGB-estimated error variance sigma2_e. Analytical formulae follow
-  # expected_untransformed_mean() in point_estimation.R (9th-order Taylor for
-  # arcsin; exact lognormal formula for log/log.shift/poisson).
+  # expected_untransformed_mean() in point_estimation.R (exact
+  # E[sin^2] formula for arcsin; exact lognormal formula for log/log.shift/poisson).
   sigma2_e <- tryCatch({
     err_sd <- megb_fit$megb_model$error_sd
     if (!is.null(err_sd) && !is.na(err_sd) && err_sd > 0) err_sd^2 else 0
   }, error = function(e) 0)
 
-  # corrected_bt uses a lean captured environment (only scalar values + package ns)
-  # so parallel workers don't get the full megb() scope serialised (~1.5 GiB).
-  corrected_bt <- function(hat_t) {
-    if (.sigma2 == 0 || .transf %in% c("no", "logistic")) {
-      return(switch(.transf,
-        "no"        = hat_t,
-        "log"       = exp(hat_t),
-        "log.shift" = exp(hat_t) - .ls_lam,
-        "arcsin"    = arcsin_transform_back(hat_t),
-        "logistic"  = logit_transform_back(hat_t),
-        "poisson"   = expm1(hat_t),
-        hat_t
-      ))
-    }
-    switch(.transf,
-      "log"       = exp(hat_t + 0.5 * .sigma2),
-      "log.shift" = exp(hat_t + 0.5 * .sigma2) - .ls_lam,
-      "poisson"   = pmax(0, expm1(hat_t + 0.5 * .sigma2)),
-      "arcsin"    = {
-        term1 <- arcsin_transform_back(hat_t)
-        dy2dx <- -2 * sin(hat_t)^2 + 2 * cos(hat_t)^2
-        term1 +
-          0.5       * dy2dx * .sigma2 -
-          (1/24)    * (-4  * dy2dx) * 3   * .sigma2^2 +
-          (1/720)   * (-16 * dy2dx)       * .sigma2^3 +
-          (1/40320) * (-64 * dy2dx)       * .sigma2^4
-      },
-      hat_t
-    )
-  }
-  environment(corrected_bt) <- list2env(
-    list(
-      .sigma2 = sigma2_e,
-      .transf = transformation,
-      .ls_lam = if (transformation == "log.shift") ls_lambda else NULL
-    ),
-    parent = getNamespace("povmap")
-  )
+  # Jensen-corrected back-transformation (adds the random effect's conditional variance to sigma2_e)
+  corrected_bt <- .megb_make_corrected_bt(sigma2_e, transformation,
+    if (transformation == "log.shift") ls_lambda else NULL,
+    arcsin_plain = arcsin_backtransform == "plain")
   # Marks the identity back-transform, the one case in which the leaves_only
   # bootstrap may aggregate from leaf values (povmap.leaves_only.leaf_aggregate).
   attr(corrected_bt, "identity") <- identical(transformation, "no")
 
   # ── 6. Back-transform unit predictions and aggregate to domain level ──────────
   unit_preds_pop      <- megb_fit$unit_preds_all       # columns: unit_preds, dom_name
-  unit_preds_pop$hat  <- corrected_bt(unit_preds_pop$unit_preds)
+  # Conditional variance of each domain's random effect (sigma_b^2 for unsampled domains,
+  # the BLUP's prediction variance for sampled ones), from the same lmer fit that predicts
+  # the random effect; added to sigma2_e in the back-transformation.
+  re_cv_dom <- .megb_re_var(corrected_bt, megb_fit$megb_model$effect_model, all_levels)
+  re_cv_row <- as.numeric(re_cv_dom[match(as.character(unit_preds_pop$dom_name), all_levels)])
+  unit_preds_pop$hat  <- corrected_bt(unit_preds_pop$unit_preds, re_cv_row)
 
   if (!is.null(pop_weights)) {
     pw           <- fwk$pop_weights_vec                # same row order as pop_megb
@@ -562,7 +635,7 @@ megb <- function(fixed,
   crossfit_out <- NULL
   if (.fold_pred) {
     .agg <- function(u) {
-      h <- corrected_bt(u)
+      h <- corrected_bt(u, re_cv_row)
       m <- if (!is.null(pop_weights))
              tapply(h * fwk$pop_weights_vec, unit_preds_pop$dom_name, sum) /
              tapply(fwk$pop_weights_vec,     unit_preds_pop$dom_name, sum)
@@ -654,7 +727,12 @@ megb <- function(fixed,
   if (!is.null(benchmark) && mse) {
     # Use a lean captured environment: explicit values only, parent = package ns.
     # This prevents serialising the full megb() scope to each parallel worker.
-    benchmark_fn <- function(est_orig, boot_smp_data) {
+    # domain_labels: the domain of each element of est_orig, in the order of est_orig. Required: the benchmark matches the
+    # replicate's estimates to benchmark groups by these names (povmap <= 1.0.6 assumed the first-appearance order of
+    # pop_data, which differs from the order of est_orig, so replicates were benchmarked under another domain's group).
+    benchmark_fn <- function(est_orig, boot_smp_data, domain_labels) {
+      if (missing(domain_labels) || is.null(domain_labels) || length(domain_labels) != length(est_orig))
+        stop("benchmark_fn: domain_labels (one per element of est_orig) are required.")
       # Branch order: explicit user-supplied target → precomputed fixed target
       # (internal + bench_target="fixed") → recompute from bootstrap survey
       # (random target).
@@ -663,7 +741,9 @@ megb <- function(fixed,
       # unweighted mean would produce a different statistic and jitter far
       # more than the weighted target under skewed survey weights, widening
       # bench CIs spuriously.
-      bm_val <- if (is.numeric(.bm) || is.data.frame(.bm)) {
+      bm_val <- if (!is.null(attr(boot_smp_data, "bm_target"))) {
+        attr(boot_smp_data, "bm_target")   # bench_target = "truth": this replicate's own target
+      } else if (is.numeric(.bm) || is.data.frame(.bm)) {
         .bm
       } else if (!is.null(.fixed_bm)) {
         .fixed_bm
@@ -697,6 +777,7 @@ megb <- function(fixed,
       }
       .add_bm(
         x               = est_orig,
+        domain_labels   = as.character(domain_labels),
         benchmark_level = .bm_level,
         fwk             = .fwk,
         fixed           = .fixed,
@@ -704,6 +785,10 @@ megb <- function(fixed,
         benchmark_type  = .bm_type
       )
     }
+    # What the workers receive: the framework without the census columns benchmark_fn never reads, and the formula
+    # without the environment it was written in (the whole megb() frame). Neither changes any number.
+    fixed_lean <- fixed
+    if (inherits(fixed_lean, "formula")) environment(fixed_lean) <- globalenv()
     environment(benchmark_fn) <- list2env(
       list(
         .bm       = benchmark,
@@ -711,9 +796,13 @@ megb <- function(fixed,
         .bm_type  = benchmark_type,
         .bm_w_var = if (!is.null(fwk$benchmark_weights)) fwk$benchmark_weights
                     else fwk$smp_weights,
-        .fwk      = fwk,
-        .fixed    = fixed,
-        .corr_bt  = corrected_bt,
+        .fwk      = .megb_lean_framework(fwk, benchmark_level),
+        .fixed    = fixed_lean,
+        # y_star = gb + u* + e* already contains the unit error draw e*, like the observed y the
+        # fixed target uses, so it takes the plain back-transform (sigma2_e = 0): no Jensen correction.
+        .corr_bt  = .megb_make_corrected_bt(0, transformation,
+                                            if (transformation == "log.shift") ls_lambda else NULL,
+                                            arcsin_plain = arcsin_backtransform == "plain"),
         .add_bm   = add_benchmark_megb,
         .fixed_bm = fixed_bm_val
       ),
@@ -751,6 +840,21 @@ megb <- function(fixed,
     }
   }
 
+  # bench_target = "truth": the group of each domain, its population total (the weight benchmark_xgb_level aggregates the
+  # estimate with) and the B x G draws of the target error, made once before the bootstrap from a stream of their own.
+  bench_star <- NULL
+  if (bench_target == "truth" && mse) {
+    dom_lab   <- as.character(fwk$pop_data[[domains]])
+    dom_u     <- sort(unique(dom_lab))   # sorted, not first-appearance: the draws are assigned to groups in this order, so they must not depend on the row order of pop_data (as in .megb_perturb_bench)
+    dom_group <- stats::setNames(as.character(fwk$pop_data[[benchmark_level]][match(dom_u, dom_lab)]), dom_u)
+    dom_w     <- tapply(as.numeric(fwk$pop_data[[fwk$pop_weights]]), dom_lab, sum)
+    bm_draws  <- .megb_bench_draws(benchmark_target_se, unique(dom_group[!is.na(dom_group)]), B, seed,
+                                   allow_zero_benchmark_se, "bench_target = \"truth\"")$draws
+    bm_bounds <- .megb_bench_bounds(transformation)
+    bench_star <- list(dom_group = dom_group, dom_w = stats::setNames(as.numeric(dom_w), names(dom_w)),
+                       draws = bm_draws, lo = bm_bounds[["lo"]], hi = bm_bounds[["hi"]])
+  }
+
   mse_estimated <- NULL
   if (mse) {
     message("Bootstrap with ", B, " iterations has started")
@@ -780,8 +884,8 @@ megb <- function(fixed,
       pop_data               = boot_pop_data,
       B                      = B,
       initial_random_effects = 0,
-      ErrorTolerance         = .megb_em_error_tolerance,
-      MaxIterations          = .megb_em_max_iterations,
+      ErrorTolerance         = em_tol,
+      MaxIterations          = em_maxit,
       cov_names              = megb_fit$cov_names_proc,
       gradient_params        = gradient_params,
       formula_random_effects = megb_fit$formula_random_effects,
@@ -806,8 +910,26 @@ megb <- function(fixed,
       cv_nfold               = cv_nfold,
       fold_fit               = .megb_fold_fit(megb_fit$megb_model),
       predict_sampled        = predict_sampled,
-      predict_unsampled      = predict_unsampled
+      predict_unsampled      = predict_unsampled,
+      bench_star             = bench_star,
+      boot_area_var          = boot_area_var,
+      boot_synthetic         = boot_synthetic
     )
+  }
+
+  # ── 6e. Benchmark-target perturbation (perturb_benchmark = TRUE) ──────────────
+  # As in xgb: after the bootstrap, add the pre-drawn target noise to the benchmarked replicates on the
+  # model's transformed scale; the truth side is not perturbed.
+  bm_perturbation <- NULL
+  if (perturb_benchmark && !is.null(mse_estimated$tau_b_bench)) {
+    mse_estimated <- .megb_perturb_bench(
+      mse_estimated, benchmark_target_se = benchmark_target_se,
+      allow_zero = allow_zero_benchmark_se, B = B, seed = seed,
+      dom_group = fwk$pop_data[[benchmark_level]][match(as.character(mse_estimated$MSE_estimates[[1]]),
+                                                         as.character(fwk$pop_data[[domains]]))],
+      transformation = transformation, transform_outcome = transform_outcome,
+      back_transform_outcome = back_transform_outcome)
+    bm_perturbation <- mse_estimated$benchmark_perturbation
   }
 
   # ── 7. Variance / MSE and CI ─────────────────────────────────────────────────
@@ -960,6 +1082,15 @@ megb <- function(fixed,
     }
   }
 
+  # Unperturbed benchmarked variance (var) or MSE (mse), kept next to the perturbed one as in xgb.
+  var_bench_unpert_df <- NULL
+  if (!is.null(mse_estimated$tau_b_bench_unperturbed)) {
+    err0 <- mse_estimated$tau_b_bench_unperturbed - mse_estimated$tau_star_orig_bench
+    v0   <- if (mse_type == "var") .megb_error_interval(err0, alpha)$var else rowMeans(err0^2, na.rm = TRUE)
+    var_bench_unpert_df <- data.frame(Domain = as.character(mse_estimated$MSE_estimates[[1]]),
+                                      Var_bench_unperturbed = as.numeric(v0), stringsAsFactors = FALSE)
+  }
+
   # ── 8. Sample-level predictions (back-transformed) ───────────────────────────
   unit_pred_smp_bt <- corrected_bt(megb_fit$unit_pred_smp)
   yhat <- data.frame(
@@ -1024,6 +1155,25 @@ megb <- function(fixed,
       boot_ran_eff_sd_q  = qsum(mse_estimated$boot_ran_eff_sd_boot),
       boot_error_sd_q    = qsum(mse_estimated$boot_error_sd)
     )
+    # boot_area_var != "legacy": mode, the moment estimator sigma_b2(MM) and the pool sizes (absent for "legacy")
+    if (!identical(boot_area_var, "legacy")) boot_diag$boot_area_var <- mse_estimated$boot_area_mm
+    # boot_synthetic = TRUE: the point fit's synthetic area prediction, the replicates' (reporting scale, unbenchmarked), their truth and the MSE of the
+    # synthetic prediction per area; the input of megb_level_calibration() (MEGB_BOOT_FIX_PREREG_v8_final.md, option A)
+    if (boot_synthetic && !is.null(mse_estimated$synth_boot_orig)) {
+      sy_dom <- as.character(mse_estimated$domains)
+      re_syn <- .megb_re_var(corrected_bt, megb_fit$megb_model$effect_model, rep(".synthetic.", nrow(unit_preds_pop)))
+      h_syn  <- corrected_bt(unit_preds_pop$gb_pop, re_syn)
+      sy_pt  <- if (!is.null(pop_weights)) tapply(h_syn * pw, unit_preds_pop$dom_name, sum) / tapply(pw, unit_preds_pop$dom_name, sum)
+                else tapply(h_syn, unit_preds_pop$dom_name, mean)
+      sy_truth <- mse_estimated$tau_star_orig_unb
+      boot_diag$synthetic <- list(
+        domains   = sy_dom,
+        sampled   = sy_dom %in% as.character(unique(fwk$smp_data[[domains]])),
+        point     = as.numeric(sy_pt[match(sy_dom, names(sy_pt))]),
+        boot      = mse_estimated$synth_boot_orig,
+        truth     = sy_truth,
+        mse_synth = rowMeans((mse_estimated$synth_boot_orig - sy_truth)^2, na.rm = TRUE))
+    }
     message(sprintf(
       "Bootstrap diagnostics: original ran_eff_sd = %.4f, error_sd = %.4f.\n  Bootstrap ran_eff_sd quartiles (min,Q1,Q2,Q3,max) = %s\n  Bootstrap error_sd   quartiles                  = %s\n  Frac bootstrap iters with ran_eff_sd < 1e-4 = %.2f",
       megb_fit$megb_model$ran_eff_sd %||% NA_real_,
@@ -1056,6 +1206,16 @@ megb <- function(fixed,
     cv_nfold       = cv_nfold,
     crossfit       = crossfit_out
   )
+
+  if (perturb_benchmark) {
+    result$Var_bench_unperturbed <- var_bench_unpert_df
+    result$benchmark_perturbation <- bm_perturbation
+  }
+  if (identical(transformation, "arcsin") && arcsin_backtransform == "plain") result$arcsin_backtransform <- "plain"
+  if (!is.null(bench_star)) {
+    result$bench_target <- "truth"
+    result$benchmark_target_draws <- bench_star$draws   # B x G draws of the target error (N(0, SE_g^2)), by benchmark group
+  }
 
   class(result) <- c("megb", "xgb", "povmap")
   return(result)

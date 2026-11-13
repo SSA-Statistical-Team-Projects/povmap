@@ -38,7 +38,7 @@ make_guard_data <- function(seed = 11) {
 
 fit_guard <- function(d, se, perturb = TRUE, ...) {
   args <- list(fixed = y ~ x1 + x2, smp_data = d$smp, smp_weights = "wt", pop_data = d$pop, pop_weights = "npop",
-               domains = "dom", sub_domains = "sub", transformation = "arcsin", bootstrap = TRUE, B = 30, L = 5, cpus = 1,
+               domains = "dom", sub_domains = "sub", transformation = "arcsin", area_pool = "in_sample", weightedBS = TRUE, bootstrap = TRUE, B = 30, L = 5, cpus = 1,
                seed = 3, nrounds = 15, eta = 0.3, max_depth = 2, colsample_bylevel = 1, colsample_bynode = 1, subsample = 1,
                benchmark = "Mean", benchmark_level = "reg", benchmark_type = "logit_raking",
                perturb_benchmark = perturb, benchmark_target_se = se)

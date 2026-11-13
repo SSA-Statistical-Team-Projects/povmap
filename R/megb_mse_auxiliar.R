@@ -6,15 +6,26 @@
 # TRUE, residuals are drawn with probability proportional to weights (matching
 # xgb's weightedBS semantics). When weights are NULL or weightedBS is FALSE,
 # residuals are drawn with equal probability (historical behaviour).
+#
+# boot_area_var != "legacy" (ran_comp): `pool` (and `pool_w`, its weights) is the
+# pooled, within-area centred and scaled residual pool of the areas with at least
+# two sampled units. A sampled area with a single unit, and every unsampled area,
+# draw from it. NULL (legacy) leaves the sampler unchanged.
 block_sample <- function(domains, in_samp, smp_data, dom_name, pop_data, gb_res,
-                          weights = NULL, weightedBS = FALSE) {
+                          weights = NULL, weightedBS = FALSE,
+                          pool = NULL, pool_w = NULL) {
   block_err <- vector(mode = "list", length = length(domains))
   use_w     <- !is.null(weights) && isTRUE(weightedBS)
 
   for (idd in which(in_samp)) {
     in_dom <- which(smp_data[[dom_name]] == domains[idd])
-    x_vals <- gb_res[in_dom]
-    p_vals <- if (use_w) weights[in_dom] / sum(weights[in_dom]) else NULL
+    if (!is.null(pool) && length(in_dom) == 1L) {
+      x_vals <- pool
+      p_vals <- if (use_w && !is.null(pool_w)) pool_w / sum(pool_w) else NULL
+    } else {
+      x_vals <- gb_res[in_dom]
+      p_vals <- if (use_w) weights[in_dom] / sum(weights[in_dom]) else NULL
+    }
     block_err[[idd]] <- sample(
       x_vals,
       size    = sum(pop_data[dom_name] == domains[idd]),
@@ -27,9 +38,14 @@ block_sample <- function(domains, in_samp, smp_data, dom_name, pop_data, gb_res,
     # OOS domains draw from the full residual pool, weighted across the entire
     # in-sample if weights are in use.
     pool_prob <- if (use_w) weights / sum(weights) else NULL
+    oos_pool  <- gb_res
+    if (!is.null(pool)) {
+      oos_pool  <- pool
+      pool_prob <- if (use_w && !is.null(pool_w)) pool_w / sum(pool_w) else NULL
+    }
     for (idd in which(!in_samp)) {
       block_err[[idd]] <- sample(
-        gb_res,
+        oos_pool,
         size    = sum(pop_data[dom_name] == domains[idd]),
         replace = TRUE,
         prob    = pool_prob
@@ -89,7 +105,8 @@ sample_select <- function(pop, smp, dom_name) {
 #              (pure idiosyncratic residuals, not domain-demeaned).
 #
 ran_comp <- function(unit_pred_smp, smp_data, Y, dom_name, error_sd,
-                     cov_names = cov_names, model, weights = NULL) {
+                     cov_names = cov_names, model, weights = NULL,
+                     boot_area_var = "legacy", gb_smp = NULL, weightedBS = FALSE) {
   # weights: numeric vector aligned to rows of smp_data. When supplied,
   # gb_res rescaling uses weighted SD and weighted-mean centering so the
   # residual pool is properly normalised under the survey design.
@@ -142,11 +159,95 @@ ran_comp <- function(unit_pred_smp, smp_data, Y, dom_name, error_sd,
     gb_res    <- gb_res - wmean(gb_res, weights)
   }
 
+  area_w_out <- if (!is.null(weights))
+    as.numeric(tapply(weights, smp_data[[dom_name]], sum)[as.character(unique(smp_data[[dom_name]]))])
+    else NULL
+
+  # ── boot_area_var != "legacy" (MEGB_BOOT_FIX_PREREG_v4.md) ───────────────────
+  # `residuals_gb` (above) = Y - unit_pred_smp, on the transformed scale of the fit. With
+  # predict_sampled = "crossfit" (mse_megb) unit_pred_smp = cross-fitted booster prediction (the fold
+  # model that held the area out) + the area BLUP; otherwise the in-sample booster fit + BLUP.
+  # The legacy block above is computed first and is not touched, so "legacy" is the
+  # previous behaviour bit for bit. No random numbers are drawn here.
+  if (!identical(boot_area_var, "legacy")) {
+    out <- .megb_boot_area_var(boot_area_var, residuals_gb, Y, gb_smp, smp_data, dom_name,
+                               error_sd, weights, weightedBS, ran_effs)
+    gb_res   <- out$gb_res
+    ran_effs <- out$ran_effs
+    smp_data_tmp$gb_res <- gb_res
+    return(list(gb_res = gb_res, ran_effs = ran_effs, smp_data = smp_data_tmp,
+                area_w = area_w_out, pool_res = out$pool_res, pool_w = out$pool_w,
+                area_mm = out$area_mm))
+  }
+
   smp_data_tmp$gb_res <- gb_res
   list(gb_res = gb_res, ran_effs = ran_effs, smp_data = smp_data_tmp,
-       area_w = if (!is.null(weights))
-         as.numeric(tapply(weights, smp_data[[dom_name]], sum)[as.character(unique(smp_data[[dom_name]]))])
-         else NULL)
+       area_w = area_w_out)
+}
+
+# The two non-legacy bootstrap worlds. Pure function of its arguments (no RNG).
+#  "centred":    e* pool = residuals centred within the area (weighted mean when
+#                weightedBS and weights are in use) and scaled by sqrt(n_i/(n_i - 1));
+#                areas with one sampled unit are excluded from the pool and draw from it.
+#  "centred_mm": "centred" plus the area effects u*: the sampled areas' centred
+#                deviations d_i (weighted mean of Y - gb_smp, centred with the area
+#                weights) rescaled to the standard deviation sqrt(sigma_b2_MM), with
+#                sigma_b2_MM = max(0, var_w(d_i) - mean_w(error_sd^2 / n_i)), weights
+#                a_i = sum of the unit weights of area i (unit weights 1 when absent).
+.megb_boot_area_var <- function(mode, residuals_gb, Y, gb_smp, smp_data, dom_name,
+                                error_sd, weights, weightedBS, ran_effs_legacy) {
+  stopifnot(mode %in% c("centred", "centred_mm"))
+  dom_chr <- as.character(smp_data[[dom_name]])
+  insamp  <- as.character(unique(smp_data[[dom_name]]))
+  fdom    <- factor(dom_chr, levels = insamp)
+  n_row   <- as.numeric(table(fdom)[dom_chr])
+  use_w   <- !is.null(weights) && isTRUE(weightedBS)
+
+  area_mean <- if (use_w) {
+    as.numeric((tapply(residuals_gb * weights, fdom, sum) / tapply(weights, fdom, sum))[dom_chr])
+  } else {
+    as.numeric(tapply(residuals_gb, fdom, mean)[dom_chr])
+  }
+  multi <- n_row >= 2
+  if (!any(multi))
+    stop("boot_area_var = \"", mode, "\" needs at least one area with two or more sampled units.")
+  gb_res <- (residuals_gb - area_mean) * sqrt(ifelse(multi, n_row / (n_row - 1), 1))
+  gb_res[!multi] <- 0                     # never drawn: single-unit areas use the pool
+  pool_res <- gb_res[multi]
+  pool_w   <- if (use_w) weights[multi] else NULL
+
+  ran_effs <- ran_effs_legacy
+  # diagnostics of both new modes: the spread of the centred pool the e* are drawn from, and the fit's error SD
+  area_mm  <- list(pool_sd = if (is.null(pool_w)) stats::sd(pool_res)
+                             else sqrt(sum(pool_w * (pool_res - stats::weighted.mean(pool_res, pool_w))^2) / sum(pool_w)),
+                   error_sd = error_sd)
+  if (identical(mode, "centred_mm")) {
+    if (is.null(gb_smp) || length(gb_smp) != length(Y))
+      stop("boot_area_var = \"centred_mm\" needs the cross-fitted (held-out) booster prediction of every sample row; ",
+           "the fit kept none (keep_fold_models).")
+    w_u   <- if (is.null(weights)) rep(1, length(Y)) else weights
+    a_i   <- as.numeric(tapply(w_u, fdom, sum))
+    d_i   <- as.numeric(tapply(w_u * (Y - gb_smp), fdom, sum)) / a_i
+    n_i   <- as.numeric(table(fdom))
+    # effective area sample size: Kish (sum w)^2 / sum w^2 when unit weights are used, n_i otherwise
+    n_eff <- if (is.null(weights)) n_i else a_i^2 / as.numeric(tapply(w_u^2, fdom, sum))
+    dbar  <- sum(a_i * d_i) / sum(a_i)
+    var_w <- sum(a_i * (d_i - dbar)^2) / sum(a_i)
+    noise <- sum(a_i * error_sd^2 / n_eff) / sum(a_i)
+    sb2   <- max(0, var_w - noise)
+    # The draws u* are taken with equal probability, or with probability proportional to a_i when weightedBS and
+    # weights are in use (sample_ud in mse_megb). The pool is centred and rescaled under exactly those
+    # probabilities, so the empirical sd of the drawn u* is sqrt(sb2). (The legacy rescale of the BLUPs to
+    # ran_eff_sd, in ran_comp above, is bypassed here.)
+    w_s   <- if (use_w) a_i else rep(1, length(d_i))
+    dc    <- d_i - sum(w_s * d_i) / sum(w_s)
+    sd_s  <- sqrt(sum(w_s * dc^2) / sum(w_s))
+    ran_effs <- if (sb2 > 0 && sd_s > 1e-10) dc / sd_s * sqrt(sb2) else rep(0, length(d_i))
+    area_mm  <- c(area_mm, list(sigma_b2_mm = sb2, var_w_d = var_w, mean_noise = noise,
+                                mean_noise_n = sum(a_i * error_sd^2 / n_i) / sum(a_i),
+                                n_areas = length(d_i), n_single_unit_areas = sum(n_i < 2)))
+  }
+  list(gb_res = gb_res, ran_effs = ran_effs, pool_res = pool_res, pool_w = pool_w, area_mm = area_mm)
 }
 
 # ── Leaf-level domain aggregation for the leaves_only bootstrap ─────────────────

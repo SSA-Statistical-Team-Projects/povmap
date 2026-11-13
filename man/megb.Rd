@@ -15,7 +15,7 @@ megb(
   mse = TRUE,
   mse_type = c("var", "mse"),
   bootstrap_refit = c("leaves_only", "full", "lmm_only"),
-  bench_target = c("fixed", "random"),
+  bench_target = c("fixed", "random", "truth"),
   B = 100,
   bootstrap_cores = 0,
   conf_level = 0.95,
@@ -34,6 +34,14 @@ megb(
   predict_sampled = NULL,
   predict_unsampled = NULL,
   cv_nfold = getOption("megb.cv_nfold", 10L),
+  em_maxit = 25L,
+  em_tol = 1e-04,
+  perturb_benchmark = FALSE,
+  benchmark_target_se = NULL,
+  allow_zero_benchmark_se = FALSE,
+  arcsin_backtransform = c("exact", "plain"),
+  boot_area_var = c("legacy", "centred", "centred_mm"),
+  boot_synthetic = FALSE,
   ...
 )
 }
@@ -94,6 +102,23 @@ benchmarked estimator — and uses a normal-approximation CI. \code{"mse"}
 is generally wider than \code{"var"} because it includes the irreducible
 variability of the random effect.}
 
+\item{boot_synthetic}{logical, default \code{FALSE}. \code{TRUE} (needs \code{mse = TRUE} and \code{bootstrap_refit = "leaves_only"}) adds
+\code{boot_diag$synthetic}: the point fit's cross-fitted synthetic area prediction (booster part only, no area effect, the back-transformation of an
+unsampled area, unbenchmarked, on the reporting scale), the same prediction of every bootstrap replicate, the replicates' unbenchmarked truth and the
+bootstrap MSE of the synthetic prediction per area. Estimates, MSE and intervals are unchanged (bit for bit). Input of \code{megb_level_calibration()}.}
+
+\item{boot_area_var}{how the bootstrap world's area-level variance is built; one of
+\code{"legacy"} (default), \code{"centred"} or \code{"centred_mm"}. Point estimates are the same under
+every option; only the bootstrap (hence the MSE and the intervals) changes. \code{"legacy"}
+reproduces the previous behaviour. \code{"centred"}: the residual pool of each area is centred within
+the area (weighted mean when \code{weightedBS = TRUE}) and scaled by \eqn{\sqrt{n_i/(n_i-1)}}; areas
+with a single sampled unit and unsampled areas draw from the pooled residuals of the areas with at
+least two units. \code{"centred_mm"}: \code{"centred"} plus bootstrap area effects drawn, with
+replacement, from the sampled areas' centred deviations \eqn{d_i} (weighted mean of the response minus
+its cross-fitted prediction) rescaled to the standard deviation \eqn{\hat\sigma_b(MM)} with
+\eqn{\hat\sigma_b^2(MM) = \max(0, var_w(d_i) - mean_w(\hat\sigma_e^2/n_i))}; zero gives no area
+effect.}
+
 \item{bootstrap_refit}{one of \code{"leaves_only"} (default),
 \code{"full"}, or \code{"lmm_only"}.
 \code{"leaves_only"} (xgboost only) freezes the tree structure of the
@@ -130,35 +155,37 @@ holds for low-dimensional linear FE models but \emph{not} for boosted
 trees, where it typically understates SE by an order of magnitude. Use
 only if you explicitly want the classical-EBLUP variance decomposition.}
 
-\item{bench_target}{one of \code{"fixed"} (default) or \code{"random"}.
-Controls how the benchmark target is treated *inside the bootstrap*. "fixed"
-rakes every replicate to the observed (province/level) target, so the
-benchmarked MSE/CI is the spread of the estimate around the realised truth at
-the observed target — the correct choice for benchmarking to an observed survey
-target. "random" recomputes the target from each replicate's own resampled
-survey, which makes the benchmarked estimate track its own bootstrap mean and
-collapses the level variance, giving too-narrow intervals (census-validated:
-well-sampled-area coverage 0.74 under "random" vs 0.96 under "fixed"). Only
-matters when \code{benchmark} is character (internal, survey-derived
-benchmarking); for numeric or data.frame benchmarks the target is a
-constant by construction.
-\code{"random"} (default): recompute the target on every bootstrap
-iteration from the bootstrap-simulated survey data. Both the target and
-the model estimate vary together, preserving the joint sampling
-correlation between them — which is the right thing for re-sampling-based
-inference about the unconditional variance of the benchmarked estimator.
-In practice this is also typically *narrower* than \code{"fixed"} for
-internal benchmarks: when survey resamples shift the target up they also
-shift the model estimate up, so the benchmark-adjustment shift \eqn{c}
-has less work to do, and \eqn{var(c) \propto var(T - WM)} stays small.
-\code{"fixed"}: hold the target at the value computed from the *observed*
-survey and reuse it on every iteration. The resulting variance is
-conditional on the target — \eqn{Var(\hat\theta_{bench} \mid target)}.
-Use this when the benchmark target really is a known constraint that you
-don't want to bootstrap over. For survey-derived (internal) benchmarks
-the target *is* itself a sample statistic, so this conditioning is a
-somewhat artificial inferential target — \code{"random"} is usually
-preferable.}
+\item{bench_target}{one of \code{"fixed"} (default), \code{"random"} or \code{"truth"}.
+Controls how the benchmark target is treated *inside the bootstrap*.
+\describe{
+  \item{\code{"fixed"}}{rakes every replicate to the observed (province/level)
+    target, so the benchmarked MSE/CI is the spread of the estimate around the
+    realised truth at the observed target. This is the default and the choice
+    for benchmarking to an observed survey target.}
+  \item{\code{"random"}}{recomputes the target from each replicate's own resampled
+    survey, weighted by \code{benchmark_weights}. The benchmarked estimate then
+    tracks its own bootstrap mean and the level variance collapses, giving
+    too-narrow intervals. Only matters when \code{benchmark} is character
+    (internal, survey-derived benchmarking); for numeric or data.frame
+    benchmarks the target is a constant by construction.}
+  \item{\code{"truth"}}{rakes replicate b to \eqn{T^*_{g,b} = \tau_{g,b} + \epsilon_{g,b}},
+    where \eqn{\tau_{g,b}} is the simulated truth of benchmark group g in that
+    replicate, aggregated from the domain truths with the population totals the
+    benchmark aggregates the estimate with, and \eqn{\epsilon_{g,b} \sim N(0, SE_g^2)}
+    is the error of the observed target, with \eqn{SE_g} from \code{benchmark_target_se}.
+    The provincial error of the benchmarked estimate is then \eqn{\epsilon_{g,b}}
+    alone: the sampling error of the target is counted once, and the spread
+    of the simulated provincial truth is not added to it. The \eqn{B \times G}{B x G}
+    draws come once from \code{seed} on a stream of their own (the same stream and
+    draws as \code{perturb_benchmark}), the target is clamped like the perturbed
+    replicates (lower bound 1e-9 for arcsin, log and poisson, upper bound 1 - 1e-9
+    for arcsin), and the point estimate is unchanged, raked to the observed
+    \code{benchmark}. With \eqn{SE_g = 0} the provincial error is zero. Needs
+    \code{benchmark}, \code{benchmark_level}, \code{pop_weights}, \code{mse = TRUE}
+    and \code{benchmark_target_se}, and excludes \code{perturb_benchmark}.
+    Works with every \code{bootstrap_refit}. The result then holds
+    \code{bench_target = "truth"} and \code{benchmark_target_draws}.}
+}}
 
 \item{B}{number of parametric bootstrap iterations for MSE estimation.
 Defaults to \code{100}.}
@@ -274,6 +301,51 @@ When not supplied, the default is taken from
 \code{getOption("megb.cv_nfold", 10L)}. For the settings before povmap
 1.0.1 use \code{cv_nfold = 5, predict_sampled = "full",
 predict_unsampled = "full"}.}
+
+\item{em_maxit}{the maximum number of EM iterations of the point fit (and of each
+replicate fit of \code{bootstrap_refit = "full"}). Default 25. The EM stops earlier
+when the relative log-likelihood change falls below \code{em_tol}. A resampled
+cross-validation inside each iteration makes the log-likelihood jitter, so with
+boosting the rule is often not met and the fit runs to \code{em_maxit}; check the
+\eqn{\sigma_b^2} trajectory (\code{megb_model$iterations_used}) before relying on it.}
+
+\item{em_tol}{the EM stopping tolerance on the relative change of the log-likelihood.
+Default \code{1e-04}.}
+
+\item{perturb_benchmark}{logical, default \code{FALSE}. If \code{TRUE}, the benchmarked
+bootstrap replicates are perturbed by the sampling error of the benchmark target,
+exactly as in \code{\link{xgb}}: after the bootstrap, a draw from
+\eqn{N(0, SE_g^2)} is added to the benchmarked replicate of every domain in benchmark
+group \eqn{g}, on the model's transformed scale (the increment is the draw times the
+local slope of the transformation, \code{.perturb_slope}) and back-transformed; for
+\code{transformation = "no"} it is added directly. The truth side is not perturbed. The
+\eqn{B \times G}{B x G} draws are made once from \code{seed} (a stream of their own, so the
+bootstrap is unchanged). Needs \code{benchmark}, \code{benchmark_level},
+\code{mse = TRUE} and \code{benchmark_target_se}. With \code{FALSE} the result is
+identical to povmap 1.0.3. The result then also holds \code{Var_bench_unperturbed} and
+\code{benchmark_perturbation}. Exclusive with \code{bench_target = "truth"}, which draws the target error itself.}
+
+\item{benchmark_target_se}{a named numeric vector of the standard errors of the
+benchmark targets, keyed by \code{benchmark_level} group; the SD of the perturbation
+(\code{perturb_benchmark = TRUE}) or of the target error (\code{bench_target = "truth"}).
+Required by either; a missing group, or a non-finite,
+negative or (unless \code{allow_zero_benchmark_se}) zero value is an error. Unlike
+\code{xgb}, there is no internal Horvitz-Thompson fallback.}
+
+\item{allow_zero_benchmark_se}{logical, default \code{FALSE}. Allows a zero standard
+error for some benchmark group (a warning is given; the perturbation or the target error adds nothing there).}
+
+\item{arcsin_backtransform}{one of \code{"exact"} (default) or \code{"plain"}; used only with
+\code{transformation = "arcsin"}. \code{"exact"} back-transforms each census cell with the exact
+mean of \eqn{\sin^2} under normal error, \eqn{1/2 - 1/2 \cos(2\mu) e^{-2v}}, where \eqn{v} is
+\eqn{\sigma_e^2} plus the conditional variance of the area random effect. \code{"plain"} uses
+\eqn{\sin^2(\mu)} with no variance term, everywhere the back-transformation is used: the point
+estimate, the bootstrap area estimates and truths, the benchmark target of the replicates, and the
+random-effect variance term (which is then not computed). REStat's preregistered census-truth test
+found that the exact form overshoots near zero and biases low-prevalence areas upward; the plain
+form raised sampled-area coverage by 0.06 to 0.16 and cut that bias by about three quarters at no
+RMSE cost. The default is unchanged for now. The result then holds \code{arcsin_backtransform =
+"plain"}.}
 
 \item{...}{additional arguments forwarded to \code{MEGB::megb}.}
 }

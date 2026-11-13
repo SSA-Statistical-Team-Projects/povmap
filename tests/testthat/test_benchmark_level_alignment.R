@@ -43,10 +43,9 @@ test_that("add_benchmark hits the target under both collapse sort settings", {
                                  domains = c("D1", "D2", "D3"))
     expect_equal(sum(r2 * w[c("D1", "D2", "D3")]) / sum(w), 0.3, tolerance = 1e-12, info = srt)
     expect_equal(unname(r2), unname(r1[c(2, 3, 1)]), tolerance = 1e-12, info = srt)
-    # unlabelled estimates in pop_data order still work
-    r3 <- povmap:::add_benchmark(c(0.2, 0.6, 0.6), benchmark_level = "reg", fwk = fwk,
-                                 fixed = y ~ x, benchmark = c(R1 = 0.3), benchmark_type = "ratio")
-    expect_equal(unname(r3), unname(r1), tolerance = 1e-12, info = srt)
+    # unlabelled estimates are refused (povmap 1.0.7): no order is assumed
+    expect_error(povmap:::add_benchmark(c(0.2, 0.6, 0.6), benchmark_level = "reg", fwk = fwk,
+                                        fixed = y ~ x, benchmark = c(R1 = 0.3), benchmark_type = "ratio"), "Domain")
   }
 })
 
@@ -60,7 +59,7 @@ test_that("labels that do not cover the population domains stop", {
 test_that("benchmark_xgb_level matches population totals to domains by name", {
   old <- collapse::get_collapse("sort"); on.exit(collapse::set_collapse(sort = old))
   collapse::set_collapse(sort = TRUE)
-  b <- povmap:::benchmark_xgb_level(point_estim = list(ind = data.frame(Mean = c(0.2, 0.6, 0.6))),
+  b <- povmap:::benchmark_xgb_level(point_estim = list(ind = data.frame(Domain = c("D3", "D1", "D2"), Mean = c(0.2, 0.6, 0.6))),
                                     framework = tiny_fwk(), fixed = y ~ x, benchmark = c(R1 = 0.3),
                                     benchmark_type = "ratio", benchmark_level = "reg")
   expect_equal(sum(b$Mean_bench * c(2000, 20, 20)) / 2040, 0.3, tolerance = 1e-12)

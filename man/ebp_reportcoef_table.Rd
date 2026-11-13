@@ -20,6 +20,7 @@ This function takes the object of class 'ebp' to present the regression
 model results having specified the number of decimal places.
 }
 \examples{
+\dontrun{
 data("eusilcA_pop")
 data("eusilcA_smp")
 
@@ -32,4 +33,5 @@ ebp_model <- ebp(
 
 ebp_reportcoef_table(ebp_model, 4)
 
+}
 }

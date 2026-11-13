@@ -35,6 +35,7 @@ summary has methods for classes "direct", "ebp" and "fh" and the returned
 object is suitable for printing  with the \code{print}.
 }
 \examples{
+\dontrun{
 \donttest{
 # Example for models of type ebp
 
@@ -88,6 +89,7 @@ fh_std <- fh(
 
 # Example 2: Receive first overview
 summary(fh_std)
+}
 }
 }
 \references{

@@ -21,7 +21,18 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
                      fold_fit        = NULL,
                      predict_sampled = "full",
                      predict_unsampled = "full",
+                     bench_star = NULL,
+                     boot_area_var = "legacy",
+                     boot_synthetic = FALSE,
                      ...) {
+  # boot_synthetic = TRUE (MEGB_BOOT_FIX_PREREG_v8_final.md, option A): also return, for every replicate, the cross-fitted SYNTHETIC area prediction on the
+  # reporting scale (booster part only, no area effect, the back-transform of an unsampled area), so that the MSE of the synthetic prediction of the sampled
+  # areas can be read from the same replicates. Nothing else changes (estimates, MSE and intervals are bit-identical to boot_synthetic = FALSE).
+  if (isTRUE(boot_synthetic) && !identical(bootstrap_refit, "leaves_only"))
+    stop("boot_synthetic = TRUE needs bootstrap_refit = \"leaves_only\".")
+  # bench_star (bench_target = "truth"): list(dom_group, dom_w, draws, lo, hi), see .megb_target_star(). Each replicate is
+  #   benchmarked to its own target, the simulated truth of the benchmark group plus the drawn target error. The target
+  #   travels with the replicate's data as attribute "bm_target" and is read by benchmark_fn; NULL leaves every path as before.
   # fold_fit (leaves_only, xgboost; .megb_fold_fit()): the fold models of the
   #   final EM iteration, the sample rows each held out (in the fit's row order),
   #   their out-of-fold predictions and, with domain folds, their domains. In each
@@ -69,6 +80,12 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
     unit_pred_smp <- unit_pred_smp - gb_smp + oof   # out-of-fold fit + the random effect
     gb_smp        <- oof
   }
+  # Held-out (cross-fitted) booster prediction for the area deviations d_i of
+  # boot_area_var = "centred_mm" (MEGB_BOOT_FIX_PREREG_v4.md, section 10): the
+  # fold model that held the area out, whatever predict_sampled is. NULL when
+  # the fit kept no fold models; "centred_mm" then stops.
+  gb_cf <- if (identical(predict_sampled, "crossfit")) gb_smp else model$oof_prediction
+  if (!is.null(gb_cf) && (length(gb_cf) != length(Y) || anyNA(gb_cf))) gb_cf <- NULL
 
   # Function-scoped definition so any branch that references collect_diag has
   # it in scope; branches that don't use it just leave it FALSE.
@@ -87,6 +104,7 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
   Y        <- Y[sort_smp]
   if (!is.null(unit_pred_smp))   unit_pred_smp   <- unit_pred_smp[sort_smp]
   if (!is.null(gb_smp))          gb_smp          <- gb_smp[sort_smp]
+  if (!is.null(gb_cf))           gb_cf           <- gb_cf[sort_smp]
   # Re-extract weights from the (now-sorted) column to guarantee alignment.
   smp_weights_vec <- if (!is.null(smp_weights_col) &&
                          smp_weights_col %in% colnames(smp_data)) {
@@ -175,8 +193,14 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
     Y = Y, smp_data = smp_data, unit_pred_smp = unit_pred_smp,
     error_sd = error_sd, dom_name = dom_name,
     cov_names = cov_names, model = model,
-    weights = smp_weights_vec
+    weights = smp_weights_vec,
+    boot_area_var = boot_area_var, gb_smp = gb_cf, weightedBS = weightedBS
   )
+  if (!is.null(.de <- getOption("povmap.boot_area_var.diag_env")) && is.environment(.de)) {   # test hook, no effect when unset
+    .de$gb_cf <- gb_cf; .de$gb_smp <- gb_smp; .de$Y <- Y; .de$dom <- as.character(smp_data[[dom_name]])
+  }
+  .bam <- if (identical(boot_area_var, "legacy")) NULL else
+    c(list(mode = boot_area_var, n_pool = length(ran_obj$pool_res)), ran_obj$area_mm)
   ran_effs <- ran_obj$ran_effs
   gb_res   <- ran_obj$gb_res
   smp_data <- ran_obj$smp_data
@@ -193,7 +217,8 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
   block_sample_e_smp <- function(x) {
     block_sample(domains = domains, in_samp = in_samp, smp_data = smp_data,
                  dom_name = dom_name, pop_data = smp_data, gb_res = gb_res,
-                 weights = smp_weights_vec, weightedBS = weightedBS)
+                 weights = smp_weights_vec, weightedBS = weightedBS,
+                 pool = ran_obj$pool_res, pool_w = ran_obj$pool_w)
   }
 
   # u_d* sampler: one fresh draw per domain per iteration, length D.
@@ -205,6 +230,9 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
 
   e_smp    <- apply(matrix(NA, nrow = length(gb_smp), ncol = B), 2, block_sample_e_smp)
   u_d_star <- apply(matrix(NA, nrow = length(domains), ncol = B), 2, sample_ud)
+  # test/diagnostic hook: options(povmap.boot_area_var.diag_env = <environment>) receives the drawn u* (no effect when unset)
+  .bav_env <- getOption("povmap.boot_area_var.diag_env")
+  if (is.environment(.bav_env)) .bav_env$u_d_star <- u_d_star
 
   # Map u_d* to smp-row level via domain index.
   smp_dom_idx <- match(as.character(smp_data[[dom_name]]), domains)
@@ -212,6 +240,11 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
   smp_data$gb_res <- NULL
 
   y_star_smp <- smp_pred_mat + u_smp + e_smp
+  # test hook, no effect when unset: options(povmap.boot_synthetic.perturb = list(domain = <label>, delta = <number>)) adds delta to the replicate response of one
+  # area (every replicate), to check that its cross-fitted synthetic prediction does not depend on its own replicate data
+  .pt <- getOption("povmap.boot_synthetic.perturb")
+  if (is.list(.pt) && !is.null(.pt$domain))
+    y_star_smp[as.character(smp_data[[dom_name]]) == as.character(.pt$domain), ] <- y_star_smp[as.character(smp_data[[dom_name]]) == as.character(.pt$domain), ] + .pt$delta
 
   # ── tau_star at POP level (analytical) ──
   # tau_star_d[b] = mean over pop_d of (gb_pop + u_d*[d, b]) ≈ gb_pop_d_mean + u_d*[d, b]
@@ -241,6 +274,15 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
     }, numeric(length(domains)))
   }
 
+  # bench_target = "truth": the target of replicate b is the simulated provincial truth plus its drawn error
+  bm_target <- NULL
+  if (!is.null(bench_star)) {
+    if (is.null(tau_star_orig_pc))
+      stop("bench_target = \"truth\" needs the original-scale bootstrap truth, which needs a back-transformation function.")
+    bm_target <- .megb_target_star(tau_star_orig_pc, domains, bench_star$dom_group, bench_star$dom_w,
+                                   bench_star$draws, bench_star$lo, bench_star$hi)
+  }
+
   # ── Bootstrap "samples" are the original smp_data with y_star injected ──
   # No subsampling: each iter sees the same smp X distribution as the original
   # fit, which keeps gb_pop_boot ≈ gb_pop on average and (crucially) keeps
@@ -249,6 +291,7 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
   for (i in seq_len(B)) {
     bs                <- smp_data
     bs$y_star         <- y_star_smp[, i]
+    if (!is.null(bm_target)) attr(bs, "bm_target") <- bm_target[, i]
     boots_sample[[i]] <- bs
   }
 
@@ -309,14 +352,17 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
       # estimate). lmm_only holds the booster fixed, so the per-cell fixed part is
       # the original gb_pop_vec; only u_d_boot is re-estimated this iteration.
       mean_boot_orig <- if (!is.null(corrected_bt)) {
-        cell_orig_boot <- corrected_bt(gb_pop_vec + u_d_boot[pop_dom_idx])
+        # the replicate's own conditional random-effect variance, as the point estimate uses
+        cell_orig_boot <- corrected_bt(gb_pop_vec + u_d_boot[pop_dom_idx],
+                                       .megb_re_var(corrected_bt, lmer_boot, domains)[pop_dom_idx])
         agg_dom(cell_orig_boot)
       } else mean_boot_t
 
       mean_boot_bench <- if (!is.null(benchmark_fn)) {
         bs_for_bench <- smp_data
         bs_for_bench$y_star <- gb_smp + fit_data$r   # = y_star_smp[, i]
-        benchmark_fn(mean_boot_orig, bs_for_bench)
+        if (!is.null(bm_target)) attr(bs_for_bench, "bm_target") <- bm_target[, i]
+        benchmark_fn(mean_boot_orig, bs_for_bench, domains)
       } else NULL
 
       ran_sd <- as.data.frame(lme4::VarCorr(lmer_boot))$sdcor[1]
@@ -336,7 +382,7 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
       boots_models = boots_models, tau_star = tau_star, pop_data = pop_data,
       dom_name = dom_name, corrected_bt = corrected_bt,
       benchmark_fn = benchmark_fn, domains = domains, error_sd = error_sd,
-      tau_star_orig_pc = tau_star_orig_pc
+      tau_star_orig_pc = tau_star_orig_pc, boot_area_mm = .bam
     ))
   }
 
@@ -404,7 +450,12 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
         .D <- length(domains)
         gb_pop_d_mean_boot_mat <- matrix(NA_real_, nrow = .D, ncol = B)
         u_d_boot_mat           <- matrix(NA_real_, nrow = .D, ncol = B)
+        gb_pop_cell_boot_list  <- vector("list", B)     # per-cell replicate booster predictions (per-cell path only)
+        sb2_boot_vec           <- rep(NA_real_, B)      # the replicate's sigma_b*^2
       }
+      if (isTRUE(boot_synthetic) && isTRUE(getOption("povmap.leaves_only.em", FALSE)))
+        warning("boot_synthetic = TRUE with options(povmap.leaves_only.em = TRUE): the replicate EM estimates the random effect from all areas, so a fold model's ",
+                "training target depends weakly (through the variance components and the intercept) on the held-out area's replicate data; the default single pass is exactly held out.")
 
       boots_models <- vector("list", B)
 
@@ -540,8 +591,19 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
         if (collect_diag) {
           gb_pop_d_mean_boot_mat[, i] <- gb_pop_d_mean_boot
           u_d_boot_mat[, i]           <- u_d_boot
+          if (!is.null(gb_pop_boot)) gb_pop_cell_boot_list[[i]] <- gb_pop_boot
+          sb2_boot_vec[i] <- as.data.frame(lme4::VarCorr(lmer_boot))$vcov[1]
         }
         mean_boot_t        <- gb_pop_d_mean_boot + u_d_boot   # transformed aggregate (mse path)
+        # synthetic area prediction of this replicate on the reporting scale: the booster part (cross-fitted for sampled areas, fold mean for unsampled
+        # ones, as refreshed above) back-transformed with the random-effect variance of an UNSAMPLED area (sigma_b^2) and no area effect
+        synth_boot <- NULL
+        if (isTRUE(boot_synthetic)) {
+          synth_boot <- if (!is.null(corrected_bt) && .use_leaf) LM$weighted
+                        else if (!is.null(corrected_bt))
+                          agg_dom(corrected_bt(gb_pop_boot, .megb_re_var(corrected_bt, lmer_boot, rep(".synthetic.", length(domains)))[pop_dom_idx]))
+                        else gb_pop_d_mean_boot
+        }
         # Original scale: per-cell back-transform then aggregate (mirror point
         # estimate). Uses this iteration's refreshed per-cell predictions
         # gb_pop_boot and re-estimated u_d_boot; same corrected_bt, same unweighted
@@ -552,14 +614,16 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
           # u_d is constant within the domain and the weights sum to one
           LM$weighted + u_d_boot
         } else if (!is.null(corrected_bt)) {
-          cell_orig_boot <- corrected_bt(gb_pop_boot + u_d_boot[pop_dom_idx])
+          cell_orig_boot <- corrected_bt(gb_pop_boot + u_d_boot[pop_dom_idx],
+                                         .megb_re_var(corrected_bt, lmer_boot, domains)[pop_dom_idx])
           agg_dom(cell_orig_boot)
         } else mean_boot_t
 
         mean_boot_bench <- if (!is.null(benchmark_fn)) {
           bs_for_bench <- smp_data
           bs_for_bench$y_star <- y_star_smp[, i]
-          benchmark_fn(mean_boot_orig, bs_for_bench)
+          if (!is.null(bm_target)) attr(bs_for_bench, "bm_target") <- bm_target[, i]
+          benchmark_fn(mean_boot_orig, bs_for_bench, domains)
         } else NULL
 
         ran_sd <- as.data.frame(lme4::VarCorr(lmer_boot))$sdcor[1]
@@ -573,12 +637,15 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
           ran_eff_sd_boot = ran_sd,
           em_iterations   = em$iterations
         )
+        if (isTRUE(boot_synthetic)) boots_models[[i]]$Mean_boot_synth <- synth_boot
       }
 
       if (collect_diag) {
         diag_env <- getOption("povmap.leaves_only.diag_env")
         assign("gb_pop_d_mean_boot_mat", gb_pop_d_mean_boot_mat, envir = diag_env)
         assign("u_d_boot_mat",           u_d_boot_mat,           envir = diag_env)
+        assign("gb_pop_cell_boot_list",  gb_pop_cell_boot_list,  envir = diag_env)
+        assign("sb2_boot_vec",           sb2_boot_vec,           envir = diag_env)
         assign("domains",                domains,                envir = diag_env)
       }
 
@@ -586,7 +653,7 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
         boots_models = boots_models, tau_star = tau_star, pop_data = pop_data,
         dom_name = dom_name, corrected_bt = corrected_bt,
         benchmark_fn = benchmark_fn, domains = domains, error_sd = error_sd,
-        tau_star_orig_pc = tau_star_orig_pc
+        tau_star_orig_pc = tau_star_orig_pc, boot_area_mm = .bam
       ))
     }
   }
@@ -645,7 +712,9 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
     # (unit_preds, transformed, incl. the area effect); apply corrected_bt to each
     # cell, then aggregate, instead of back-transforming the aggregated mean.
     if (!is.null(.corrected_bt)) {
-      upp$.cell_orig <- .corrected_bt(upp$unit_preds)
+      .dom_chr <- as.character(upp$dom_name)
+      .re_cv   <- .megb_re_var(.corrected_bt, model_boot$effect_model, unique(.dom_chr))
+      upp$.cell_orig <- .corrected_bt(upp$unit_preds, .re_cv[match(.dom_chr, unique(.dom_chr))])
       # Population-weighted domain mean (matches megb.R:380); unweighted fallback
       # when no pop weights were supplied. .pw_pop is aligned to .pop_data rows.
       if (!is.null(.pw_pop)) {
@@ -664,13 +733,17 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
     } else {
       mean_boot_orig <- mean_boot_t
     }
-    mean_boot_bench <- if (!is.null(.benchmark_fn)) .benchmark_fn(mean_boot_orig, x)
+    mean_boot_bench <- if (!is.null(.benchmark_fn)) .benchmark_fn(mean_boot_orig, x, as.character(mean_preds$dom_name))
                        else NULL
 
     list(
       Mean_boot       = mean_boot_t,
       Mean_boot_orig  = mean_boot_orig,
       Mean_boot_bench = mean_boot_bench,
+      # Area keys of the three vectors above, in their own order. dplyr::group_by() on a factor returns the groups in LEVEL order, which is the order of the
+      # framework's population frame (sampled areas first, then the rest as in the frame), not the alphabetical order of `domains` / tau_star. .mse_megb_collate()
+      # puts every replicate vector into the order of `domains` by these keys.
+      keys            = as.character(mean_preds$dom_name),
       error_sd_boot   = model_boot$error_sd,
       ran_eff_sd_boot = model_boot$ran_eff_sd
     )
@@ -682,7 +755,7 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
     list(
       .cov_names       = cov_names,
       .dom_name        = dom_name,
-      .pop_data        = pop_data,
+      .pop_data        = .megb_keep_cols(pop_data, c(dom_name, cov_names)),   # the workers read only the domain and the covariates
       .gradient_params = gradient_params,
       .formula_re      = formula_random_effects,
       .gbm_engine      = gbm_engine,
@@ -736,7 +809,7 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
     boots_models = boots_models, tau_star = tau_star, pop_data = pop_data,
     dom_name = dom_name, corrected_bt = corrected_bt,
     benchmark_fn = benchmark_fn, domains = domains, error_sd = error_sd,
-    tau_star_orig_pc = tau_star_orig_pc
+    tau_star_orig_pc = tau_star_orig_pc, boot_area_mm = .bam
   )
 }
 
@@ -744,7 +817,7 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
 # summary frames mse_megb returns. Used by both the lmm_only and full paths.
 .mse_megb_collate <- function(boots_models, tau_star, pop_data, dom_name,
                               corrected_bt, benchmark_fn, domains, error_sd,
-                              tau_star_orig_pc = NULL) {
+                              tau_star_orig_pc = NULL, boot_area_mm = NULL) {
 
   # Robust column-bind of per-iteration vectors of length D. Drops iterations
   # whose slot is NULL or whose length disagrees with D (with a warning).
@@ -755,6 +828,14 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
       if (is.null(v)) return(NULL)
       v <- as.numeric(v)
       if (length(v) != D) return(NULL)
+      # Pair by area key, not by row position: a replicate that carries its area keys (the full refit) is put into the order of `domains`, the order of tau_star.
+      # Replicates without keys (leaves_only, lmm_only) are built in the order of `domains` by construction.
+      if (!is.null(b$keys)) {
+        k <- as.character(b$keys)
+        if (length(k) != D || anyNA(match(domains, k)))
+          stop("megb bootstrap: the area keys of a replicate do not match the domains of the truth (", slot, ").")
+        v <- v[match(domains, k)]
+      }
       v
     })
     keep <- which(!vapply(cols, is.null, logical(1)))
@@ -806,13 +887,14 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
   boot_ran_eff_sd_boot <- sapply(boots_models, getElement, "ran_eff_sd_boot") |> unlist()
   boot_em_iterations   <- vapply(boots_models, function(b) if (is.null(b$em_iterations)) NA_integer_ else as.integer(b$em_iterations), integer(1))
 
-  list(
+  res <- list(
     call                 = match.call(),
     MSE_estimates        = MSE_estimates,
     MSE_bench_estimates  = MSE_bench_estimates,
     tau_b_t              = tau_b_t,
     tau_b_orig           = tau_b_orig,
     tau_b_bench          = tau_b_bench,
+    bench_keep           = if (!is.null(benchmark_fn) && exists("cb_bench", inherits = FALSE)) cb_bench$keep else NULL,
     tau_star             = tau_star,
     tau_star_orig        = tau_star_orig,
     tau_star_orig_unb    = tau_star_orig_unb,
@@ -823,4 +905,14 @@ mse_megb <- function(Y, X, dom_name, smp_data, model, error_sd, pop_data,
     boot_em_iterations   = boot_em_iterations,
     error_sd_input       = error_sd
   )
+  # boot_area_var != "legacy": the moment estimator and the pool size (NULL, so absent, for "legacy": legacy output is unchanged)
+  if (!is.null(boot_area_mm)) res$boot_area_mm <- boot_area_mm
+  # boot_synthetic = TRUE: D x B' matrix of the replicate synthetic predictions (reporting scale), columns paired with tau_star_orig_unb
+  if (any(vapply(boots_models, function(b) !is.null(b$Mean_boot_synth), logical(1)))) {
+    cb_syn <- collate_boot("Mean_boot_synth")
+    synth <- matrix(NA_real_, nrow = D, ncol = length(keep_orig))
+    if (!is.null(cb_syn$mat)) { j <- match(cb_syn$keep, keep_orig); ok <- !is.na(j); synth[, j[ok]] <- cb_syn$mat[, ok, drop = FALSE] }
+    res$synth_boot_orig <- synth
+  }
+  res
 }

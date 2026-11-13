@@ -7,20 +7,20 @@
 ## than between 0.25 and 0.29 and a uniform draw spends most of its budget at the
 ## insensitive end.
 
-## Default search ranges. Only these six vary unless the caller names more in
+## Default search ranges (the shared XGBoost estimation convention, v0.6). Only these six vary unless the caller names more in
 ## `bounds`; a user exploring depth should not silently get gamma and alpha
 ## moving as well.
 .XGB_DEFAULT_BOUNDS <- list(
   eta              = c(0.01, 0.3),
-  max_depth        = c(2, 10),
-  min_child_weight = c(1, 50),
+  max_depth        = c(1, 12),
+  min_child_weight = c(1, 1000),
   subsample        = c(0.5, 1.0),
-  colsample_bytree = c(0.3, 1.0),
-  lambda           = c(0.1, 10),
+  colsample_bytree = c(0.1, 1.0),
+  lambda           = c(0.01, 10000),
   ## nround is searched rather than fixed by early stopping: unit-level
   ## stopping underfits a domain-level objective (measured: patience 20
   ## halted at 34 rounds when the optimum was near 1258, halving the r2).
-  nround           = c(50, 1500)
+  nround           = c(50, 3000)
 )
 
 ## Default sampling scale per parameter.
@@ -160,9 +160,11 @@
 
 .xgb_score_configs <- function(tunegrid, X_final, X_smp, Y_smp, smp_weights,
                                cluster_col, cluster, domains, folds,
-                               early_stopping_rounds = NULL, nrounds_max = 2000,
+                               early_stopping_rounds = NULL, nrounds_max = 3000,
                                seed = NULL, dots = list(), rescale_weights = TRUE,
-                               het = NULL) {
+                               het = NULL, fit_seed = seed, y_resp = NULL, back = NULL, keep_oof = FALSE, train_loss = FALSE) {
+  ## scoring labels: the transformed outcome, or the raw one when scored on the response scale
+  Y_score <- if (is.null(y_resp)) Y_smp[, 1] else y_resp
   dom_all <- X_smp[[paste0(domains)]]
   ## heteroscedasticity factor for rows `r` (variance_y^-0.5), or 1 without variance_y
   het_rows <- function(r) if (is.null(het)) 1 else het[r]
@@ -176,7 +178,7 @@
   fold_info <- vector("list", folds)
   for (fold in seq_len(folds)) {
     hold <- cluster_col$fold == fold
-    fold_df <- data.frame(labels = Y_smp[hold, ],
+    fold_df <- data.frame(labels = Y_score[hold],
                           domains = X_smp[hold, ][[paste0(domains)]],
                           wts = smp_weights[hold])
     domain_labels_list[[fold]] <- sapply(split(fold_df, fold_df$domains),
@@ -199,12 +201,14 @@
                                 het_rows(es_train))
     w_val   <- if (es_on) .xgb_fit_weights(as.matrix(smp_weights)[es_val, ], dom_all[es_val], rescale_weights,
                                            het_rows(es_val)) else NULL
+    ## training-loss scoring: the held-out rows weighted as the model would weight them
+    w_hold <- if (train_loss) .xgb_fit_weights(as.matrix(smp_weights)[hold, ], dom_all[hold], rescale_weights, het_rows(hold)) else NULL
     fold_info[[fold]] <- list(hold = hold, es_train = es_train, es_val = es_val,
-                              w_train = w_train, w_val = w_val)
+                              w_train = w_train, w_val = w_val, w_hold = w_hold)
   }
 
   tasks <- expand.grid(row = seq_len(nrow_g), fold = seq_len(folds))
-  res <- foreach::foreach(t = seq_len(nrow(tasks)), .combine = rbind,
+  res <- foreach::foreach(t = seq_len(nrow(tasks)), .combine = if (keep_oof) c else rbind,
                           .packages = "xgboost") %dopar% {
     row <- tasks$row[t]; fold <- tasks$fold[t]
     fi <- fold_info[[fold]]
@@ -219,7 +223,7 @@
       max_delta_step    = tunegrid$max_delta_step[row],
       lambda            = tunegrid$lambda[row],
       alpha             = tunegrid$alpha[row]), dots)
-    if (!is.null(seed)) params$seed <- seed
+    if (!is.null(fit_seed)) params$seed <- fit_seed
 
     dtrain <- xgboost::xgb.DMatrix(data = data.matrix(X_final[fi$es_train, ]),
                                    label = Y_smp[fi$es_train, ],
@@ -240,19 +244,30 @@
     }
 
     hat <- predict(fit, data.matrix(X_final[fi$hold, ]))
+    hat_raw <- hat
+    if (!is.null(back)) hat <- back(hat)
     dh  <- data.frame(hat = hat,
                       domains = X_smp[fi$hold, ][[paste0(domains)]],
-                      labels = Y_smp[fi$hold, ],
+                      labels = Y_score[fi$hold],
                       wts = smp_weights[fi$hold])
     g   <- split(dh, dh$domains)
     mh  <- sapply(g, function(z) stats::weighted.mean(z$hat, w = z$wts))
     ml  <- sapply(g, function(z) stats::weighted.mean(z$labels, w = z$wts))
-    c(row = row, fold = fold, mse = mean((ml - mh)^2), best_iter = best_iter)
+    loss <- if (train_loss) sum(fi$w_hold * (Y_smp[fi$hold, ] - hat_raw)^2) / sum(fi$w_hold) else mean((ml - mh)^2)
+    v <- c(row = row, fold = fold, mse = loss, best_iter = best_iter)
+    if (keep_oof) list(list(v = v, hat = hat_raw)) else v
+  }
+  oof_pred <- NULL
+  if (keep_oof) {
+    ## out-of-fold predictions on the model (transformed) scale, one column per configuration
+    oof_pred <- matrix(NA_real_, nrow = nrow(X_final), ncol = nrow_g)
+    for (r in res) oof_pred[cluster_col$fold == r$v[["fold"]], r$v[["row"]]] <- r$hat
+    res <- do.call(rbind, lapply(res, `[[`, "v"))
   }
   res <- matrix(as.numeric(res), ncol = 4)
   for (k in seq_len(nrow(res))) {
     OPT[res[k, 1], res[k, 2]]  <- res[k, 3]
     ITER[res[k, 1], res[k, 2]] <- res[k, 4]
   }
-  list(OPT = OPT, ITER = ITER, domain_labels = domain_labels_list)
+  list(OPT = OPT, ITER = ITER, domain_labels = domain_labels_list, oof_pred = oof_pred)
 }

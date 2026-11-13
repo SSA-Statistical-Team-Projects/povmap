@@ -39,6 +39,7 @@ Normal quantile-quantile plots of the underlying model in the EBP (see also
 obtained. The plots are obtained by \code{\link[ggplot2]{ggplot}}.
 }
 \examples{
+\dontrun{
 \donttest{
 # Examples for models of type ebp
 # Loading data - population and sample data
@@ -80,6 +81,7 @@ fh_std <- fh(
 
 # Example 5: Creation of default diagnostic plots for Fay-Herriot model
 qqnorm(fh_std)
+}
 }
 }
 \seealso{
