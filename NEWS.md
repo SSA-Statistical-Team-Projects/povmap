@@ -1,3 +1,7 @@
+# povmap 1.0.3, option `normalize_weights` in `xgb_tune()` (tag xgb-convention-v0.6.1-nw)
+
+* **`xgb_tune(normalize_weights = TRUE)`.** `FALSE` fits the fold models on the survey weights as they are, with no division by their mean (and no within-domain rescaling: `rescale_weights = FALSE` is required). The scoring weights are the survey weights either way. Plumbed through `.xgb_fit_weights()` and the opt-in overfit ratio. The default reproduces every earlier result exactly; `xgb()` is unchanged. Added so that the survey-weight convention (global mean 1 or the design weights) can be chosen by cross-validation. Everything else is the code of tag xgb-convention-v0.6.1.
+
 # povmap 1.0.3 (v0.6.1 fixes on top of the convention release)
 
 * **Arcsin back-transformation (`ebp`, `megb`).** The mean of `sin(x)^2` under normal error is now the exact `1/2 - 1/2 cos(2 mu) exp(-2 v)` (new internal `arcsin_expected_back()`), replacing a 9th-order series that had the wrong sign on the `v^2` term and lacked the double-factorial factors on the higher terms. Arcsin estimates move; the largest effect is at large `v`.

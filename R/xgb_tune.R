@@ -141,6 +141,11 @@
 #'   \code{min_child_weight} and \code{lambda} were tuned on a scale far larger
 #'   than the one \code{xgb()} fits on (see NEWS). Pass the value you will give
 #'   \code{xgb()}, and likewise \code{variance_y}.
+#' @param normalize_weights logical. \code{TRUE} (default) divides each fold model's weights by their mean, as described under
+#'   \code{rescale_weights}. \code{FALSE} fits the fold models on the survey weights as they are, with no mean-1 rescaling (it requires
+#'   \code{rescale_weights = FALSE}, and \code{keep_oof = TRUE} is not supported with it). The held-out scoring weights are the survey
+#'   weights under either setting. Added so that the survey-weight convention can be chosen by cross-validation; the default leaves every
+#'   result unchanged.
 #' @param variance_y character or NULL. The name of the variable in
 #'   \code{smp_data} holding the variance of the outcome, as in \code{\link{xgb}}.
 #'   If given, each fold model's weights are multiplied by
@@ -250,6 +255,7 @@ xgb_tune <- function(fixed,
                      seed = NULL,
                      keep_candidates = TRUE,
                      rescale_weights = TRUE,
+                     normalize_weights = TRUE,
                      variance_y = NULL,
                      grid = NULL,
                      overfit_ratio = FALSE,
@@ -325,6 +331,8 @@ xgb_tune <- function(fixed,
 
   # Search mode, seed
   #_____________________________________________________________________________
+  if (!isTRUE(normalize_weights) && (isTRUE(rescale_weights) || isTRUE(keep_oof)))
+    stop("normalize_weights = FALSE requires rescale_weights = FALSE and keep_oof = FALSE.", call. = FALSE)
   search <- match.arg(search)
   if (is.null(fit_seed)) fit_seed <- seed
   ## Seeding covers BOTH the fold assignment below and the random draw. The fold
@@ -427,6 +435,7 @@ xgb_tune <- function(fixed,
                      early_stopping_rounds = early_stopping_rounds,
                      nrounds_max = nrounds_max, seed = seed, dots = dots,
                      rescale_weights = rescale_weights, het = het,
+                     normalize_weights = normalize_weights,
                      fit_seed = fit_seed, y_resp = y_resp, back = back,
                      keep_oof = isTRUE(keep_oof) && isTRUE(keep_candidates),
                      train_loss = score_scale == "training")
@@ -475,6 +484,7 @@ xgb_tune <- function(fixed,
   final_output$search    <- search
   final_output$n_configs <- nrow(tunegrid)
   final_output$rescale_weights <- rescale_weights
+  if (!isTRUE(normalize_weights)) final_output$normalize_weights <- FALSE    # NULL otherwise: existing results gain no element
   if (score_scale == "training") final_output$score_scale <- score_scale    # NULL otherwise: existing results gain no element
   final_output$variance_y <- variance_y    # NULL adds no element
   if (isTRUE(keep_candidates)) {
@@ -502,7 +512,7 @@ xgb_tune <- function(fixed,
       final_output$overfit <- .xgb_overfit_core(
         g_r, X = X_final, yt = Y_smp[, 1], w = as.numeric(smp_weights), dom = X_smp[[domains]],
         fold = cluster_col$fold, folds = folds, rescale_weights = rescale_weights, het = het,
-        fit_seed = fit_seed, cpus = cpus, dots = dots)
+        fit_seed = fit_seed, cpus = cpus, dots = dots, normalize_weights = normalize_weights)
     }
   }
   if (es_on) {

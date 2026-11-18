@@ -32,6 +32,7 @@ xgb_tune(
   seed = NULL,
   keep_candidates = TRUE,
   rescale_weights = TRUE,
+  normalize_weights = TRUE,
   variance_y = NULL,
   grid = NULL,
   overfit_ratio = FALSE,
@@ -181,6 +182,12 @@ candidate models were fitted on the raw survey weights, so
 \code{min_child_weight} and \code{lambda} were tuned on a scale far larger
 than the one \code{xgb()} fits on (see NEWS). Pass the value you will give
 \code{xgb()}, and likewise \code{variance_y}.}
+
+\item{normalize_weights}{logical. \code{TRUE} (default) divides each fold model's weights by their mean, as described under
+\code{rescale_weights}. \code{FALSE} fits the fold models on the survey weights as they are, with no mean-1 rescaling (it requires
+\code{rescale_weights = FALSE}, and \code{keep_oof = TRUE} is not supported with it). The held-out scoring weights are the survey
+weights under either setting. Added so that the survey-weight convention can be chosen by cross-validation; the default leaves every
+result unchanged.}
 
 \item{variance_y}{character or NULL. The name of the variable in
 \code{smp_data} holding the variance of the outcome, as in \code{\link{xgb}}.

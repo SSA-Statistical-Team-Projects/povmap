@@ -147,7 +147,7 @@ xgb_overfit_ratio <- function(fixed, smp_data, configs, smp_weights = NULL, doma
 }
 
 ## One configuration: the full fit and the cluster-grouped fold fits
-.xgb_overfit_one <- function(g, X, yt, w, dom, fold, folds, rescale_weights, het, fit_seed, dots) {
+.xgb_overfit_one <- function(g, X, yt, w, dom, fold, folds, rescale_weights, het, fit_seed, dots, normalize_weights = TRUE) {
   p <- c(list(max_depth = g$max_depth, colsample_bytree = g$colsample_bytree,
               colsample_bylevel = g$colsample_bylevel, colsample_bynode = g$colsample_bynode,
               subsample = g$subsample, min_child_weight = g$min_child_weight, eta = g$eta,
@@ -157,7 +157,7 @@ xgb_overfit_ratio <- function(fixed, smp_data, configs, smp_weights = NULL, doma
   XM <- data.matrix(X)
   fitm <- function(tr) xgboost::xgb.train(
     data = xgboost::xgb.DMatrix(XM[tr, , drop = FALSE], label = yt[tr],
-                                weight = .xgb_fit_weights(w[tr], dom[tr], rescale_weights, het[tr])),
+                                weight = .xgb_fit_weights(w[tr], dom[tr], rescale_weights, het[tr], normalize_weights)),
     params = p, nrounds = g$nround, verbose = 0)
   r_in <- yt - predict(fitm(rep(TRUE, length(yt))), XM)
   pr <- numeric(length(yt))
@@ -173,7 +173,7 @@ xgb_overfit_ratio <- function(fixed, smp_data, configs, smp_weights = NULL, doma
 
 ## Ratios for the rows `rows` of `grid` (xgb_tune names); `fold` gives each observation's fold
 .xgb_overfit_core <- function(grid, X, yt, w, dom, fold, folds, rescale_weights = TRUE, het = NULL,
-                              fit_seed = 123, rows = NULL, cpus = 1, dots = list()) {
+                              fit_seed = 123, rows = NULL, cpus = 1, dots = list(), normalize_weights = TRUE) {
   if (is.null(rows)) rows <- seq_len(nrow(grid))
   if (is.null(het)) het <- rep(1, length(yt))
   one <- .xgb_overfit_one
@@ -182,7 +182,7 @@ xgb_overfit_ratio <- function(fixed, smp_data, configs, smp_weights = NULL, doma
   on.exit(parallel::stopCluster(cl), add = TRUE)
   res <- foreach::foreach(r = rows, .combine = rbind, .packages = "xgboost") %dopar% {
     c(row = r, one(grid[r, , drop = FALSE], X, yt, w, dom, fold, folds, rescale_weights, het,
-                   fit_seed, dots))
+                   fit_seed, dots, normalize_weights))
   }
   res <- matrix(as.numeric(res), ncol = 7)
   d <- as.data.frame(res)

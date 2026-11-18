@@ -147,8 +147,12 @@
 #' survey weights until 2026-10, so min_child_weight and lambda acted on a scale
 #' hundreds of times larger than the fit's.
 #' @keywords internal
-.xgb_fit_weights <- function(w, dom, rescale_weights = TRUE, het = 1) {
+.xgb_fit_weights <- function(w, dom, rescale_weights = TRUE, het = 1, normalize_weights = TRUE) {
   w <- as.numeric(w)
+  if (!isTRUE(normalize_weights)) {   # design weights as they are: no mean-1 rescaling (only the heteroscedasticity factor, if any, applies)
+    if (rescale_weights) stop("normalize_weights = FALSE requires rescale_weights = FALSE.", call. = FALSE)
+    return(w * het)
+  }
   if (rescale_weights) {
     domain_sum_wts <- ave(w, dom, FUN = sum)
     domain_n <- ave(w, dom, FUN = length)
@@ -162,7 +166,7 @@
                                cluster_col, cluster, domains, folds,
                                early_stopping_rounds = NULL, nrounds_max = 3000,
                                seed = NULL, dots = list(), rescale_weights = TRUE,
-                               het = NULL, fit_seed = seed, y_resp = NULL, back = NULL, keep_oof = FALSE, train_loss = FALSE) {
+                               het = NULL, fit_seed = seed, y_resp = NULL, back = NULL, keep_oof = FALSE, train_loss = FALSE, normalize_weights = TRUE) {
   ## scoring labels: the transformed outcome, or the raw one when scored on the response scale
   Y_score <- if (is.null(y_resp)) Y_smp[, 1] else y_resp
   dom_all <- X_smp[[paste0(domains)]]
@@ -198,11 +202,11 @@
     ## rows. Scoring below keeps the survey weights: they define the held-out
     ## direct means, and a within-domain constant would not change them anyway.
     w_train <- .xgb_fit_weights(as.matrix(smp_weights)[es_train, ], dom_all[es_train], rescale_weights,
-                                het_rows(es_train))
+                                het_rows(es_train), normalize_weights)
     w_val   <- if (es_on) .xgb_fit_weights(as.matrix(smp_weights)[es_val, ], dom_all[es_val], rescale_weights,
-                                           het_rows(es_val)) else NULL
+                                           het_rows(es_val), normalize_weights) else NULL
     ## training-loss scoring: the held-out rows weighted as the model would weight them
-    w_hold <- if (train_loss) .xgb_fit_weights(as.matrix(smp_weights)[hold, ], dom_all[hold], rescale_weights, het_rows(hold)) else NULL
+    w_hold <- if (train_loss) .xgb_fit_weights(as.matrix(smp_weights)[hold, ], dom_all[hold], rescale_weights, het_rows(hold), normalize_weights) else NULL
     fold_info[[fold]] <- list(hold = hold, es_train = es_train, es_val = es_val,
                               w_train = w_train, w_val = w_val, w_hold = w_hold)
   }
